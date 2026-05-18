@@ -1,5 +1,11 @@
 import { defineConfig } from "vitest/config";
 
+try {
+  process.loadEnvFile(".env");
+} catch {
+  // .env optional (CI may set env vars directly)
+}
+
 export default defineConfig({
   test: {
     include: ["tests/**/*.test.ts"],
