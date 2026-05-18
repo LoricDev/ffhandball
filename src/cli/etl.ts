@@ -1,0 +1,39 @@
+import { parseArgs } from "node:util";
+import { logger } from "@/lib/logger.js";
+import { closePool } from "@/db/client.js";
+import { canonicalizeSaison } from "@/etl/shared/parse-saison.js";
+import { runClubsEtl } from "@/etl/clubs.etl.js";
+
+interface CliArgs {
+  entity: string;
+  saison: string;
+}
+
+function parseCliArgs(): CliArgs {
+  const { values } = parseArgs({
+    options: {
+      entity: { type: "string" },
+      saison: { type: "string" },
+    },
+  });
+  if (!values.entity) throw new Error("--entity required");
+  if (!values.saison) throw new Error("--saison required");
+  return { entity: values.entity, saison: canonicalizeSaison(values.saison) };
+}
+
+async function main(): Promise<void> {
+  const args = parseCliArgs();
+  if (args.entity !== "clubs") {
+    throw new Error(`unknown entity: ${args.entity} (only 'clubs' implemented in pilot)`);
+  }
+  const report = await runClubsEtl(args.saison);
+  logger.info(report, "etl finished");
+}
+
+main()
+  .then(() => closePool())
+  .catch(async (err) => {
+    logger.fatal({ err }, "fatal");
+    await closePool();
+    process.exit(1);
+  });
