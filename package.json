@@ -1,0 +1,38 @@
+{
+  "name": "ffhandball",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "scrape": "tsx src/cli/scrape.ts",
+    "etl": "tsx src/cli/etl.ts",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "db:reset": "docker compose down -v && docker compose up -d",
+    "db:migrate": "for f in db/migrations/*.sql; do docker exec -i ffhandball-postgres psql -U ffhandball -d ffhandball < \"$f\"; done",
+    "db:seed": "for f in db/seeds/*.sql; do docker exec -i ffhandball-postgres psql -U ffhandball -d ffhandball < \"$f\"; done",
+    "db:psql": "docker exec -it ffhandball-postgres psql -U ffhandball -d ffhandball"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0",
+    "date-fns": "^4.1.0",
+    "p-retry": "^6.2.1",
+    "pg": "^8.13.1",
+    "pino": "^9.5.0",
+    "pino-pretty": "^13.0.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "@types/pg": "^8.11.10",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
