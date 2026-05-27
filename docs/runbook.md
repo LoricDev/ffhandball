@@ -66,3 +66,85 @@ npm run db:seed
 INSERT INTO core.saisons (saison_code, date_debut, date_fin)
 VALUES ('2026-2027', '2026-07-01', '2027-06-30');
 ```
+
+## Enrichir les clubs avec leur salle (passe `club-details`)
+
+Cette passe est la **source principale** pour les entités `clubs` (enrichi) et `salles`.
+Elle visite chaque fiche détail club sur `monclub.ffhandball.fr` et alimente
+`raw.clubs` (payload enrichi) + `raw.salles` en une seule requête HTTP par club.
+
+### Scrape
+
+```bash
+# Test dev sur 1 slug
+npm run scrape -- --entity=club-details --saison=2025-2026 --slug=handball-club-de-vihiers
+
+# Validation sur 50 clubs (les 50 premiers slugs renvoyés par la home)
+npm run scrape -- --entity=club-details --saison=2025-2026 --limit=50
+
+# Run complet (~2326 clubs, ~60 min à 1.5 s/req — préférer en nocturne)
+npm run scrape -- --entity=club-details --saison=2025-2026
+```
+
+Le scraper :
+1. Fetch `https://monclub.ffhandball.fr/` une fois et extrait ~2326 slugs (`parseClubSlugs`)
+2. Pour chaque slug, fetch `https://monclub.ffhandball.fr/clubs/<slug>/`, parse le JSON
+   embarqué dans le composant `smartfire-component[name='single-club---home-hero-club']`
+3. Insère un payload enrichi dans `raw.clubs` et, si le club a une salle, un payload
+   dans `raw.salles` (la natural_key salle est un slug dérivé de `name_gym + zipcode + city`)
+
+### ETL dans l'ordre
+
+```bash
+npm run etl -- --entity=salles --saison=2025-2026
+npm run etl -- --entity=clubs  --saison=2025-2026
+```
+
+**Important :** lancer `salles` **avant** `clubs`. Sinon le `salle_principale_id`
+des clubs reste NULL avec un warning par club concerné. Un re-run de `clubs`
+après `salles` résout les FKs manquantes (les anciens warnings restent en base
+mais l'état final est correct).
+
+### Suivre la couverture
+
+```sql
+-- % de clubs avec salle principale résolue
+SELECT
+  count(*)                                                AS total,
+  count(salle_principale_id)                              AS with_salle,
+  round(100.0 * count(salle_principale_id) / count(*), 1) AS pct
+FROM core.clubs;
+
+-- Warnings du dernier run ETL
+SELECT entity, natural_key, message
+  FROM core.etl_warnings
+  WHERE etl_run_id = (SELECT max(id) FROM core.etl_runs);
+
+-- Salles sans département résolu
+SELECT id_ffhb, nom, ville FROM core.salles WHERE departement_id IS NULL;
+
+-- Top 10 clubs par effectif estimé
+SELECT id_ffhb, nom, effectif_estime
+  FROM core.clubs
+  WHERE effectif_estime IS NOT NULL
+  ORDER BY effectif_estime DESC
+  LIMIT 10;
+```
+
+### Rejouer après bug de nettoyage
+
+```sql
+-- Reset salles uniquement (raw intact)
+UPDATE core.clubs SET salle_principale_id = NULL;
+TRUNCATE core.salles CASCADE;
+```
+
+Puis ré-exécuter les deux ETL. `raw.clubs` et `raw.salles` ne sont pas touchés —
+pas besoin de rescraper.
+
+### Notes opérationnelles
+
+- Le User-Agent identifiable est `SCRAPE_USER_AGENT` dans `.env`
+- Le rate-limit nominal est 1.5 s par requête (cf. `SCRAPE_RATE_LIMIT_MS`)
+- Volumétrie attendue : ~2326 fiches détail → ~60 minutes en nocturne
+- ~3/8 des clubs n'ont pas de salle déclarée (gyms_club = `false`) — c'est normal
