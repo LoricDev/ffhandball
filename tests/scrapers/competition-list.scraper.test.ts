@@ -59,3 +59,39 @@ describe("parseStructures", () => {
     expect(parseStructures(html)).toEqual([]);
   });
 });
+
+describe("parseCompetitionList — regional", () => {
+  it("returns [] competitions but non-empty structures on /regional/ root", () => {
+    const html = fixture("ffhandball-competitions-regional.html");
+    expect(
+      parseCompetitionList(html, "regional", "https://www.ffhandball.fr/competitions/saison-2025-2026-21/regional/", "2025-2026", "21"),
+    ).toEqual([]);
+  });
+
+  it("extracts competitions on a per-structure regional page", () => {
+    const html = fixture("ffhandball-competitions-ligue-X.html");
+    const list = parseCompetitionList(html, "regional", "https://x/", "2025-2026", "21");
+    expect(list.length).toBeGreaterThan(0);
+    expect(list.every((c) => c.niveau === "regional")).toBe(true);
+  });
+});
+
+describe("parseStructures — regional", () => {
+  it("extracts the 19 ligues from /regional/", () => {
+    const html = fixture("ffhandball-competitions-regional.html");
+    const structures = parseStructures(html);
+    expect(structures.length).toBeGreaterThanOrEqual(15);
+    expect(structures.length).toBeLessThanOrEqual(25);
+    const ara = structures.find((s) => s.libelle.toUpperCase().includes("AUVERGNE"));
+    expect(ara).toBeDefined();
+    expect(ara!.ext_structure_id).toMatch(/^\d+$/);
+  });
+});
+
+describe("parseStructures — departemental", () => {
+  it("extracts ~100 comités from /departemental/", () => {
+    const html = fixture("ffhandball-competitions-departemental.html");
+    const structures = parseStructures(html);
+    expect(structures.length).toBeGreaterThanOrEqual(50);
+  });
+});
