@@ -310,3 +310,91 @@ sont pas touchés.
 - 14 équipes / compétition Pro (LBE) ; 8-12 équipes / poule N3 ; ~5 000-10 000 équipes uniques attendues sur les 3 niveaux
 - Les warnings `club_id non résolu` sont volumineux mais attendus (un par équipe par run)
 - Le fallback `equipe_options` ne couvre qu'**une poule à la fois** sur une compétition multi-poules — si `calendar-button` venait à disparaître, prévoir un fetch poule-par-poule (URL avec `?ext_poule_id=...`)
+
+## Scraper les matchs (rencontres)
+
+Cette passe alimente `core.matchs` à partir du composant `competitions---rencontre-list`
+exposé sur chaque page poule de `ffhandball.fr`. Lit `core.poules` (JOIN phases JOIN
+competitions) pour itérer.
+
+### Scrape
+
+```bash
+# Dev — 5 poules nationales, journée courante
+npm run scrape -- --entity=matchs --saison=2025-2026 --level=national --limit=5
+
+# Journée courante 3 niveaux (~1500-3000 req, ~1h)
+npm run scrape -- --entity=matchs --saison=2025-2026
+
+# Toutes journées nationales (~1300-2600 req, ~30-65 min)
+npm run scrape -- --entity=matchs --saison=2025-2026 --level=national --journees=all
+
+# Run complet 3 niveaux toutes journées (~40-80k req, 17-33h sur plusieurs nuits)
+npm run scrape -- --entity=matchs --saison=2025-2026 --journees=all
+```
+
+**Modes journées :**
+- `--journees=courante` (défaut) : 1 requête par poule, journée actuelle uniquement. Cible : mise à jour quotidienne des scores.
+- `--journees=all` : itération sur toutes les journées (typiquement 26 par poule en championnat régulier). Cible : initialisation complète + rattrapage rétrospectif.
+
+### ETL
+
+```bash
+npm run etl -- --entity=matchs --saison=2025-2026
+```
+
+**Ordre obligatoire global** : `competitions → phases → poules → equipes → engagements → matchs`.
+
+### Suivre la couverture
+
+```sql
+-- Comptes par statut
+SELECT statut, count(*) FROM core.matchs GROUP BY statut;
+
+-- Matchs par niveau (via poule → phase → compétition)
+SELECT c.niveau, count(m.*) AS nb_matchs, count(m.*) FILTER (WHERE m.statut='joue') AS joues
+  FROM core.matchs m
+  JOIN core.poules po       ON po.id = m.poule_id
+  JOIN core.phases ph       ON ph.id = po.phase_id
+  JOIN core.competitions c  ON c.id = ph.competition_id
+  GROUP BY c.niveau
+  ORDER BY c.niveau;
+
+-- Matchs sans equipement_id (couverture sources salle)
+SELECT count(*) FROM core.matchs WHERE equipement_id IS NULL;
+
+-- Top 20 equipement_id par fréquence (signal future feature résolution salle)
+SELECT equipement_id, count(*) FROM core.matchs
+  WHERE equipement_id IS NOT NULL
+  GROUP BY equipement_id ORDER BY count(*) DESC LIMIT 20;
+
+-- Warnings ETL matchs
+SELECT message, count(*) FROM core.etl_warnings
+  WHERE entity='matchs' AND etl_run_id = (SELECT max(id) FROM core.etl_runs WHERE entity='matchs')
+  GROUP BY message ORDER BY count(*) DESC;
+
+-- Couverture journées : nombre de journées scrapées par poule
+SELECT po.id_ffhb, count(DISTINCT m.journee) AS journees_scrapees
+  FROM core.poules po
+  LEFT JOIN core.matchs m ON m.poule_id = po.id
+  GROUP BY po.id_ffhb
+  ORDER BY journees_scrapees DESC NULLS LAST
+  LIMIT 20;
+```
+
+### Rejouer après bug
+
+```sql
+TRUNCATE core.matchs CASCADE;
+```
+
+Puis re-lancer `etl --entity=matchs`. `raw.matchs` n'est pas touché.
+
+### Notes opérationnelles
+
+- Mode `--journees=all` 3 niveaux : **prévoir en nocturne sur plusieurs nuits** (17-33h à 1.5s/req)
+- `core.matchs.salle_id` reste **NULL** pour cette feature. `equipement_id` est stocké pour permettre une future résolution
+- Statuts `reporte`/`annule`/`forfait` **ne sont pas détectables** depuis cette source. Tous les matchs sont en `a_jouer` ou `joue`
+- Les arbitres (`arbitre1_id`, `arbitre2_id`, etc.) sont stockés dans `raw.matchs.payload` — une future feature alimentera `core.arbitres` + `core.match_officiels` sans re-scrape
+- En re-scrape (mise à jour quotidienne des scores), un match qui passe de `a_jouer → joue` met à jour `updated_at`
+- `--limit=N` limite le **nombre de poules** scrapées (pas le nombre de matchs)
