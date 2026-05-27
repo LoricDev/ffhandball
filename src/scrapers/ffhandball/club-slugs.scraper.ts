@@ -25,7 +25,10 @@ export function parseClubSlugs(html: string): string[] {
   }
 
   const geojson = (data as { geojson?: unknown }).geojson;
-  const features = (geojson as { features?: unknown }).features;
+  const features =
+    geojson && typeof geojson === "object"
+      ? (geojson as { features?: unknown }).features
+      : undefined;
   if (!Array.isArray(features)) return [];
 
   const slugRe = /^https?:\/\/monclub\.ffhandball\.fr\/clubs\/([a-z0-9-]+)\/?$/;

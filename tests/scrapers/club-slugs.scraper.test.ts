@@ -26,4 +26,14 @@ describe("parseClubSlugs", () => {
   it("returns empty array when HTML has no slugs blob", () => {
     expect(parseClubSlugs("<html><body>nothing</body></html>")).toEqual([]);
   });
+
+  it("returns empty array when the attributes JSON has no geojson key", () => {
+    const html = `<smartfire-component name='home-hero' attributes='{"foo":"bar"}'></smartfire-component>`;
+    expect(parseClubSlugs(html)).toEqual([]);
+  });
+
+  it("returns empty array when geojson is null", () => {
+    const html = `<smartfire-component name='home-hero' attributes='{"geojson":null}'></smartfire-component>`;
+    expect(parseClubSlugs(html)).toEqual([]);
+  });
 });
