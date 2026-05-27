@@ -3,6 +3,7 @@ import { logger } from "@/lib/logger.js";
 import { closePool } from "@/db/client.js";
 import { canonicalizeSaison } from "@/etl/shared/parse-saison.js";
 import { runClubsEtl } from "@/etl/clubs.etl.js";
+import { runSallesEtl } from "@/etl/salles.etl.js";
 
 interface CliArgs {
   entity: string;
@@ -23,10 +24,14 @@ function parseCliArgs(): CliArgs {
 
 async function main(): Promise<void> {
   const args = parseCliArgs();
-  if (args.entity !== "clubs") {
-    throw new Error(`unknown entity: ${args.entity} (only 'clubs' implemented in pilot)`);
+  let report;
+  if (args.entity === "clubs") {
+    report = await runClubsEtl(args.saison);
+  } else if (args.entity === "salles") {
+    report = await runSallesEtl(args.saison);
+  } else {
+    throw new Error(`unknown entity: ${args.entity}`);
   }
-  const report = await runClubsEtl(args.saison);
   logger.info(report, "etl finished");
 }
 
