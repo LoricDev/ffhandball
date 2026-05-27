@@ -1,7 +1,7 @@
 import { parseArgs } from "node:util";
 import * as cheerio from "cheerio";
 import { logger } from "@/lib/logger.js";
-import { closePool } from "@/db/client.js";
+import { closePool, query } from "@/db/client.js";
 import { fetchHtml } from "@/scrapers/shared/http-client.js";
 import { startScrapeRun } from "@/scrapers/shared/scrape-run.js";
 import { insertRaw } from "@/scrapers/shared/raw-insert.js";
@@ -15,6 +15,7 @@ import {
   slugifyLibelle,
 } from "@/scrapers/ffhandball/competition-list.scraper.js";
 import { parseCompetitionDetail } from "@/scrapers/ffhandball/competition-detail.scraper.js";
+import { parseRencontreList } from "@/scrapers/ffhandball/rencontre-list.scraper.js";
 
 interface CliArgs {
   entity: string;
@@ -23,6 +24,7 @@ interface CliArgs {
   limit?: number;
   slug?: string;
   level?: "national" | "regional" | "departemental";
+  journees?: "all" | "courante";
 }
 
 function parseCliArgs(): CliArgs {
@@ -34,6 +36,7 @@ function parseCliArgs(): CliArgs {
       limit: { type: "string" },
       slug: { type: "string" },
       level: { type: "string" },
+      journees: { type: "string" },
     },
   });
   if (!values.entity) throw new Error("--entity required");
@@ -57,6 +60,14 @@ function parseCliArgs(): CliArgs {
     level = values.level as "national" | "regional" | "departemental";
   }
 
+  let journees: "all" | "courante" | undefined;
+  if (values.journees !== undefined) {
+    if (values.journees !== "all" && values.journees !== "courante") {
+      throw new Error(`Invalid --journees value: ${values.journees}. Use 'all' or 'courante'.`);
+    }
+    journees = values.journees as "all" | "courante";
+  }
+
   return {
     entity: values.entity,
     saison: canonicalizeSaison(values.saison),
@@ -64,6 +75,7 @@ function parseCliArgs(): CliArgs {
     limit,
     slug: values.slug,
     level,
+    journees,
   };
 }
 
@@ -386,6 +398,126 @@ async function scrapeCompetitions(
   }
 }
 
+async function scrapeMatchs(
+  saison: string,
+  opts: {
+    level?: "national" | "regional" | "departemental";
+    journees?: "all" | "courante";
+    limit?: number;
+  },
+): Promise<void> {
+  const run = await startScrapeRun({
+    source_site: "ffhandball.fr",
+    scraper_name: "matchs",
+    saison,
+  });
+  logger.info({ run_id: run.id, ...opts }, "starting matchs scrape");
+
+  try {
+    // 1. SELECT poules from core (with their competition's detail_url + niveau)
+    const poulesRes = await query<{
+      ext_poule_id: string;
+      ext_competition_id: string;
+      niveau: string;
+      detail_url: string;
+    }>(
+      `SELECT po.id_ffhb AS ext_poule_id,
+              c.id_ffhb  AS ext_competition_id,
+              c.niveau,
+              c.detail_url
+         FROM core.poules po
+         JOIN core.phases ph       ON ph.id = po.phase_id
+         JOIN core.competitions c  ON c.id = ph.competition_id
+        WHERE po.saison_code = $1
+          AND ($2::text IS NULL OR c.niveau = $2)
+          AND c.detail_url IS NOT NULL
+        ORDER BY c.niveau, c.id_ffhb, po.id_ffhb`,
+      [saison, opts.level ?? null],
+    );
+
+    let poules = poulesRes.rows;
+    if (opts.limit !== undefined) poules = poules.slice(0, opts.limit);
+    logger.info({ count: poules.length }, "poules to process");
+
+    let totalInserted = 0;
+    let pouleSkipped = 0;
+    const mode = opts.journees ?? "courante";
+
+    for (const po of poules) {
+      const baseUrl = `${po.detail_url}poule-${po.ext_poule_id}/`;
+
+      // First fetch : journée courante (no query param)
+      const res = await fetchHtml(baseUrl);
+      await run.incrementPages(1);
+      if (res.status >= 400) {
+        logger.warn({ url: baseUrl, status: res.status }, "poule page failed");
+        pouleSkipped++;
+        continue;
+      }
+      const parsed = parseRencontreList(res.body, baseUrl, po.ext_poule_id);
+      if (!parsed) {
+        logger.warn({ url: baseUrl }, "parseRencontreList returned null");
+        pouleSkipped++;
+        continue;
+      }
+
+      const journeeAlreadyFetched = parsed.matchs[0]?.journee;
+      for (const m of parsed.matchs) {
+        await insertRaw("matchs", {
+          scrape_run_id: run.id,
+          source_url: m.source_url,
+          source_site: "ffhandball.fr",
+          natural_key: m.ext_rencontre_id,
+          payload: m,
+          saison,
+          http_status: res.status,
+        });
+        totalInserted++;
+      }
+
+      // If --journees=all, iterate over remaining journées
+      if (mode === "all" && parsed.journees_disponibles.length > 0) {
+        const remaining = parsed.journees_disponibles.filter(
+          (j) => j !== journeeAlreadyFetched,
+        );
+        for (const j of remaining) {
+          const jUrl = `${baseUrl}?numero_journee=${j}`;
+          const jRes = await fetchHtml(jUrl);
+          await run.incrementPages(1);
+          if (jRes.status >= 400) {
+            logger.warn({ url: jUrl, status: jRes.status }, "journée page failed");
+            continue;
+          }
+          const jParsed = parseRencontreList(jRes.body, jUrl, po.ext_poule_id);
+          if (!jParsed) continue;
+          for (const m of jParsed.matchs) {
+            await insertRaw("matchs", {
+              scrape_run_id: run.id,
+              source_url: m.source_url,
+              source_site: "ffhandball.fr",
+              natural_key: m.ext_rencontre_id,
+              payload: m,
+              saison,
+              http_status: jRes.status,
+            });
+            totalInserted++;
+          }
+        }
+      }
+    }
+
+    logger.info(
+      { totalInserted, pouleSkipped, mode },
+      "matchs scrape done",
+    );
+    await run.finishSuccess();
+  } catch (err) {
+    logger.error({ err }, "matchs scrape failed");
+    await run.finishFailure(err);
+    throw err;
+  }
+}
+
 async function main(): Promise<void> {
   const args = parseCliArgs();
   if (args.entity === "clubs") {
@@ -396,6 +528,12 @@ async function main(): Promise<void> {
   } else if (args.entity === "competitions") {
     await scrapeCompetitions(args.saison, {
       level: args.level,
+      limit: args.limit,
+    });
+  } else if (args.entity === "matchs") {
+    await scrapeMatchs(args.saison, {
+      level: args.level as "national" | "regional" | "departemental" | undefined,
+      journees: args.journees as "all" | "courante" | undefined,
       limit: args.limit,
     });
   } else {
