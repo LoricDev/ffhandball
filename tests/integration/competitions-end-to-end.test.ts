@@ -38,6 +38,8 @@ async function startRun(): Promise<string> {
 describe("competitions end-to-end", () => {
   beforeEach(async () => {
     await query(`TRUNCATE core.poules, core.phases, core.competitions, core.etl_runs, core.etl_warnings, core.etl_rejets RESTART IDENTITY CASCADE`);
+    await query(`DELETE FROM raw.engagements`);
+    await query(`DELETE FROM raw.equipes`);
     await query(`DELETE FROM raw.competitions; DELETE FROM raw.phases; DELETE FROM raw.poules;`);
     await query(`DELETE FROM raw.scrape_runs WHERE scraper_name='competitions'`);
     await setup();

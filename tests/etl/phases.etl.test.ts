@@ -39,6 +39,8 @@ async function insertRawPhase(payload: object, naturalKey: string): Promise<void
 describe("runPhasesEtl", () => {
   beforeEach(async () => {
     await query(`TRUNCATE core.phases, core.competitions, core.etl_runs, core.etl_warnings RESTART IDENTITY CASCADE`);
+    await query(`DELETE FROM raw.engagements`);
+    await query(`DELETE FROM raw.equipes`);
     await query(`DELETE FROM raw.poules`);
     await query(`DELETE FROM raw.phases`);
     await query(`DELETE FROM raw.competitions`);
