@@ -308,6 +308,8 @@ async function scrapeCompetitions(
 
     let insertedPhases = 0;
     let insertedPoules = 0;
+    let insertedEquipes = 0;
+    let insertedEngagements = 0;
     let parseFailed = 0;
     for (const { ext_competition_id, detail_url } of competitions) {
       const res = await fetchHtml(detail_url);
@@ -346,10 +348,34 @@ async function scrapeCompetitions(
         });
         insertedPoules++;
       }
+      for (const eq of parsed.equipes) {
+        await insertRaw("equipes", {
+          scrape_run_id: run.id,
+          source_url: eq.source_url,
+          source_site: "ffhandball.fr",
+          natural_key: eq.ext_equipe_id,
+          payload: eq,
+          saison,
+          http_status: res.status,
+        });
+        insertedEquipes++;
+      }
+      for (const en of parsed.engagements) {
+        await insertRaw("engagements", {
+          scrape_run_id: run.id,
+          source_url: en.source_url,
+          source_site: "ffhandball.fr",
+          natural_key: `${en.ext_equipe_id}-${en.ext_poule_id}`,
+          payload: en,
+          saison,
+          http_status: res.status,
+        });
+        insertedEngagements++;
+      }
     }
 
     logger.info(
-      { totalCompetitions, insertedPhases, insertedPoules, parseFailed },
+      { totalCompetitions, insertedPhases, insertedPoules, insertedEquipes, insertedEngagements, parseFailed },
       "competitions scrape done",
     );
     await run.finishSuccess();
