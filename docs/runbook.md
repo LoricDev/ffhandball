@@ -155,3 +155,81 @@ pas besoin de rescraper.
   colonnes dédiées). À faire dans une migration future si on en a besoin côté API
 - Les coordonnées GPS des clubs (`latitude` / `longitude`) sont, elles, propagées
   vers `core.clubs`
+
+## Scraper les compétitions (passe `competitions`)
+
+Cette passe est la source unique pour les entités `competitions`, `phases`, `poules`.
+Elle visite les pages liste de `ffhandball.fr/competitions/` aux 3 niveaux
+(national, régional, départemental) puis chaque fiche détail de compétition
+pour en extraire les phases et poules.
+
+### Scrape
+
+```bash
+# Test dev : un seul niveau, peu de détails
+npm run scrape -- --entity=competitions --saison=2025-2026 --level=national --limit=5
+
+# Run complet (les 3 niveaux, ~500-700 compétitions, ~25-35 min)
+npm run scrape -- --entity=competitions --saison=2025-2026
+```
+
+Le scraper :
+1. Fetch `https://www.ffhandball.fr/competitions/` pour résoudre `ext_saison_id`
+2. Pour chaque niveau dans (national, regional, departemental) :
+   - Fetch la page liste du niveau (composant `competitions---competition-main-menu`)
+   - National : insère directement les ~20 compétitions
+   - Régional/dép : itère sur `structures[]` (ligues/comités), fetch chaque page per-structure, insère les compétitions
+3. Pour chaque compétition insérée, fetch la fiche détail (composant `competitions---poule-selector`) et insère `phases` + `poules`
+
+### ETL dans l'ordre
+
+```bash
+npm run etl -- --entity=competitions --saison=2025-2026
+npm run etl -- --entity=phases       --saison=2025-2026
+npm run etl -- --entity=poules       --saison=2025-2026
+```
+
+**Ordre obligatoire :** `competitions` → `phases` → `poules`. Lancer `phases` avant `competitions` génère un warning par phase (FK competition non résolue) et skippe la ligne. Un re-run de `phases` après `competitions` résout les FKs manquantes (les anciens warnings restent en base mais l'état final est correct).
+
+### Suivre la couverture
+
+```sql
+-- Compétitions par niveau et genre
+SELECT niveau, sexe, count(*) FROM core.competitions GROUP BY 1,2 ORDER BY 1,2;
+
+-- Compétitions sans phases (anomalie)
+SELECT c.id_ffhb, c.nom
+  FROM core.competitions c
+  LEFT JOIN core.phases p ON p.competition_id = c.id
+  WHERE p.id IS NULL;
+
+-- Phases sans poules
+SELECT p.id_ffhb, p.nom
+  FROM core.phases p
+  LEFT JOIN core.poules po ON po.phase_id = p.id
+  WHERE po.id IS NULL;
+
+-- Warnings du dernier run ETL
+SELECT entity, natural_key, message
+  FROM core.etl_warnings
+  WHERE etl_run_id = (SELECT max(id) FROM core.etl_runs);
+```
+
+### Rejouer après bug
+
+```sql
+TRUNCATE core.poules CASCADE;
+TRUNCATE core.phases CASCADE;
+TRUNCATE core.competitions CASCADE;
+```
+
+Puis ré-exécuter les 3 ETL dans l'ordre. `raw.competitions`, `raw.phases`, `raw.poules` ne sont pas touchés — pas besoin de rescraper.
+
+### Notes opérationnelles
+
+- User-Agent identifiable (`SCRAPE_USER_AGENT`) et rate-limit 1.5 s/req (`SCRAPE_RATE_LIMIT_MS`)
+- Volumétrie : ~500-700 compétitions, ~600-900 phases, ~1500-3000 poules
+- ~25-35 min en nocturne pour un run complet
+- `categorie_age` reste NULL pour l'instant (pas exposé explicitement par la source)
+- `--limit=N` limite uniquement la passe B (détails) ; toutes les listes sont scrapées
+- Si le pattern URL per-structure change côté ffhandball.fr, ajuster la construction d'URL dans `scrapeCompetitions()` (`src/cli/scrape.ts`)
