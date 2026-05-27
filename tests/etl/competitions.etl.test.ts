@@ -31,6 +31,8 @@ async function insertRawCompetition(payload: object, naturalKey: string): Promis
 describe("runCompetitionsEtl", () => {
   beforeEach(async () => {
     await query(`TRUNCATE core.competitions, core.etl_runs, core.etl_rejets, core.etl_warnings RESTART IDENTITY CASCADE`);
+    await query(`DELETE FROM raw.engagements`);
+    await query(`DELETE FROM raw.equipes`);
     await query(`DELETE FROM raw.competitions`);
     await query(`DELETE FROM raw.phases`);
     await query(`DELETE FROM raw.poules`);
