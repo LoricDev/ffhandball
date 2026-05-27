@@ -104,3 +104,84 @@ describe("parseCompetitionDetail — équipes via calendar-button", () => {
     expect(ids).toEqual([...new Set(ids)]);
   });
 });
+
+describe("parseCompetitionDetail — fallback equipe_options", () => {
+  it("falls back to equipe_options when calendar-button is absent", () => {
+    // HTML synthétique : poule-selector complet avec equipe_options, PAS de calendar-button
+    const html = `<smartfire-component name='competitions---poule-selector' attributes='${JSON.stringify(
+      {
+        phases: [{ id: "P1", ext_phaseId: "EP1", libelle: "phase A" }],
+        poules: [
+          { id: "PO1", ext_pouleId: "EPO1", phaseId: "P1", libelle: "Poule 1" },
+        ],
+        equipe_options: [
+          {
+            id: "1",
+            ext_equipeId: "EQ1",
+            pouleId: "PO1",
+            structureId: "532",
+            libelle: "CLUB A",
+            logoActif: "1",
+          },
+          {
+            id: "2",
+            ext_equipeId: "EQ2",
+            pouleId: "PO1",
+            structureId: "533",
+            libelle: "CLUB B",
+            logoActif: "1",
+          },
+        ],
+      },
+    ).replace(/'/g, "&apos;")}'></smartfire-component>`;
+
+    const r = parseCompetitionDetail(html, "https://x/", "C1");
+    expect(r).not.toBeNull();
+    expect(r!.equipes.length).toBe(2);
+    expect(r!.engagements.length).toBe(2);
+    // Champs manquants dans le fallback : ext_structure_id et logo
+    expect(r!.equipes.every((e) => e.ext_structure_id === undefined)).toBe(true);
+    expect(r!.equipes.every((e) => e.logo === undefined)).toBe(true);
+  });
+
+  it("returns empty equipes/engagements when both calendar-button and equipe_options are absent", () => {
+    const html = `<smartfire-component name='competitions---poule-selector' attributes='${JSON.stringify(
+      {
+        phases: [{ id: "P1", ext_phaseId: "EP1", libelle: "phase" }],
+        poules: [
+          { id: "PO1", ext_pouleId: "EPO1", phaseId: "P1", libelle: "Poule" },
+        ],
+        // no equipe_options
+      },
+    ).replace(/'/g, "&apos;")}'></smartfire-component>`;
+
+    const r = parseCompetitionDetail(html, "https://x/", "C1");
+    expect(r).not.toBeNull();
+    expect(r!.equipes).toEqual([]);
+    expect(r!.engagements).toEqual([]);
+    // phases/poules toujours présents
+    expect(r!.phases.length).toBe(1);
+    expect(r!.poules.length).toBe(1);
+  });
+
+  it("skips équipes whose pouleId is orphan (not in poules[])", () => {
+    const html = `<smartfire-component name='competitions---poule-selector' attributes='${JSON.stringify(
+      {
+        phases: [{ id: "P1", ext_phaseId: "EP1", libelle: "phase" }],
+        poules: [
+          { id: "PO1", ext_pouleId: "EPO1", phaseId: "P1", libelle: "Poule" },
+        ],
+        equipe_options: [
+          { id: "1", ext_equipeId: "EQ_OK", pouleId: "PO1", libelle: "ok" },
+          { id: "2", ext_equipeId: "EQ_ORPH", pouleId: "GHOST_POULE", libelle: "orphan" },
+        ],
+      },
+    ).replace(/'/g, "&apos;")}'></smartfire-component>`;
+
+    const r = parseCompetitionDetail(html, "https://x/", "C1");
+    expect(r).not.toBeNull();
+    expect(r!.equipes.length).toBe(1);
+    expect(r!.equipes[0]!.ext_equipe_id).toBe("EQ_OK");
+    expect(r!.engagements.length).toBe(1);
+  });
+});
