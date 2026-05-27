@@ -148,3 +148,10 @@ pas besoin de rescraper.
 - Le rate-limit nominal est 1.5 s par requête (cf. `SCRAPE_RATE_LIMIT_MS`)
 - Volumétrie attendue : ~2326 fiches détail → ~60 minutes en nocturne
 - ~3/8 des clubs n'ont pas de salle déclarée (gyms_club = `false`) — c'est normal
+- `--limit=N` retourne toujours les N premiers slugs **par ordre alphabétique** — c'est
+  pour les tests dev, pas pour les exécutions partielles "rotatives"
+- Les coordonnées GPS (`latitude` / `longitude`) des salles sont **conservées dans
+  `raw.salles.payload`** mais ne sont **pas propagées vers `core.salles`** (pas de
+  colonnes dédiées). À faire dans une migration future si on en a besoin côté API
+- Les coordonnées GPS des clubs (`latitude` / `longitude`) sont, elles, propagées
+  vers `core.clubs`
