@@ -62,3 +62,45 @@ describe("parseCompetitionDetail", () => {
     expect(r!.poules[0]!.ext_poule_id).toBe("EPO1");
   });
 });
+
+describe("parseCompetitionDetail — équipes via calendar-button", () => {
+  it("extracts 14 équipes + 14 engagements from mono-poule LBE", () => {
+    const html = fixture("ffhandball-competition-detail-mono-poule.html");
+    const r = parseCompetitionDetail(html, SOURCE_URL_MONO, "28227");
+    expect(r).not.toBeNull();
+    expect(r!.equipes.length).toBe(14);
+    expect(r!.engagements.length).toBe(14);
+
+    // Chaque équipe a ext_structure_id et logo (via calendar-button)
+    expect(r!.equipes.every((e) => e.ext_structure_id !== undefined)).toBe(true);
+    expect(r!.equipes.every((e) => e.logo !== undefined)).toBe(true);
+
+    // Tous les engagements pointent vers la même poule (mono-poule)
+    const pouleIds = new Set(r!.engagements.map((en) => en.ext_poule_id));
+    expect(pouleIds.size).toBe(1);
+  });
+
+  it("extracts 96 équipes + 96 engagements from multi-poules N3M, mapped to 8 distinct poules", () => {
+    const html = fixture("ffhandball-competition-detail-multi-poules.html");
+    const r = parseCompetitionDetail(html, "https://x/", "9999");
+    expect(r).not.toBeNull();
+    expect(r!.equipes.length).toBe(96);
+    expect(r!.engagements.length).toBe(96);
+
+    const pouleIds = new Set(r!.engagements.map((en) => en.ext_poule_id));
+    expect(pouleIds.size).toBe(8);
+
+    // Chaque ext_poule_id présent dans engagements doit exister dans poules
+    const knownPouleIds = new Set(r!.poules.map((p) => p.ext_poule_id));
+    for (const pid of pouleIds) {
+      expect(knownPouleIds.has(pid)).toBe(true);
+    }
+  });
+
+  it("deduplicates équipes by ext_equipe_id (same team in multiple appearances)", () => {
+    const html = fixture("ffhandball-competition-detail-mono-poule.html");
+    const r = parseCompetitionDetail(html, SOURCE_URL_MONO, "28227");
+    const ids = r!.equipes.map((e) => e.ext_equipe_id);
+    expect(ids).toEqual([...new Set(ids)]);
+  });
+});
