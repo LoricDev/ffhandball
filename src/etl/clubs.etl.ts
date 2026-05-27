@@ -21,6 +21,17 @@ interface EtlReport {
   warnings_count: number;
 }
 
+function computeEffectif(p: RawClubPayload): number | null {
+  const parts = [
+    p.nb_licence_senior_h,
+    p.nb_licence_senior_f,
+    p.nb_licence_jeunes_h,
+    p.nb_licence_jeunes_f,
+  ].filter((n): n is number => typeof n === "number");
+  if (parts.length === 0) return null;
+  return parts.reduce((a, b) => a + b, 0);
+}
+
 export async function runClubsEtl(saison: string): Promise<EtlReport> {
   const runRes = await query<{ id: number }>(
     `INSERT INTO core.etl_runs (entity, saison) VALUES ('clubs', $1) RETURNING id`,
@@ -77,26 +88,120 @@ export async function runClubsEtl(saison: string): Promise<EtlReport> {
       }
       const ligue_id = await resolveLigueIdFromDept(dept_id);
 
+      let salle_principale_id: number | null = null;
+      if (p.salle_principale_id_ffhb) {
+        const sRes = await query<{ id: number }>(
+          `SELECT id FROM core.salles WHERE id_ffhb = $1 LIMIT 1`,
+          [p.salle_principale_id_ffhb],
+        );
+        salle_principale_id = sRes.rows[0]?.id ?? null;
+        if (salle_principale_id === null) {
+          await query(
+            `INSERT INTO core.etl_warnings (etl_run_id, entity, natural_key, message)
+             VALUES ($1, 'clubs', $2, $3)`,
+            [
+              etl_run_id,
+              p.id_ffhb,
+              `salle ${p.salle_principale_id_ffhb} introuvable, FK non résolue`,
+            ],
+          );
+          report.warnings_count++;
+        }
+      }
+
       const upsert = await query<{ inserted: boolean; updated: boolean }>(
-        `INSERT INTO core.clubs (id_ffhb, nom, ville, departement_id, ligue_id, last_seen_at)
-         VALUES ($1,$2,$3,$4,$5, now())
+        `INSERT INTO core.clubs (
+           id_ffhb, nom, ville, departement_id, ligue_id, salle_principale_id,
+           slug, telephone, email, site_web, adresse_correspondance,
+           latitude, longitude, register_link, logo_club,
+           nb_licence_senior_h, nb_licence_senior_f, nb_licence_jeunes_h, nb_licence_jeunes_f,
+           effectif_estime,
+           last_seen_at
+         )
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20, now())
          ON CONFLICT (id_ffhb) DO UPDATE
          SET nom = EXCLUDED.nom,
              ville = EXCLUDED.ville,
              departement_id = EXCLUDED.departement_id,
              ligue_id = EXCLUDED.ligue_id,
+             salle_principale_id = COALESCE(EXCLUDED.salle_principale_id, core.clubs.salle_principale_id),
+             slug = COALESCE(EXCLUDED.slug, core.clubs.slug),
+             telephone = COALESCE(EXCLUDED.telephone, core.clubs.telephone),
+             email = COALESCE(EXCLUDED.email, core.clubs.email),
+             site_web = COALESCE(EXCLUDED.site_web, core.clubs.site_web),
+             adresse_correspondance = COALESCE(EXCLUDED.adresse_correspondance, core.clubs.adresse_correspondance),
+             latitude = COALESCE(EXCLUDED.latitude, core.clubs.latitude),
+             longitude = COALESCE(EXCLUDED.longitude, core.clubs.longitude),
+             register_link = COALESCE(EXCLUDED.register_link, core.clubs.register_link),
+             logo_club = COALESCE(EXCLUDED.logo_club, core.clubs.logo_club),
+             nb_licence_senior_h = COALESCE(EXCLUDED.nb_licence_senior_h, core.clubs.nb_licence_senior_h),
+             nb_licence_senior_f = COALESCE(EXCLUDED.nb_licence_senior_f, core.clubs.nb_licence_senior_f),
+             nb_licence_jeunes_h = COALESCE(EXCLUDED.nb_licence_jeunes_h, core.clubs.nb_licence_jeunes_h),
+             nb_licence_jeunes_f = COALESCE(EXCLUDED.nb_licence_jeunes_f, core.clubs.nb_licence_jeunes_f),
+             effectif_estime = COALESCE(EXCLUDED.effectif_estime, core.clubs.effectif_estime),
              last_seen_at = now(),
              updated_at = CASE
                WHEN core.clubs.nom IS DISTINCT FROM EXCLUDED.nom
                  OR core.clubs.ville IS DISTINCT FROM EXCLUDED.ville
                  OR core.clubs.departement_id IS DISTINCT FROM EXCLUDED.departement_id
                  OR core.clubs.ligue_id IS DISTINCT FROM EXCLUDED.ligue_id
+                 OR (EXCLUDED.salle_principale_id IS NOT NULL
+                     AND core.clubs.salle_principale_id IS DISTINCT FROM EXCLUDED.salle_principale_id)
+                 OR (EXCLUDED.slug IS NOT NULL
+                     AND core.clubs.slug IS DISTINCT FROM EXCLUDED.slug)
+                 OR (EXCLUDED.telephone IS NOT NULL
+                     AND core.clubs.telephone IS DISTINCT FROM EXCLUDED.telephone)
+                 OR (EXCLUDED.email IS NOT NULL
+                     AND core.clubs.email IS DISTINCT FROM EXCLUDED.email)
+                 OR (EXCLUDED.site_web IS NOT NULL
+                     AND core.clubs.site_web IS DISTINCT FROM EXCLUDED.site_web)
+                 OR (EXCLUDED.adresse_correspondance IS NOT NULL
+                     AND core.clubs.adresse_correspondance IS DISTINCT FROM EXCLUDED.adresse_correspondance)
+                 OR (EXCLUDED.latitude IS NOT NULL
+                     AND core.clubs.latitude IS DISTINCT FROM EXCLUDED.latitude)
+                 OR (EXCLUDED.longitude IS NOT NULL
+                     AND core.clubs.longitude IS DISTINCT FROM EXCLUDED.longitude)
+                 OR (EXCLUDED.register_link IS NOT NULL
+                     AND core.clubs.register_link IS DISTINCT FROM EXCLUDED.register_link)
+                 OR (EXCLUDED.logo_club IS NOT NULL
+                     AND core.clubs.logo_club IS DISTINCT FROM EXCLUDED.logo_club)
+                 OR (EXCLUDED.nb_licence_senior_h IS NOT NULL
+                     AND core.clubs.nb_licence_senior_h IS DISTINCT FROM EXCLUDED.nb_licence_senior_h)
+                 OR (EXCLUDED.nb_licence_senior_f IS NOT NULL
+                     AND core.clubs.nb_licence_senior_f IS DISTINCT FROM EXCLUDED.nb_licence_senior_f)
+                 OR (EXCLUDED.nb_licence_jeunes_h IS NOT NULL
+                     AND core.clubs.nb_licence_jeunes_h IS DISTINCT FROM EXCLUDED.nb_licence_jeunes_h)
+                 OR (EXCLUDED.nb_licence_jeunes_f IS NOT NULL
+                     AND core.clubs.nb_licence_jeunes_f IS DISTINCT FROM EXCLUDED.nb_licence_jeunes_f)
+                 OR (EXCLUDED.effectif_estime IS NOT NULL
+                     AND core.clubs.effectif_estime IS DISTINCT FROM EXCLUDED.effectif_estime)
                THEN now()
                ELSE core.clubs.updated_at
              END
          RETURNING (xmax = 0) AS inserted,
                    (xmax <> 0 AND updated_at = now()) AS updated`,
-        [p.id_ffhb, nom, ville, dept_id, ligue_id],
+        [
+          p.id_ffhb,
+          nom,
+          ville,
+          dept_id,
+          ligue_id,
+          salle_principale_id,
+          p.slug ?? null,
+          p.telephone ?? null,
+          p.email ?? null,
+          p.site_web ?? null,
+          p.adresse_correspondance ?? null,
+          p.latitude ?? null,
+          p.longitude ?? null,
+          p.register_link ?? null,
+          p.logo_club ?? null,
+          p.nb_licence_senior_h ?? null,
+          p.nb_licence_senior_f ?? null,
+          p.nb_licence_jeunes_h ?? null,
+          p.nb_licence_jeunes_f ?? null,
+          computeEffectif(p),
+        ],
       );
 
       const result = upsert.rows[0]!;
