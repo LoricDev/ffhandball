@@ -1077,7 +1077,9 @@ async function scrapeCompetitions(
       } else {
         const structures = parseStructures(listRes.body);
         for (const s of structures) {
-          const structUrl = `https://www.ffhandball.fr/competitions/saison-${saison}-${extSaisonId}/${niveau}/${slugifyLibelle(s.libelle)}-${s.ext_structure_id}/`;
+          // ⚠️ T1 a découvert que les URLs per-structure nécessitent le préfixe "o-"
+          //    (sinon 404). Pattern : /<niveau>/o-{slug(libelle)}-{ext_structure_id}/
+          const structUrl = `https://www.ffhandball.fr/competitions/saison-${saison}-${extSaisonId}/${niveau}/o-${slugifyLibelle(s.libelle)}-${s.ext_structure_id}/`;
           const structRes = await fetchHtml(structUrl);
           await run.incrementPages(1);
           if (structRes.status >= 400) {
@@ -1166,7 +1168,8 @@ async function scrapeCompetitions(
 
 function extractExtSaisonId(html: string, saisonCode: string): string | null {
   // Le composant `competitions---saison-selector` contient toutes les saisons.
-  // On cherche celle qui matche saisonCode (ex: "2025-2026").
+  // T1 a confirmé que le libellé y est "2025 - 2026" (avec espaces autour du tiret).
+  // On normalise en retirant les espaces pour matcher saisonCode "2025-2026".
   const $ = (require("cheerio") as typeof import("cheerio")).load(html);
   const el = $("smartfire-component[name='competitions---saison-selector']").first();
   const raw = el.attr("attributes");
@@ -1174,11 +1177,9 @@ function extractExtSaisonId(html: string, saisonCode: string): string | null {
   try {
     const data = JSON.parse(raw) as { saisons?: Array<{ libelle?: string; ext_saisonId?: string }> };
     if (!Array.isArray(data.saisons)) return null;
-    const target = saisonCode.replace("-", "/"); // ex: 2025/2026
+    const norm = (s: string): string => s.replace(/\s+/g, "");
     const match = data.saisons.find(
-      (s) =>
-        typeof s.libelle === "string" &&
-        (s.libelle === saisonCode || s.libelle === target || s.libelle.replace("/", "-") === saisonCode),
+      (s) => typeof s.libelle === "string" && norm(s.libelle) === norm(saisonCode),
     );
     return match?.ext_saisonId ?? null;
   } catch {
