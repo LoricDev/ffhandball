@@ -4,6 +4,9 @@ import { closePool } from "@/db/client.js";
 import { canonicalizeSaison } from "@/etl/shared/parse-saison.js";
 import { runClubsEtl } from "@/etl/clubs.etl.js";
 import { runSallesEtl } from "@/etl/salles.etl.js";
+import { runCompetitionsEtl } from "@/etl/competitions.etl.js";
+import { runPhasesEtl } from "@/etl/phases.etl.js";
+import { runPoulesEtl } from "@/etl/poules.etl.js";
 
 interface CliArgs {
   entity: string;
@@ -29,6 +32,12 @@ async function main(): Promise<void> {
     report = await runClubsEtl(args.saison);
   } else if (args.entity === "salles") {
     report = await runSallesEtl(args.saison);
+  } else if (args.entity === "competitions") {
+    report = await runCompetitionsEtl(args.saison);
+  } else if (args.entity === "phases") {
+    report = await runPhasesEtl(args.saison);
+  } else if (args.entity === "poules") {
+    report = await runPoulesEtl(args.saison);
   } else {
     throw new Error(`unknown entity: ${args.entity}`);
   }
