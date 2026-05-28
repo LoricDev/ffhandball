@@ -13,9 +13,23 @@ Pipeline de scraping et de structuration des données du handball français
 | `equipes` + `engagements` | calendar-button des fiches compétition | ~5-10k / ~40k | ✅ |
 | `matchs` | rencontre-list par poule | ~50-200k (--journees=all) | ✅ |
 | `arbitres` + `match_officiels` | dérivés de raw.matchs (sans re-scrape) | ~5-15k / ~100-400k | ✅ |
-| `classements` | competitions---classements (à venir) | — | ⏭ |
-| `stats_joueurs` | competitions---stats-joueurs (national uniquement) | — | ⏭ |
-| `joueurs` + `licences` individuelles | derrière login GestHand | — | ❌ (RGPD) |
+| `classements` | competitions---classements par poule | ~5k lignes/snapshot | ✅ |
+| `stats_joueurs` | competitions---stats-joueurs (national + régional séniors) | ~30-100k lignes | ✅ |
+| `joueurs` (complets) + `licences` | derrière login GestHand | — | ❌ (RGPD) |
+
+## API HTTP
+
+API REST read-only basée sur **Hono 4** avec spec **OpenAPI 3.1** auto-générée et rate-limit IP intégré (60 req/min configurable).
+
+```bash
+npm run api        # → http://localhost:3000
+npm run api:dev    # watch mode (dev)
+open http://localhost:3000/docs   # Swagger UI interactif
+```
+
+Endpoints V1 : `/health`, `/ready`, `/clubs`, `/clubs/:id_ffhb`, `/matchs`, `/matchs/:id`, `/classements`, `/joueurs/:numero_licence`, `/search`, `/openapi.json`.
+
+Détails complets (options, rate-limit, format réponse) : [docs/runbook.md#api-http-publique](docs/runbook.md#api-http-publique).
 
 ## Stack
 
@@ -23,7 +37,8 @@ Pipeline de scraping et de structuration des données du handball français
 - **DB** : PostgreSQL 16 (Docker)
 - **Scraping** : Cheerio (HTML), p-retry (résilience)
 - **Validation** : Zod
-- **Tests** : Vitest (146 tests passants)
+- **API** : Hono 4 + @hono/zod-openapi + @hono/swagger-ui
+- **Tests** : Vitest (~250 tests passants)
 - **Logs** : pino
 
 ## Démarrage rapide
@@ -36,7 +51,7 @@ npm install
 npm run db:up              # Postgres + Adminer
 npm run db:migrate         # 11 migrations
 npm run db:seed            # saisons + ligues + départements
-npm test                   # 146 tests (run en séquentiel pour éviter deadlocks)
+npm test                   # ~250 tests (run en séquentiel pour éviter deadlocks)
 
 # Smoke test : 5 compétitions nationales avec leurs équipes
 npm run scrape -- --entity=competitions --saison=2025-2026 --level=national --limit=5
@@ -168,6 +183,6 @@ Pour ajouter une nouvelle entité :
 
 ## Statut
 
-**13 entités modèle • 11 migrations • 8 scrapers • 10 ETLs • 146 tests passants**
+**13 entités modèle • 17 migrations • 8 scrapers • 10 ETLs • ~250 tests passants • API V1 live**
 
-Pipeline production-ready pour les 6 features livrées. Voir `docs/DEPLOY.md` pour déployer.
+Pipeline production-ready. Voir `docs/DEPLOY.md` pour déployer et `docs/runbook.md` pour toutes les commandes opérationnelles.
