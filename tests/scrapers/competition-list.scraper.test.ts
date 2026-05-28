@@ -74,6 +74,14 @@ describe("parseCompetitionList — regional", () => {
     expect(list.length).toBeGreaterThan(0);
     expect(list.every((c) => c.niveau === "regional")).toBe(true);
   });
+
+  it("extracts afficher_stats_joueurs flag from LBE fixture (national, afficherStatsJoueurs='1' → true)", () => {
+    const html = fixture("ffhandball-competitions-national.html");
+    const list = parseCompetitionList(html, "national", SOURCE_URL, "2025-2026", EXT_SAISON_ID);
+    const lbe = list.find((c) => c.ext_competition_id === "28227");
+    expect(lbe).toBeDefined();
+    expect(lbe!.afficher_stats_joueurs).toBe(true);
+  });
 });
 
 describe("parseStructures — regional", () => {
