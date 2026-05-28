@@ -8,6 +8,11 @@ const envSchema = z.object({
   SCRAPE_RETRY_MAX: z.coerce.number().int().min(0).default(3),
   LOG_LEVEL: z.enum(["trace", "debug", "info", "warn", "error", "fatal"]).default("info"),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+  API_PORT: z.coerce.number().int().default(3000),
+  API_HOST: z.string().default("127.0.0.1"),
+  API_RATE_LIMIT_PER_MIN: z.coerce.number().int().default(60),
+  API_PAGINATION_DEFAULT_LIMIT: z.coerce.number().int().default(20),
+  API_PAGINATION_MAX_LIMIT: z.coerce.number().int().default(100),
 });
 
 export const env = envSchema.parse(process.env);
