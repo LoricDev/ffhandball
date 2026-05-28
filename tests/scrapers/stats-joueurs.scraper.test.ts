@@ -72,4 +72,18 @@ describe("parseStatsJoueurs", () => {
     expect(r.length).toBe(1);
     expect(r[0]!.individu_id).toBe("I1");
   });
+
+  it("extracts ~278 stats from N3F AURA régional fixture", () => {
+    const html = fixture("ffhandball-poule-stats-n3f-ara.html");
+    const SOURCE_REGIONAL = "https://www.ffhandball.fr/competitions/saison-2025-2026-21/regional/nationale-3-feminine-aura-27879/poule-168406/statistiques/";
+    const EXT_POULE_REGIONAL = "168406";
+    const r = parseStatsJoueurs(html, SOURCE_REGIONAL, EXT_POULE_REGIONAL);
+    expect(r.length).toBe(278);
+    expect(r.every((s) => s.ext_poule_id === EXT_POULE_REGIONAL)).toBe(true);
+    for (const s of r) {
+      expect(typeof s.match_count).toBe("number");
+      expect(typeof s.total_buts).toBe("number");
+      expect(typeof s.total_arrets).toBe("number");
+    }
+  });
 });

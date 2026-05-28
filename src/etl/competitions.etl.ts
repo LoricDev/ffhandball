@@ -69,8 +69,8 @@ export async function runCompetitionsEtl(saison: string): Promise<EtlReport> {
 
       const upsert = await query<{ inserted: boolean; updated: boolean }>(
         `INSERT INTO core.competitions
-           (id_ffhb, nom, niveau, sexe, categorie_age, saison_code, code, ext_structure_id, detail_url, last_seen_at)
-         VALUES ($1,$2,$3,$4,NULL,$5,$6,$7,$8, now())
+           (id_ffhb, nom, niveau, sexe, categorie_age, saison_code, code, ext_structure_id, detail_url, afficher_stats_joueurs, last_seen_at)
+         VALUES ($1,$2,$3,$4,NULL,$5,$6,$7,$8,$9, now())
          ON CONFLICT (id_ffhb) DO UPDATE
          SET nom = EXCLUDED.nom,
              niveau = EXCLUDED.niveau,
@@ -79,6 +79,7 @@ export async function runCompetitionsEtl(saison: string): Promise<EtlReport> {
              code = COALESCE(EXCLUDED.code, core.competitions.code),
              ext_structure_id = COALESCE(EXCLUDED.ext_structure_id, core.competitions.ext_structure_id),
              detail_url = COALESCE(EXCLUDED.detail_url, core.competitions.detail_url),
+             afficher_stats_joueurs = COALESCE(EXCLUDED.afficher_stats_joueurs, core.competitions.afficher_stats_joueurs),
              last_seen_at = now(),
              updated_at = CASE
                WHEN core.competitions.nom IS DISTINCT FROM EXCLUDED.nom
@@ -87,6 +88,7 @@ export async function runCompetitionsEtl(saison: string): Promise<EtlReport> {
                  OR (EXCLUDED.code IS NOT NULL AND core.competitions.code IS DISTINCT FROM EXCLUDED.code)
                  OR (EXCLUDED.ext_structure_id IS NOT NULL AND core.competitions.ext_structure_id IS DISTINCT FROM EXCLUDED.ext_structure_id)
                  OR (EXCLUDED.detail_url IS NOT NULL AND core.competitions.detail_url IS DISTINCT FROM EXCLUDED.detail_url)
+                 OR (EXCLUDED.afficher_stats_joueurs IS NOT NULL AND core.competitions.afficher_stats_joueurs IS DISTINCT FROM EXCLUDED.afficher_stats_joueurs)
                THEN now()
                ELSE core.competitions.updated_at
              END
@@ -101,6 +103,7 @@ export async function runCompetitionsEtl(saison: string): Promise<EtlReport> {
           p.code ?? null,
           p.ext_structure_id ?? null,
           p.detail_url,
+          p.afficher_stats_joueurs ?? null,
         ],
       );
 
