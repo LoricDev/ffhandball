@@ -14,6 +14,7 @@ import { runArbitresEtl } from "@/etl/arbitres.etl.js";
 import { runMatchOfficielsEtl } from "@/etl/match_officiels.etl.js";
 import { runClassementsEtl } from "@/etl/classements.etl.js";
 import { runStatsJoueursEtl } from "@/etl/stats-joueurs.etl.js";
+import { runFeuillesMatchEtl } from "@/etl/feuilles-match.etl.js";
 
 interface CliArgs {
   entity: string;
@@ -59,6 +60,8 @@ async function main(): Promise<void> {
     await runClassementsEtl(args.saison);
   } else if (args.entity === "stats-joueurs") {
     await runStatsJoueursEtl(args.saison);
+  } else if (args.entity === "feuilles-match") {
+    await runFeuillesMatchEtl(args.saison);
   } else {
     throw new Error(`unknown entity: ${args.entity}`);
   }
