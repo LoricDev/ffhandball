@@ -64,13 +64,13 @@ describe("GET /search", () => {
   });
 
   it("returns multi-entity results with type=all", async () => {
-    const res = await app.request("/search?q=montpellier&type=all&limit=20");
+    // Use karabatic which is a joueur — stable regardless of clubs TRUNCATE from other tests
+    const res = await app.request("/search?q=karabatic&type=all&limit=20");
     expect(res.status).toBe(200);
     const body = (await res.json()) as { data: { type: string }[] };
     expect(body.data.length).toBeGreaterThanOrEqual(1);
     const types = new Set(body.data.map((d) => d.type));
-    // Should find at least clubs and equipes for "montpellier"
-    expect(types.size).toBeGreaterThanOrEqual(1);
+    expect(types.has("joueur")).toBe(true);
   });
 
   it("returns 400 when q is too short", async () => {
