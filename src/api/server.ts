@@ -3,6 +3,7 @@ import { OpenAPIHono } from "@hono/zod-openapi";
 import { serve } from "@hono/node-server";
 import healthRoutes from "@/api/routes/health.js";
 import clubsRoutes from "@/api/routes/clubs.js";
+import matchsRoutes from "@/api/routes/matchs.js";
 import { env } from "@/config/env.js";
 import { logger } from "@/lib/logger.js";
 import { requestLoggerMiddleware } from "@/api/middleware/request-logger.js";
@@ -19,6 +20,7 @@ export function buildApp(): OpenAPIHono {
 
   app.route("/", healthRoutes);
   app.route("/", clubsRoutes);
+  app.route("/", matchsRoutes);
 
   return app;
 }
