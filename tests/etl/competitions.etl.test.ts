@@ -91,4 +91,27 @@ describe("runCompetitionsEtl", () => {
     const r = await query<{ count: string }>(`SELECT count(*) FROM core.competitions`);
     expect(Number(r.rows[0]!.count)).toBe(1);
   });
+
+  it("stores afficher_stats_joueurs in core.competitions", async () => {
+    await insertRawCompetition(
+      {
+        ext_competition_id: "28227",
+        nom: "LIGUE BUTAGAZ ENERGIE 2025-26",
+        niveau: "national",
+        sexe: "F",
+        detail_url: "https://www.ffhandball.fr/competitions/saison-2025-2026-21/national/ligue-butagaz-energie-2025-26-28227/",
+        source_url: "https://www.ffhandball.fr/competitions/saison-2025-2026-21/national/",
+        afficher_stats_joueurs: "1",
+      },
+      "28227",
+    );
+    const report = await runCompetitionsEtl(SAISON);
+    expect(report.rows_inserted).toBe(1);
+
+    const row = await query<{ afficher_stats_joueurs: boolean | null }>(
+      `SELECT afficher_stats_joueurs FROM core.competitions WHERE id_ffhb = '28227'`,
+    );
+    expect(row.rowCount).toBe(1);
+    expect(row.rows[0]!.afficher_stats_joueurs).toBe(true);
+  });
 });
