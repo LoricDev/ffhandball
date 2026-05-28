@@ -15,6 +15,7 @@ Pipeline de scraping et de structuration des données du handball français
 | `arbitres` + `match_officiels` | dérivés de raw.matchs (sans re-scrape) | ~5-15k / ~100-400k | ✅ |
 | `classements` | competitions---classements par poule | ~5k lignes/snapshot | ✅ |
 | `stats_joueurs` | competitions---stats-joueurs (national + régional séniors) | ~30-100k lignes | ✅ |
+| `feuilles_match` → `joueurs` + `match_compositions` + `match_actions` + `match_officiels` | media-ffhb-fdm.ffhandball.fr | ~150k FdMs / ~500k joueurs / ~10M match_actions (full run) | ✅ |
 | `joueurs` (complets) + `licences` | derrière login GestHand | — | ❌ (RGPD) |
 
 ## API HTTP
@@ -49,7 +50,7 @@ Détails complets (options, rate-limit, format réponse) : [docs/runbook.md#api-
 cp .env.example .env       # adapter SCRAPE_USER_AGENT avec un email de contact
 npm install
 npm run db:up              # Postgres + Adminer
-npm run db:migrate         # 11 migrations
+npm run db:migrate         # 15 migrations
 npm run db:seed            # saisons + ligues + départements
 npm test                   # ~250 tests (run en séquentiel pour éviter deadlocks)
 
@@ -96,7 +97,7 @@ ffhandball.fr / monclub.ffhandball.fr
    core.* (relationnel + FKs résolus + etl_runs/warnings/rejets)
         │
         ▼
-   API future (hors scope ce repo)
+   API REST publique (Hono + OpenAPI)
 ```
 
 ## Pipeline opérationnel — ordre complet
@@ -124,6 +125,20 @@ npm run scrape -- --entity=matchs --saison=2025-2026 --journees=all
 npm run etl -- --entity=matchs           --saison=2025-2026
 npm run etl -- --entity=arbitres         --saison=2025-2026   # depuis raw.matchs
 npm run etl -- --entity=match_officiels  --saison=2025-2026   # depuis raw.matchs
+
+# Phase 4 — Stats joueurs (national + régional séniors) + classements (~30 min)
+npm run scrape -- --entity=classements --saison=2025-2026
+npm run etl -- --entity=classements --saison=2025-2026
+npm run scrape -- --entity=stats-joueurs --saison=2025-2026
+npm run etl -- --entity=stats-joueurs --saison=2025-2026
+
+# Phase 5 — Feuilles de match PDFs (LONG : 30-100h multi-nuits selon scope)
+npm run scrape -- --entity=feuilles-match --saison=2025-2026
+npm run etl -- --entity=feuilles-match --saison=2025-2026   # cascade joueurs+compositions+actions
+
+# Phase 6 — Démarrer l'API HTTP
+npm run api                                                  # http://localhost:3000
+open http://localhost:3000/docs                              # Swagger UI
 ```
 
 Détails complets, options, suivi de couverture SQL : voir `docs/runbook.md`.
@@ -140,7 +155,7 @@ Détails complets, options, suivi de couverture SQL : voir `docs/runbook.md`.
 ```
 ffhandball/
 ├── db/
-│   ├── migrations/      # 11 migrations SQL séquentielles
+│   ├── migrations/      # 15 migrations SQL séquentielles
 │   ├── seeds/           # saisons, ligues, départements
 │   └── data/            # volume Docker (gitignored)
 ├── docs/
@@ -153,10 +168,11 @@ ffhandball/
 ├── src/
 │   ├── schemas/         # Zod schemas raw.* (1 par entité)
 │   ├── scrapers/        # purs (HTML → payload Zod-validé)
-│   ├── etl/             # 10 pipelines raw → core (idempotents)
+│   ├── etl/             # 13 pipelines raw → core (idempotents)
+│   ├── api/             # API REST Hono (routes/, middleware/, schemas/, lib/repositories/)
 │   ├── cli/             # entrypoints scrape + etl
 │   ├── db/              # client pg
-│   └── lib/             # logger
+│   └── lib/             # logger, pdf-parser.ts
 └── tests/
     ├── fixtures/        # HTML réels capturés
     ├── schemas/         # tests Zod
@@ -183,6 +199,6 @@ Pour ajouter une nouvelle entité :
 
 ## Statut
 
-**13 entités modèle • 17 migrations • 8 scrapers • 10 ETLs • ~250 tests passants • API V1 live**
+**17 entités modèle • 15 migrations • 10 scrapers • 13 ETLs • 9 endpoints API • ~250 tests passants**
 
 Pipeline production-ready. Voir `docs/DEPLOY.md` pour déployer et `docs/runbook.md` pour toutes les commandes opérationnelles.
