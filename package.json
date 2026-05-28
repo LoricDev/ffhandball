@@ -17,11 +17,17 @@
     "db:reset": "docker compose down -v && docker compose up -d",
     "db:migrate": "for f in db/migrations/*.sql; do docker exec -i ffhandball-postgres psql -U ffhandball -d ffhandball < \"$f\"; done",
     "db:seed": "for f in db/seeds/*.sql; do docker exec -i ffhandball-postgres psql -U ffhandball -d ffhandball < \"$f\"; done",
-    "db:psql": "docker exec -it ffhandball-postgres psql -U ffhandball -d ffhandball"
+    "db:psql": "docker exec -it ffhandball-postgres psql -U ffhandball -d ffhandball",
+    "api": "node --env-file=.env --import tsx src/api/server.ts",
+    "api:dev": "node --env-file=.env --watch --import tsx src/api/server.ts"
   },
   "dependencies": {
+    "@hono/node-server": "^1.19.14",
+    "@hono/swagger-ui": "^0.5.3",
+    "@hono/zod-openapi": "^0.18.4",
     "cheerio": "^1.0.0",
     "date-fns": "^4.1.0",
+    "hono": "^4.12.23",
     "p-retry": "^6.2.1",
     "pdf-parse": "^2.4.5",
     "pg": "^8.13.1",
