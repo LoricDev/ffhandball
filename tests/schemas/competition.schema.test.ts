@@ -49,4 +49,30 @@ describe("rawCompetitionPayloadSchema", () => {
     });
     expect(r.success).toBe(false);
   });
+
+  it("coerces afficherStatsJoueurs string '1' to true", () => {
+    const r = rawCompetitionPayloadSchema.safeParse({
+      ext_competition_id: "28227",
+      nom: "LIGUE BUTAGAZ ENERGIE 2025-26",
+      niveau: "national",
+      detail_url: "https://www.ffhandball.fr/competitions/saison-2025-2026-21/national/ligue-butagaz-energie-2025-26-28227/",
+      source_url: "https://www.ffhandball.fr/competitions/saison-2025-2026-21/national/",
+      afficher_stats_joueurs: "1",
+    });
+    expect(r.success).toBe(true);
+    expect(r.data!.afficher_stats_joueurs).toBe(true);
+  });
+
+  it("coerces afficherStatsJoueurs string '0' to false", () => {
+    const r = rawCompetitionPayloadSchema.safeParse({
+      ext_competition_id: "9999",
+      nom: "COMPETITION JEUNES",
+      niveau: "regional",
+      detail_url: "https://www.ffhandball.fr/x/",
+      source_url: "https://www.ffhandball.fr/y/",
+      afficher_stats_joueurs: "0",
+    });
+    expect(r.success).toBe(true);
+    expect(r.data!.afficher_stats_joueurs).toBe(false);
+  });
 });
