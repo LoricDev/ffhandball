@@ -1,5 +1,17 @@
 # Déploiement en production
 
+## Déploiement express (recommandé)
+
+Pour un déploiement clé-en-main, voir [`deploy/README.md`](../deploy/README.md) : 1 commande sur un VPS frais.
+
+```bash
+sudo ./deploy/deploy-all.sh
+```
+
+Le reste de ce document détaille les étapes manuelles si tu veux comprendre ou personnaliser chaque phase.
+
+---
+
 Guide pour déployer le pipeline ffhandball sur un serveur de production (VM Linux, VPS, ou serveur dédié) avec des scrapes nocturnes automatisés.
 
 ## Architecture cible
