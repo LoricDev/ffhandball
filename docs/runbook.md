@@ -791,3 +791,47 @@ Puis re-lancer `etl --entity=feuilles-match`. `raw.feuilles_match` n'est pas tou
 - **RGPD** : `core.joueurs` contient n° licence + nom + prénom (publiés par FFH elle-même sur les FdMs publiques). DDN/sexe/nationalité non exposés (restent NULL)
 - L'`fdm_url` peuplée dans `core.matchs` permet de servir le lien PDF directement côté API
 - Heuristique gardien (basée sur `arrets > 0`) peu fiable — privilégier `core.match_actions` filtré sur type='arret' pour analyses précises
+
+## API HTTP publique
+
+API REST read-only basée sur Hono. Documentation auto via Swagger UI.
+
+### Démarrage
+
+```bash
+# Production
+npm run api
+# → http://localhost:3000 (config via .env API_PORT, API_HOST)
+
+# Watch mode (auto-reload dev)
+npm run api:dev
+
+# Documentation interactive
+open http://localhost:3000/docs
+```
+
+### Endpoints disponibles V1
+
+- `GET /health` — liveness check
+- `GET /ready` — readiness check (DB connection)
+- `GET /clubs?q=...&departement=...&limit=20&offset=0` — liste paginée
+- `GET /clubs/:id_ffhb` — détail club + salle
+- `GET /matchs?poule_id_ffhb=...&date_from=...&date_to=...&statut=...` — liste
+- `GET /matchs/:id_ffhb_match` — détail enrichi (compositions + actions + arbitres + fdm_url)
+- `GET /classements?poule_id_ffhb=X` — classement poule
+- `GET /joueurs/:numero_licence` — détail + stats agrégées + historique 10 derniers matchs
+- `GET /search?q=...&type=clubs|equipes|joueurs|all` — fuzzy search
+- `GET /openapi.json` — spec OpenAPI 3.1
+- `GET /docs` — Swagger UI
+
+### Rate-limit
+
+60 req/min par IP (configurable via `API_RATE_LIMIT_PER_MIN`). Headers retournés :
+- `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`
+- 429 + `Retry-After` si dépassé
+
+### Format réponse
+
+Succès liste : `{ data: [...], meta: { total, limit, offset } }`
+Succès détail : `{ data: {...} }`
+Erreur : `{ error: { code, message } }`

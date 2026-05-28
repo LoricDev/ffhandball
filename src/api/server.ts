@@ -1,5 +1,6 @@
 // src/api/server.ts
 import { OpenAPIHono } from "@hono/zod-openapi";
+import { swaggerUI } from "@hono/swagger-ui";
 import { serve } from "@hono/node-server";
 import healthRoutes from "@/api/routes/health.js";
 import clubsRoutes from "@/api/routes/clubs.js";
@@ -42,6 +43,19 @@ export function buildApp(): OpenAPIHono {
   app.route("/", classementsRoutes);
   app.route("/", joueursRoutes);
   app.route("/", searchRoutes);
+
+  // OpenAPI spec + Swagger UI
+  app.doc31("/openapi.json", {
+    openapi: "3.1.0",
+    info: {
+      version: "1.0.0",
+      title: "ffhandball API",
+      description:
+        "API publique read-only sur les données handball français scrapées de FFHandball",
+    },
+  });
+
+  app.get("/docs", swaggerUI({ url: "/openapi.json" }));
 
   return app;
 }
