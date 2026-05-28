@@ -675,3 +675,119 @@ Puis re-lancer `etl --entity=stats-joueurs`. `raw.stats_joueurs` n'est pas touch
   équipes × ~12 joueurs), vs ~15-30k national-only
 - Re-run quotidien possible via cron (cf. `docs/DEPLOY.md`) — plus coûteux
   qu'avant (~15-30 min au lieu de ~2-3 min)
+
+---
+
+## Scraper les feuilles de match (FdM PDFs)
+
+Télécharge et parse les feuilles de match officielles FFHandball au format PDF
+depuis `media-ffhb-fdm.ffhandball.fr`. Alimente `core.joueurs` (vide
+auparavant), enrichit `core.match_compositions`, peuple `core.match_actions`
+(déroulé chronologique).
+
+### Pré-requis
+
+- `raw.matchs` doit contenir des `fdm_code` (champ exposé par `rencontre-list`
+  lors du scrape matchs)
+- Migration 0015 appliquée (ajoute `core.matchs.fdm_code` + `fdm_url`)
+- ETL matchs étendu pour propager `fdm_code` vers core
+
+### Scrape
+
+```bash
+# Dev — 5 FdMs (test)
+npm run scrape -- --entity=feuilles-match --saison=2025-2026 --limit=5
+
+# Run complet (~50-200k FdMs, 30-100h selon scope matchs, MULTI-NUITS)
+npm run scrape -- --entity=feuilles-match --saison=2025-2026
+```
+
+Le scraper :
+1. SELECT codes uniques depuis `raw.matchs.payload->>'fdm_code'`
+2. Filtre ceux déjà en `raw.feuilles_match` (idempotence sans re-download)
+3. Pour chaque code : télécharge `https://media-ffhb-fdm.ffhandball.fr/fdm/{c1}/{c2}/{c3}/{c4}/{code}.pdf`
+4. Parse via `pdf-parse` v2 (page 1 metadata + officiels + compositions, page 2 déroulé)
+5. insertRaw avec payload JSONB structuré (pas de PDF brut conservé)
+
+Skip silencieux sur HTTP 404 (FdM pas encore publiée).
+
+### ETL
+
+```bash
+npm run etl -- --entity=feuilles-match --saison=2025-2026
+```
+
+Cascade transactionnelle par FdM :
+1. UPDATE `core.matchs.fdm_url`
+2. UPSERT `core.joueurs` (par numero_licence)
+3. UPSERT `core.match_compositions` (par match × joueur)
+4. UPSERT `core.match_actions` (par match × ordre)
+
+ROLLBACK si erreur dans la cascade. Idempotent.
+
+### Suivre la couverture
+
+```sql
+-- FdMs téléchargées
+SELECT count(*) FROM raw.feuilles_match WHERE saison = '2025-2026';
+
+-- Matchs avec FdM disponible
+SELECT
+  count(*) FILTER (WHERE fdm_code IS NOT NULL) AS matchs_avec_fdm_code,
+  count(*) FILTER (WHERE fdm_url IS NOT NULL) AS matchs_avec_fdm_parse,
+  count(*) AS total_matchs
+FROM core.matchs;
+
+-- Top buteurs cross-FdM (cumulé sur tous les matchs analysés)
+SELECT j.nom, j.prenom, SUM(mc.but_count) AS total_buts,
+       COUNT(DISTINCT mc.match_id) AS matchs_joues
+  FROM core.match_compositions mc
+  JOIN core.joueurs j ON j.id = mc.joueur_id
+  GROUP BY j.id, j.nom, j.prenom
+  HAVING SUM(mc.but_count) > 0
+  ORDER BY total_buts DESC LIMIT 20;
+
+-- Sanctions cumulées
+SELECT j.nom, j.prenom,
+       count(*) FILTER (WHERE mc.avertissement) AS avertissements,
+       sum(mc.exclusion_2min_count) AS exclusions_2min,
+       count(*) FILTER (WHERE mc.disqualifie) AS disqualifications
+  FROM core.match_compositions mc
+  JOIN core.joueurs j ON j.id = mc.joueur_id
+  GROUP BY j.id, j.nom, j.prenom
+  HAVING count(*) FILTER (WHERE mc.avertissement) > 0
+      OR sum(mc.exclusion_2min_count) > 0
+  ORDER BY exclusions_2min DESC, avertissements DESC LIMIT 20;
+
+-- Actions par type (vérification volumétrie)
+SELECT type_action, count(*)
+  FROM core.match_actions
+  GROUP BY type_action ORDER BY count(*) DESC;
+
+-- Warnings ETL
+SELECT message, count(*)
+  FROM core.etl_warnings
+  WHERE entity = 'feuilles_match'
+    AND etl_run_id = (SELECT max(id) FROM core.etl_runs WHERE entity = 'feuilles_match')
+  GROUP BY message ORDER BY count(*) DESC LIMIT 20;
+```
+
+### Rejouer après bug
+
+```sql
+TRUNCATE core.match_actions;
+TRUNCATE core.match_compositions CASCADE;
+TRUNCATE core.joueurs CASCADE;
+UPDATE core.matchs SET fdm_url = NULL;
+```
+
+Puis re-lancer `etl --entity=feuilles-match`. `raw.feuilles_match` n'est pas touché.
+
+### Notes opérationnelles
+
+- **Volumétrie démentielle attendue** : ~150k FdMs full run = ~45 GB téléchargements, ~80h en nocturne multi-nuits
+- Idempotence stricte : ne re-download pas les FdMs déjà en `raw.feuilles_match`
+- Skip silencieux sur HTTP 404 (FdM pas encore publiée pour matchs futurs)
+- **RGPD** : `core.joueurs` contient n° licence + nom + prénom (publiés par FFH elle-même sur les FdMs publiques). DDN/sexe/nationalité non exposés (restent NULL)
+- L'`fdm_url` peuplée dans `core.matchs` permet de servir le lien PDF directement côté API
+- Heuristique gardien (basée sur `arrets > 0`) peu fiable — privilégier `core.match_actions` filtré sur type='arret' pour analyses précises
