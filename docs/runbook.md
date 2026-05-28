@@ -398,3 +398,69 @@ Puis re-lancer `etl --entity=matchs`. `raw.matchs` n'est pas touché.
 - Les arbitres (`arbitre1_id`, `arbitre2_id`, etc.) sont stockés dans `raw.matchs.payload` — une future feature alimentera `core.arbitres` + `core.match_officiels` sans re-scrape
 - En re-scrape (mise à jour quotidienne des scores), un match qui passe de `a_jouer → joue` met à jour `updated_at`
 - `--limit=N` limite le **nombre de poules** scrapées (pas le nombre de matchs)
+
+## ETL arbitres et match_officiels
+
+Pas de scraping nouveau. Les arbitres sont extraits depuis `raw.matchs.payload`
+(champs `arbitre1_id/nom` et `arbitre2_id/nom` capturés lors du scrape des matchs).
+2 ETLs en cascade alimentent `core.arbitres` puis `core.match_officiels`.
+
+### ETL — ordre obligatoire
+
+```bash
+# Pré-requis : raw.matchs déjà peuplée (cf. section "Scraper les matchs")
+
+npm run etl -- --entity=arbitres        --saison=2025-2026
+npm run etl -- --entity=match_officiels --saison=2025-2026
+```
+
+L'ordre `arbitres → match_officiels` est obligatoire (le second résout FK vers `core.arbitres`).
+
+### Suivre la couverture
+
+```sql
+-- Comptes
+SELECT 'arbitres' AS t, count(*) FROM core.arbitres
+UNION ALL SELECT 'avec_prenom', count(prenom) FROM core.arbitres
+UNION ALL SELECT 'match_officiels', count(*) FROM core.match_officiels;
+
+-- Top 20 arbitres par nombre de matchs officiés
+SELECT a.id_ffhb, a.nom, a.prenom, count(*) AS nb_matchs
+  FROM core.match_officiels mo
+  JOIN core.arbitres a ON a.id = mo.arbitre_id
+  GROUP BY a.id, a.id_ffhb, a.nom, a.prenom
+  ORDER BY nb_matchs DESC LIMIT 20;
+
+-- Répartition par rôle
+SELECT role, count(*) FROM core.match_officiels GROUP BY role;
+
+-- Matchs sans arbitre (pas attendu, sauf si arbitre1/2 manquaient en source)
+SELECT count(*) FROM core.matchs m
+  WHERE NOT EXISTS (
+    SELECT 1 FROM core.match_officiels mo WHERE mo.match_id = m.id
+  );
+
+-- Warnings ETL
+SELECT entity, message, count(*) FROM core.etl_warnings
+  WHERE entity IN ('arbitres', 'match_officiels')
+    AND etl_run_id >= (SELECT max(id)-1 FROM core.etl_runs WHERE entity = 'arbitres')
+  GROUP BY entity, message ORDER BY count(*) DESC;
+```
+
+### Rejouer après bug
+
+```sql
+TRUNCATE core.match_officiels;
+TRUNCATE core.arbitres CASCADE;
+```
+
+Puis re-lancer les 2 ETLs dans l'ordre. `raw.matchs` n'est pas touché.
+
+### Notes opérationnelles
+
+- Le `nom_complet` brut est conservé pour permettre une future réconciliation (split imparfait sur ~5% des cas : noms composés, particules)
+- `numero_licence` reste **NULL** (pas exposé publiquement par ffhandball.fr — derrière login GestHand)
+- `club_rattachement_id` reste **NULL** (pas exposé non plus)
+- `niveau` reste **NULL** (T1/T2/territorial/départemental non exposés)
+- Volumétrie attendue après scrape complet matchs : ~5-15k arbitres uniques, ~100-400k lignes match_officiels
+- Si un re-scrape matchs ajoute des arbitres jamais vus, ré-exécuter `arbitres` puis `match_officiels` ETL
