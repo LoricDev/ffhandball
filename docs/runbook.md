@@ -550,3 +550,92 @@ Puis re-lancer `etl --entity=classements`. `raw.classements` n'est pas touché.
 - `capture_date` = timestamp du dernier ETL run pour chaque ligne (utile pour savoir si le snapshot est frais)
 - Un classement peut être vide (`classements: []`) en début de saison — log info, pas warning
 - Re-run quotidien recommandé (cron, cf. `docs/DEPLOY.md`) pour maintenir `capture_date` frais
+
+## Scraper les stats joueurs (national uniquement)
+
+Alimente `core.stats_joueurs` depuis le composant `competitions---stats-joueurs`.
+**Scope : compétitions nationales uniquement.** Les autres niveaux retournent un
+soft-404 silencieux (`page-header.is404=true`), détecté et géré proprement par
+le scraper.
+
+### Données disponibles publiquement
+
+- `individu_id` (ID FFHB du joueur, anonymisé côté public)
+- `nom`, `prenom`
+- `match_count`, `total_buts`, `total_arrets`
+- `equipe_libelle` (résolu en `equipe_id` via match exact côté ETL, sinon NULL)
+
+**Ce qu'on n'a PAS** : date de naissance, sexe, nationalité, numéro de licence,
+poste/position joueur — derrière login GestHand (RGPD).
+
+### Scrape
+
+```bash
+# Dev — 3 poules nationales
+npm run scrape -- --entity=stats-joueurs --saison=2025-2026 --limit=3
+
+# Run complet national (~50-100 poules nationales, ~2-3 min)
+npm run scrape -- --entity=stats-joueurs --saison=2025-2026
+```
+
+Pas d'option `--level` — par design seules les compétitions nationales ont des
+stats publiques. Le filtre `niveau='national'` est appliqué en amont.
+
+### ETL
+
+```bash
+npm run etl -- --entity=stats-joueurs --saison=2025-2026
+```
+
+**Ordre obligatoire global** : `competitions → phases → poules → equipes →
+engagements → matchs → arbitres → match_officiels → classements → stats-joueurs`.
+
+### Suivre la couverture
+
+```sql
+-- Counts
+SELECT 'stats_joueurs' AS t, count(*) FROM core.stats_joueurs
+UNION ALL SELECT 'equipe_id_resolu', count(equipe_id) FROM core.stats_joueurs
+UNION ALL SELECT 'taux_resolution_pct',
+       (count(equipe_id) * 100 / NULLIF(count(*), 0))::text::int FROM core.stats_joueurs;
+
+-- Top 20 buteurs nationaux toutes compétitions confondues
+SELECT s.nom, s.prenom, s.equipe_libelle, s.total_buts, s.match_count,
+       round(s.total_buts::numeric / NULLIF(s.match_count, 0), 2) AS buts_par_match
+  FROM core.stats_joueurs s
+  ORDER BY s.total_buts DESC LIMIT 20;
+
+-- Top 20 gardiens (arrêts)
+SELECT s.nom, s.prenom, s.equipe_libelle, s.total_arrets, s.match_count
+  FROM core.stats_joueurs s
+  WHERE s.total_arrets > 0
+  ORDER BY s.total_arrets DESC LIMIT 20;
+
+-- Distribution warnings (équipes non résolues)
+SELECT message, count(*) FROM core.etl_warnings
+  WHERE entity='stats_joueurs'
+    AND etl_run_id = (SELECT max(id) FROM core.etl_runs WHERE entity='stats_joueurs')
+  GROUP BY message ORDER BY count(*) DESC LIMIT 20;
+
+-- Fraîcheur des snapshots
+SELECT
+  count(*) FILTER (WHERE capture_date > now() - interval '24 hours') AS recents,
+  max(capture_date) AS dernier_run
+FROM core.stats_joueurs;
+```
+
+### Rejouer après bug
+
+```sql
+TRUNCATE core.stats_joueurs;
+```
+
+Puis re-lancer `etl --entity=stats-joueurs`. `raw.stats_joueurs` n'est pas touché.
+
+### Notes opérationnelles
+
+- **National uniquement** : par design, le composant n'est pas exposé sur régional/dép. Le scraper filtre `niveau='national'` en amont → ~50-100 fetches au lieu de ~5k
+- `core.joueurs` (table FFHB officielle) reste **vide** — les identités complètes nécessiteraient un accès GestHand authentifié
+- L'`equipe_libelle` est conservé en clair même quand `equipe_id` est NULL — permet de matcher manuellement les cas non résolus ou d'enrichir via une feature future de fuzzy matching
+- Volumétrie totale : ~15-30k lignes (287 joueurs × ~50-100 poules nationales)
+- Re-run quotidien possible via cron (cf. `docs/DEPLOY.md`) — feature peu coûteuse à actualiser
