@@ -51,3 +51,40 @@ export async function fetchHtml(url: string): Promise<FetchResult> {
     },
   );
 }
+
+export interface BinaryResponse {
+  body: Buffer;
+  status: number;
+  url: string;
+  contentType: string;
+}
+
+export async function fetchBinary(url: string): Promise<BinaryResponse> {
+  const domain = new URL(url).hostname;
+  return pRetry(
+    async () => {
+      await respectRateLimit(domain);
+      logger.debug({ url }, "fetching binary");
+      const res = await fetch(url, {
+        headers: {
+          "User-Agent": env.SCRAPE_USER_AGENT,
+          Accept: "application/pdf,application/octet-stream,*/*",
+        },
+      });
+      // HTTP 4xx/5xx are returned as data — caller decides how to handle (e.g. skip on 404).
+      // Only network-level exceptions trigger retry.
+      const contentType = res.headers.get("content-type") ?? "";
+      const body = Buffer.from(await res.arrayBuffer());
+      return { url, status: res.status, body, contentType };
+    },
+    {
+      retries: env.SCRAPE_RETRY_MAX,
+      onFailedAttempt: (err) => {
+        logger.warn(
+          { url, attempt: err.attemptNumber, message: err.message },
+          "binary fetch failed, retrying",
+        );
+      },
+    },
+  );
+}
