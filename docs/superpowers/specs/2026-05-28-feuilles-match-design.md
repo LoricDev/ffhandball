@@ -328,7 +328,12 @@ CREATE INDEX IF NOT EXISTS idx_match_actions_match  ON core.match_actions (match
 CREATE INDEX IF NOT EXISTS idx_match_actions_joueur ON core.match_actions (joueur_id);
 CREATE INDEX IF NOT EXISTS idx_match_actions_type   ON core.match_actions (type_action);
 
--- 4. core.joueurs : aucune modification (schéma existant convient)
+-- 4. Étendre core.matchs : fdm_code + fdm_url
+ALTER TABLE core.matchs ADD COLUMN IF NOT EXISTS fdm_code TEXT;
+ALTER TABLE core.matchs ADD COLUMN IF NOT EXISTS fdm_url TEXT;
+CREATE INDEX IF NOT EXISTS idx_matchs_fdm_code ON core.matchs (fdm_code);
+
+-- 5. core.joueurs : aucune modification (schéma existant convient)
 --    numero_licence NOT NULL UNIQUE, nom NOT NULL, prenom NOT NULL — tout est fourni par la FdM
 --    date_naissance, sexe, nationalite : restent NULL (non exposés par la FdM)
 ```
@@ -443,6 +448,8 @@ Cascade idempotente par FdM, transactionnelle (BEGIN/COMMIT par row pour éviter
 for (const fm of raw.feuilles_match rows) {
   await query("BEGIN");
   try {
+    // 0. UPDATE core.matchs SET fdm_url = $source_url WHERE fdm_code = $fdm_code
+    //    (lien PDF servi par l'API future, peuplé après téléchargement réussi)
     // 1. Résoudre match_id via core.matchs.id_ffhb_match — match.id_ffhb_match peut être l'ext_rencontre_id du payload raw.matchs.
     //    Le fdm_code seul n'est pas dans core.matchs ; il faut le lookup via raw.matchs payload.
     //    Approche : trouver le match via fdm_code en parcourant raw.matchs payload
@@ -481,14 +488,18 @@ for (const fm of raw.feuilles_match rows) {
 }
 ```
 
-**Note importante** : `core.matchs.id_ffhb_match` doit avoir une correspondance avec `fdm_code`. **Mais ce n'est pas le cas** — `id_ffhb_match = ext_rencontre_id` (ex "2388869") ≠ `fdm_code` (ex "VAGPOQJ"). Le lien se fait via `raw.matchs.payload->>'fdm_code'`. **Solution** : ajouter une colonne `core.matchs.fdm_code TEXT` lors de la migration 0015 pour avoir une FK explicite et performante :
+**Note importante** : `core.matchs.id_ffhb_match` doit avoir une correspondance avec `fdm_code`. **Mais ce n'est pas le cas** — `id_ffhb_match = ext_rencontre_id` (ex "2388869") ≠ `fdm_code` (ex "VAGPOQJ"). Le lien se fait via `raw.matchs.payload->>'fdm_code'`. **Solution** : ajouter deux colonnes à `core.matchs` lors de la migration 0015 :
 
 ```sql
 ALTER TABLE core.matchs ADD COLUMN IF NOT EXISTS fdm_code TEXT;
+ALTER TABLE core.matchs ADD COLUMN IF NOT EXISTS fdm_url TEXT;
 CREATE INDEX IF NOT EXISTS idx_matchs_fdm_code ON core.matchs (fdm_code);
 ```
 
-Puis ETL `matchs` est étendu pour propager `fdm_code` depuis `raw.matchs.payload.fdm_code`. Cette modification est mineure (pas de breakage).
+- `fdm_code` : code court FFHB (ex `"VAGPOQJ"`), peuplé par l'ETL `matchs` étendu depuis `raw.matchs.payload.fdm_code`. Sert de natural key pour résoudre `match_id ↔ FdM` côté ETL `feuilles-match`.
+- `fdm_url` : URL complète du PDF FdM (ex `"https://media-ffhb-fdm.ffhandball.fr/fdm/V/A/G/P/VAGPOQJ.pdf"`), peuplée par l'ETL `feuilles-match` après téléchargement réussi (HTTP 200). Permet à l'API future de servir directement le lien sans recalcul du pattern. NULL tant que le PDF n'a pas été téléchargé/parsé (FdM pas encore publiée pour les matchs futurs, ou pas encore scrapé).
+
+Cette modification est mineure (pas de breakage). L'ETL `matchs` existant est étendu de quelques lignes pour propager `fdm_code` (déjà dans le payload Zod-validé).
 
 ## CLI
 
