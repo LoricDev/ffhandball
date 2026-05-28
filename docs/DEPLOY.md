@@ -151,6 +151,112 @@ npm run scrape -- --entity=matchs --saison=2025-2026 --journees=all
 npm run etl    -- --entity=matchs           --saison=2025-2026
 npm run etl    -- --entity=arbitres         --saison=2025-2026
 npm run etl    -- --entity=match_officiels  --saison=2025-2026
+
+# Phase 4 — Feuilles de match PDFs (MULTI-NUITS : ~30-100h selon scope)
+
+# Re-scrape matchs pour récupérer fdm_code dans core.matchs (~1h)
+npm run scrape -- --entity=matchs --saison=2025-2026
+npm run etl -- --entity=matchs --saison=2025-2026
+
+# Scrape FdM (long, prévoir cron nocturne sur plusieurs jours)
+npm run scrape -- --entity=feuilles-match --saison=2025-2026
+
+# ETL cascade (joueurs + compositions + match_actions + match_officiels arbitres)
+npm run etl -- --entity=feuilles-match --saison=2025-2026
+```
+
+## API HTTP en production
+
+Après le scrape initial, démarrer l'API HTTP publique :
+
+### Démarrage manuel (test)
+
+```bash
+cd /opt/ffhandball
+npm run api &
+curl http://localhost:3000/health
+```
+
+### Daemon via systemd (recommandé)
+
+Créer `/etc/systemd/system/ffhandball-api.service` :
+
+```ini
+[Unit]
+Description=ffhandball API HTTP
+After=network.target docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/ffhandball
+ExecStart=/home/ubuntu/.nvm/versions/node/v20.18.0/bin/node --env-file=.env --import tsx src/api/server.ts
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Activer :
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable ffhandball-api
+sudo systemctl start ffhandball-api
+sudo systemctl status ffhandball-api
+journalctl -u ffhandball-api -f
+```
+
+### Reverse proxy nginx (production publique)
+
+L'API écoute sur 127.0.0.1:3000 (cf. `API_HOST=127.0.0.1` dans `.env`). Exposer via nginx avec HTTPS :
+
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name api.ton-domaine.fr;
+
+    ssl_certificate /etc/letsencrypt/live/api.ton-domaine.fr/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/api.ton-domaine.fr/privkey.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Rate-limit nginx en complément (protection L7)
+    limit_req zone=api burst=20 nodelay;
+}
+
+# Dans le bloc http {} :
+limit_req_zone $binary_remote_addr zone=api:10m rate=120r/m;
+```
+
+⚠️ **`X-Forwarded-For` essentiel** : le rate-limit Hono lit cette en-tête pour distinguer les IPs derrière le proxy. Sans ça, tout le monde apparaît comme `127.0.0.1` et un seul bucket rate-limit.
+
+### Configuration .env production API
+
+```env
+API_PORT=3000
+API_HOST=127.0.0.1                # binding local (nginx fait le proxy)
+API_RATE_LIMIT_PER_MIN=120        # plus généreux qu'en dev
+API_PAGINATION_DEFAULT_LIMIT=20
+API_PAGINATION_MAX_LIMIT=100
+```
+
+### Smoke test post-déploiement
+
+```bash
+curl -s https://api.ton-domaine.fr/health | jq
+curl -s "https://api.ton-domaine.fr/clubs?q=brest&limit=3" | jq
+open https://api.ton-domaine.fr/docs
 ```
 
 ## Cron : scrape quotidien automatisé
@@ -161,7 +267,9 @@ npm run etl    -- --entity=match_officiels  --saison=2025-2026
 |---|---|---|---|
 | **Quotidien (nuit)** | Scrape journée courante matchs + ETLs | ~1500-3000 req | ~1h |
 | **Hebdomadaire** | Re-scrape club-details (nouveaux clubs) + competitions structurelles | ~3000 req | ~30 min |
+| **Hebdomadaire (nuit)** | Scrape FdM pour matchs récemment joués (filtre date_from = J-7) | ~1-3k req | ~1h |
 | **Mensuel** | `--journees=all` matchs (rattrapage historique complet) | ~40-80k req | 17-33h (multi-nuits) |
+| **Mensuel (multi-nuits)** | Scrape FdM complet pour rattrapage historique | ~50-200k req | 30-100h |
 
 ### Setup cron
 
@@ -322,9 +430,11 @@ VACUUM FULL raw.matchs;
 
 ### Strategy
 
-- **Quotidien** : dump de `core.*` (relationnel) — recover rapide
+- **Quotidien** : dump de `core.*` — recover rapide (~50-500 MB, dépend du remplissage joueurs+match_actions)
 - **Hebdomadaire** : dump de `raw.*` (gros volume JSONB) — pour replay éventuel
 - **Mensuel** : dump complet + snapshot du `db/data/` (cold backup)
+
+⚠️ **Volumétrie core après FdM** : `core.match_actions` peut atteindre 10-15M lignes (~1-2 GB) et `core.match_compositions` ~3M lignes (~500 MB). Le dump grossit significativement vs avant FdM. Considérer un dump séparé de ces 2 tables avec rotation plus longue, ou un dump compressé `pg_dump --compress=9`.
 
 ### Script de backup
 
@@ -396,6 +506,18 @@ Le fichier `.env` contient des secrets (DB password notamment). Vérifier :
 - `.env` est dans `.gitignore` (déjà fait)
 - Permissions : `chmod 600 .env`
 - Sauvegarder le mot de passe DB dans un gestionnaire de mots de passe
+
+### RGPD : données joueurs (FdM)
+
+Les feuilles de match exposent publiquement nom, prénom, numéro de licence FFHB (incluant des mineurs en compétitions jeunes). Le pipeline les stocke en clair dans `core.joueurs`.
+
+**Responsabilités côté hébergeur** :
+- Notice d'information sur l'API publique mentionnant la source FFHB et le scope
+- Mécanisme de droit à l'oubli (DELETE par numero_licence) si requête utilisateur
+- Pas d'enrichissement par croisement avec données externes
+- Logs API : ne PAS logger les `numero_licence` dans les URL (n'apparaissent que dans `path` qui est déjà loggé — accepter cette légère exposition vs masquer)
+
+**Recommandation** : si l'API devient publique grand-public, faire valider la conformité par un juriste/DPO.
 
 ### Mises à jour
 

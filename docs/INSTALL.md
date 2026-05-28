@@ -84,7 +84,7 @@ docker ps | grep ffhandball-postgres
 ### 5. Migrations et seeds
 
 ```bash
-npm run db:migrate    # Applique toutes les migrations 0001 → 0011
+npm run db:migrate    # Applique toutes les migrations 0001 → 0015
 npm run db:seed       # Charge saisons, ligues, départements
 ```
 
@@ -108,7 +108,7 @@ npx vitest run --no-file-parallelism --pool=forks --poolOptions.forks.singleFork
 npm test
 ```
 
-Tous les tests doivent passer (146 en mode séquentiel à date).
+Tous les tests doivent passer (~250 en mode séquentiel à date).
 
 ## Premier scrape (smoke test)
 
@@ -125,6 +125,22 @@ npm run etl -- --entity=clubs --saison=2025-2026
 docker exec -i ffhandball-postgres psql -U ffhandball -d ffhandball -c \
   "SELECT count(*) FROM core.clubs;"
 # Doit afficher ~2326
+```
+
+### Smoke test API
+
+Une fois `core.*` peuplé (même partiellement), lance l'API :
+
+```bash
+npm run api
+# → API live sur http://localhost:3000
+```
+
+Endpoints à tester :
+```bash
+curl http://localhost:3000/health
+curl http://localhost:3000/clubs?q=brest&limit=5
+open http://localhost:3000/docs   # Swagger UI interactif
 ```
 
 ## Troubleshooting
@@ -184,6 +200,27 @@ La saison demandée n'existe pas côté ffhandball.fr, ou la page d'accueil comp
 curl -s -A "$SCRAPE_USER_AGENT" https://www.ffhandball.fr/competitions/ | grep ext_saison_id
 ```
 
+### API : port 3000 déjà utilisé
+
+Modifier `API_PORT` dans `.env` :
+```env
+API_PORT=3001
+```
+
+Puis :
+```bash
+npm run api
+```
+
+### API : `pdf-parse` import error en ESM
+
+Le module est CommonJS, l'import via `createRequire` est nécessaire (déjà géré dans `src/lib/pdf-parser.ts`). Si tu touches ce fichier, vérifier que le pattern :
+```ts
+const require = createRequire(import.meta.url);
+const { PDFParse } = require("pdf-parse");
+```
+est conservé.
+
 ### Permissions / chemin Docker volume
 
 Si `db:up` échoue avec une erreur sur `./db/data` :
@@ -202,7 +239,7 @@ npm run db:migrate       # nouvelles migrations
 npx vitest run --no-file-parallelism --pool=forks --poolOptions.forks.singleFork
 ```
 
-Les migrations 0001-0011 sont idempotentes. Les ETLs sont idempotents — tu peux relancer après chaque mise à jour sans craindre de doublons.
+Les migrations 0001-0015 sont idempotentes. Les ETLs sont idempotents — tu peux relancer après chaque mise à jour sans craindre de doublons.
 
 ## Mise en place pour développement actif
 
