@@ -6,3 +6,7 @@ dist/
 db/data/
 coverage/
 scripts/
+
+# Exploration agent temp fixtures (not commit)
+tests/fixtures/_explore-*
+tests/fixtures/_smartfire-bundle.js
