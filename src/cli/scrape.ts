@@ -620,7 +620,7 @@ async function scrapeStatsJoueurs(
   logger.info({ run_id: run.id, ...opts }, "starting stats-joueurs scrape");
 
   try {
-    // Filtre niveau='national' en amont (gain ~95% des fetches)
+    // Filtre afficher_stats_joueurs=true en amont (national + régional séniors)
     const poulesRes = await query<{
       ext_poule_id: string;
       detail_url: string;
@@ -630,7 +630,7 @@ async function scrapeStatsJoueurs(
          JOIN core.phases ph       ON ph.id = po.phase_id
          JOIN core.competitions c  ON c.id = ph.competition_id
         WHERE po.saison_code = $1
-          AND c.niveau = 'national'
+          AND c.afficher_stats_joueurs = true
           AND c.detail_url IS NOT NULL
         ORDER BY c.id_ffhb, po.id_ffhb`,
       [saison],
@@ -638,7 +638,7 @@ async function scrapeStatsJoueurs(
 
     let poules = poulesRes.rows;
     if (opts.limit !== undefined) poules = poules.slice(0, opts.limit);
-    logger.info({ count: poules.length }, "national poules to process");
+    logger.info({ count: poules.length }, "poules with stats to process");
 
     let totalInserted = 0;
     let pouleSansStats = 0;

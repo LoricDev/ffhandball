@@ -94,6 +94,7 @@ export function parseCompetitionList(
       ext_structure_id,
       detail_url,
       source_url: sourceUrl,
+      afficher_stats_joueurs: item.afficherStatsJoueurs,  // coercé via le preprocess Zod
     };
 
     const parsed = rawCompetitionPayloadSchema.safeParse(candidate);
