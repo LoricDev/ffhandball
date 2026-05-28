@@ -6,6 +6,7 @@ import clubsRoutes from "@/api/routes/clubs.js";
 import matchsRoutes from "@/api/routes/matchs.js";
 import classementsRoutes from "@/api/routes/classements.js";
 import joueursRoutes from "@/api/routes/joueurs.js";
+import searchRoutes from "@/api/routes/search.js";
 import { env } from "@/config/env.js";
 import { logger } from "@/lib/logger.js";
 import { requestLoggerMiddleware } from "@/api/middleware/request-logger.js";
@@ -40,6 +41,7 @@ export function buildApp(): OpenAPIHono {
   app.route("/", matchsRoutes);
   app.route("/", classementsRoutes);
   app.route("/", joueursRoutes);
+  app.route("/", searchRoutes);
 
   return app;
 }
