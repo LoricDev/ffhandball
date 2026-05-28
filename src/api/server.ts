@@ -4,6 +4,7 @@ import { serve } from "@hono/node-server";
 import healthRoutes from "@/api/routes/health.js";
 import clubsRoutes from "@/api/routes/clubs.js";
 import matchsRoutes from "@/api/routes/matchs.js";
+import classementsRoutes from "@/api/routes/classements.js";
 import { env } from "@/config/env.js";
 import { logger } from "@/lib/logger.js";
 import { requestLoggerMiddleware } from "@/api/middleware/request-logger.js";
@@ -11,7 +12,22 @@ import { errorHandlerMiddleware } from "@/api/middleware/error-handler.js";
 import { rateLimitMiddleware } from "@/api/middleware/rate-limit.js";
 
 export function buildApp(): OpenAPIHono {
-  const app = new OpenAPIHono();
+  const app = new OpenAPIHono({
+    defaultHook: (result, c) => {
+      if (!result.success) {
+        return c.json(
+          {
+            error: {
+              code: "BAD_REQUEST" as const,
+              message: "Validation error",
+              details: result.error.flatten(),
+            },
+          },
+          400,
+        );
+      }
+    },
+  });
 
   // Middlewares (ordre important)
   app.use("*", requestLoggerMiddleware());
@@ -21,6 +37,7 @@ export function buildApp(): OpenAPIHono {
   app.route("/", healthRoutes);
   app.route("/", clubsRoutes);
   app.route("/", matchsRoutes);
+  app.route("/", classementsRoutes);
 
   return app;
 }
