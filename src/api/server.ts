@@ -4,9 +4,17 @@ import { serve } from "@hono/node-server";
 import healthRoutes from "@/api/routes/health.js";
 import { env } from "@/config/env.js";
 import { logger } from "@/lib/logger.js";
+import { requestLoggerMiddleware } from "@/api/middleware/request-logger.js";
+import { errorHandlerMiddleware } from "@/api/middleware/error-handler.js";
+import { rateLimitMiddleware } from "@/api/middleware/rate-limit.js";
 
 export function buildApp(): OpenAPIHono {
   const app = new OpenAPIHono();
+
+  // Middlewares (ordre important)
+  app.use("*", requestLoggerMiddleware());
+  app.use("*", errorHandlerMiddleware());
+  app.use("*", rateLimitMiddleware());
 
   app.route("/", healthRoutes);
 
