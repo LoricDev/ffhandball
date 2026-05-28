@@ -464,3 +464,89 @@ Puis re-lancer les 2 ETLs dans l'ordre. `raw.matchs` n'est pas touché.
 - `niveau` reste **NULL** (T1/T2/territorial/départemental non exposés)
 - Volumétrie attendue après scrape complet matchs : ~5-15k arbitres uniques, ~100-400k lignes match_officiels
 - Si un re-scrape matchs ajoute des arbitres jamais vus, ré-exécuter `arbitres` puis `match_officiels` ETL
+
+## Scraper les classements (table des poules)
+
+Alimente `core.classements` (snapshot du classement par poule) depuis le composant
+`competitions---classement`. Pattern identique aux matchs (lit `core.poules` JOIN
+phases JOIN competitions), mais 1 seul fetch par poule (pas d'iteration journées).
+
+### Scrape
+
+```bash
+# Dev — 5 poules nationales
+npm run scrape -- --entity=classements --saison=2025-2026 --level=national --limit=5
+
+# Toutes les poules nationales (~50-100 poules, ~2-3 min)
+npm run scrape -- --entity=classements --saison=2025-2026 --level=national
+
+# Run complet 3 niveaux (~5000 poules, ~2h à 1.5 s/req)
+npm run scrape -- --entity=classements --saison=2025-2026
+```
+
+### ETL
+
+```bash
+npm run etl -- --entity=classements --saison=2025-2026
+```
+
+**Ordre obligatoire global** : `competitions → phases → poules → equipes →
+engagements → matchs → arbitres → match_officiels → classements`.
+
+### Suivre la couverture
+
+```sql
+-- Counts
+SELECT 'classements' AS t, count(*) FROM core.classements
+UNION ALL SELECT 'avec_dernieres_rencontres', count(dernieres_rencontres) FROM core.classements
+UNION ALL SELECT 'poules_avec_classement', count(DISTINCT poule_id) FROM core.classements;
+
+-- Poules sans classement (compétitions sans matchs joués, normal en début de saison)
+SELECT po.id_ffhb, po.nom
+  FROM core.poules po
+  LEFT JOIN core.classements cl ON cl.poule_id = po.id
+  WHERE cl.poule_id IS NULL
+  LIMIT 20;
+
+-- Top buteurs par poule (équipes ayant le plus de buts pour, par compétition)
+SELECT c.nom AS competition, po.nom AS poule,
+       e.nom AS equipe, cl.points, cl.buts_pour, cl.difference
+  FROM core.classements cl
+  JOIN core.poules po       ON po.id = cl.poule_id
+  JOIN core.phases ph       ON ph.id = po.phase_id
+  JOIN core.competitions c  ON c.id = ph.competition_id
+  JOIN core.equipes e       ON e.id = cl.equipe_id
+  WHERE cl.position = 1
+  ORDER BY c.niveau, cl.buts_pour DESC
+  LIMIT 50;
+
+-- Fraîcheur des snapshots (combien de classements sont "récents")
+SELECT
+  count(*) FILTER (WHERE capture_date > now() - interval '24 hours') AS recents,
+  count(*) FILTER (WHERE capture_date <= now() - interval '24 hours') AS anciens,
+  max(capture_date) AS dernier_run
+FROM core.classements;
+
+-- Warnings ETL classements
+SELECT message, count(*) FROM core.etl_warnings
+  WHERE entity='classements'
+    AND etl_run_id = (SELECT max(id) FROM core.etl_runs WHERE entity='classements')
+  GROUP BY message ORDER BY count(*) DESC;
+```
+
+### Rejouer après bug
+
+```sql
+TRUNCATE core.classements;
+```
+
+Puis re-lancer `etl --entity=classements`. `raw.classements` n'est pas touché.
+
+### Notes opérationnelles
+
+- **1 seul fetch par poule** (pas de --journees=all comme matchs) — bien plus rapide
+- `dernieres_rencontres` stocké tel quel en string (`"-1;1;1;1;1"`). Le parsing en array est délégué à l'API future
+- `difference` est une colonne GENERATED (toujours = `buts_pour - buts_contre`)
+- `capture_date` = timestamp du dernier ETL run pour chaque ligne (utile pour savoir si le snapshot est frais)
+- Un classement peut être vide (`classements: []`) en début de saison — log info, pas warning
+- Re-run quotidien recommandé (cron, cf. `docs/DEPLOY.md`) pour maintenir `capture_date` frais

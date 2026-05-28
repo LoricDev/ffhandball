@@ -16,6 +16,7 @@ import {
 } from "@/scrapers/ffhandball/competition-list.scraper.js";
 import { parseCompetitionDetail } from "@/scrapers/ffhandball/competition-detail.scraper.js";
 import { parseRencontreList } from "@/scrapers/ffhandball/rencontre-list.scraper.js";
+import { parseClassement } from "@/scrapers/ffhandball/classement.scraper.js";
 
 interface CliArgs {
   entity: string;
@@ -518,6 +519,94 @@ async function scrapeMatchs(
   }
 }
 
+async function scrapeClassements(
+  saison: string,
+  opts: {
+    level?: "national" | "regional" | "departemental";
+    limit?: number;
+  },
+): Promise<void> {
+  const run = await startScrapeRun({
+    source_site: "ffhandball.fr",
+    scraper_name: "classements",
+    saison,
+  });
+  logger.info({ run_id: run.id, ...opts }, "starting classements scrape");
+
+  try {
+    const poulesRes = await query<{
+      ext_poule_id: string;
+      ext_competition_id: string;
+      niveau: string;
+      detail_url: string;
+    }>(
+      `SELECT po.id_ffhb AS ext_poule_id,
+              c.id_ffhb  AS ext_competition_id,
+              c.niveau,
+              c.detail_url
+         FROM core.poules po
+         JOIN core.phases ph       ON ph.id = po.phase_id
+         JOIN core.competitions c  ON c.id = ph.competition_id
+        WHERE po.saison_code = $1
+          AND ($2::text IS NULL OR c.niveau = $2)
+          AND c.detail_url IS NOT NULL
+        ORDER BY c.niveau, c.id_ffhb, po.id_ffhb`,
+      [saison, opts.level ?? null],
+    );
+
+    let poules = poulesRes.rows;
+    if (opts.limit !== undefined) poules = poules.slice(0, opts.limit);
+    logger.info({ count: poules.length }, "poules to process");
+
+    let totalInserted = 0;
+    let pouleSkipped = 0;
+    let pouleVide = 0;
+
+    for (const po of poules) {
+      const url = `${po.detail_url}poule-${po.ext_poule_id}/classements/`;
+      const res = await fetchHtml(url);
+      await run.incrementPages(1);
+      if (res.status >= 400) {
+        logger.warn({ url, status: res.status }, "classement page failed");
+        pouleSkipped++;
+        continue;
+      }
+      const parsed = parseClassement(res.body, url, po.ext_poule_id);
+      if (parsed === null) {
+        logger.warn({ url }, "parseClassement returned null");
+        pouleSkipped++;
+        continue;
+      }
+      if (parsed.length === 0) {
+        pouleVide++;
+        continue;
+      }
+      for (const c of parsed) {
+        await insertRaw("classements", {
+          scrape_run_id: run.id,
+          source_url: c.source_url,
+          source_site: "ffhandball.fr",
+          natural_key: c.ext_classement_id,
+          payload: c,
+          saison,
+          http_status: res.status,
+        });
+        totalInserted++;
+      }
+    }
+
+    logger.info(
+      { totalInserted, pouleSkipped, pouleVide, totalPoules: poules.length },
+      "classements scrape done",
+    );
+    await run.finishSuccess();
+  } catch (err) {
+    logger.error({ err }, "classements scrape failed");
+    await run.finishFailure(err);
+    throw err;
+  }
+}
+
 async function main(): Promise<void> {
   const args = parseCliArgs();
   if (args.entity === "clubs") {
@@ -534,6 +623,11 @@ async function main(): Promise<void> {
     await scrapeMatchs(args.saison, {
       level: args.level as "national" | "regional" | "departemental" | undefined,
       journees: args.journees as "all" | "courante" | undefined,
+      limit: args.limit,
+    });
+  } else if (args.entity === "classements") {
+    await scrapeClassements(args.saison, {
+      level: args.level as "national" | "regional" | "departemental" | undefined,
       limit: args.limit,
     });
   } else {
