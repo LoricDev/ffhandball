@@ -28,7 +28,7 @@ npm run api:dev    # watch mode (dev)
 open http://localhost:3000/docs   # Swagger UI interactif
 ```
 
-Endpoints V1 : `/health`, `/ready`, `/clubs`, `/clubs/:id_ffhb`, `/matchs`, `/matchs/:id`, `/classements`, `/joueurs/:numero_licence`, `/search`, `/openapi.json`.
+Endpoints V1 : `/health`, `/ready`, `/clubs`, `/clubs/:id_ffhb`, `/clubs/:id_ffhb/matchs`, `/matchs`, `/matchs/:id`, `/classements`, `/joueurs/:numero_licence`, `/search`, `/openapi.json`.
 
 Détails complets (options, rate-limit, format réponse) : [docs/runbook.md#api-http-publique](docs/runbook.md#api-http-publique).
 

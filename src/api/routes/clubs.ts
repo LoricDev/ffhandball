@@ -3,6 +3,12 @@ import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { clubListItemSchema, clubDetailSchema, clubListQuerySchema } from "@/api/schemas/club.api.js";
 import { errorResponseSchema, paginationMetaSchema } from "@/api/schemas/common.js";
 import { listClubs, getClubByIdFfhb } from "@/api/lib/repositories/club.repo.js";
+import {
+  clubMatchItemSchema,
+  clubMatchsMetaSchema,
+  clubMatchsQuerySchema,
+} from "@/api/schemas/club-matchs.api.js";
+import { getClubMatchsCalendar } from "@/api/lib/repositories/club-matchs.repo.js";
 
 const clubs = new OpenAPIHono();
 
@@ -67,6 +73,77 @@ clubs.openapi(detailRoute, async (c) => {
     );
   }
   return c.json({ data: club });
+});
+
+const clubMatchsRoute = createRoute({
+  method: "get",
+  path: "/clubs/{id_ffhb}/matchs",
+  tags: ["clubs"],
+  summary: "Calendrier des matchs d'un club (équipe principale, réserves et ententes)",
+  description: [
+    "Retourne les matchs d'un club pour une saison donnée, en incluant :",
+    "- L'équipe principale (match exact sur `club.nom`)",
+    "- Les équipes réserve (`club.nom + suffixe` : « X 2 », « X B », etc.)",
+    "- Les ententes (`include_ententes=true` par défaut) : équipes dont le nom contient ENTENTE/ENT **et** au moins un mot distinctif (≥ 4 chars) du nom du club",
+    "",
+    "**Limitation** : le matching est purement textuel via `ILIKE`. Des faux positifs/négatifs sont possibles.",
+    "Le champ `meta.equipes_liees` liste toutes les équipes détectées pour transparence et debug.",
+  ].join("\n"),
+  request: {
+    params: z.object({ id_ffhb: z.string().openapi({ example: "C001", description: "Identifiant FFHB du club" }) }),
+    query: clubMatchsQuerySchema,
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            data: z.array(clubMatchItemSchema),
+            meta: clubMatchsMetaSchema,
+          }),
+        },
+      },
+      description: "Calendrier des matchs du club (trié par date_heure ASC)",
+    },
+    404: {
+      content: { "application/json": { schema: errorResponseSchema } },
+      description: "Club non trouvé",
+    },
+  },
+});
+
+clubs.openapi(clubMatchsRoute, async (c) => {
+  const { id_ffhb } = c.req.valid("param");
+  const q = c.req.valid("query");
+
+  const result = await getClubMatchsCalendar({
+    id_ffhb,
+    saison: q.saison,
+    include_ententes: q.include_ententes,
+    date_from: q.date_from,
+    date_to: q.date_to,
+    statut: q.statut,
+    limit: q.limit,
+    offset: q.offset,
+  });
+
+  if (!result.club) {
+    return c.json(
+      { error: { code: "NOT_FOUND" as const, message: `Club id_ffhb=${id_ffhb} introuvable` } },
+      404,
+    );
+  }
+
+  return c.json({
+    data: result.matchs,
+    meta: {
+      total: result.total,
+      limit: q.limit,
+      offset: q.offset,
+      club: result.club,
+      equipes_liees: result.equipes_liees,
+    },
+  });
 });
 
 export default clubs;
