@@ -141,9 +141,9 @@ export async function runMatchsEtl(saison: string): Promise<EtlReport> {
            id_ffhb_match, poule_id, equipe_dom_id, equipe_ext_id,
            date_heure, heure_estimee,
            score_dom, score_ext, score_mt_dom, score_mt_ext,
-           statut, journee, equipement_id, last_seen_at
+           statut, journee, equipement_id, fdm_code, last_seen_at
          )
-         VALUES ($1, $2, $3, $4, $5::timestamptz, $6, $7, $8, $9, $10, $11, $12, $13, now())
+         VALUES ($1, $2, $3, $4, $5::timestamptz, $6, $7, $8, $9, $10, $11, $12, $13, $14, now())
          ON CONFLICT (id_ffhb_match) DO UPDATE
          SET poule_id      = EXCLUDED.poule_id,
              equipe_dom_id = EXCLUDED.equipe_dom_id,
@@ -157,6 +157,7 @@ export async function runMatchsEtl(saison: string): Promise<EtlReport> {
              statut        = EXCLUDED.statut,
              journee       = EXCLUDED.journee,
              equipement_id = COALESCE(EXCLUDED.equipement_id, core.matchs.equipement_id),
+             fdm_code      = COALESCE(EXCLUDED.fdm_code, core.matchs.fdm_code),
              last_seen_at  = now(),
              updated_at    = CASE
                WHEN core.matchs.poule_id      IS DISTINCT FROM EXCLUDED.poule_id
@@ -171,6 +172,7 @@ export async function runMatchsEtl(saison: string): Promise<EtlReport> {
                  OR core.matchs.statut        IS DISTINCT FROM EXCLUDED.statut
                  OR core.matchs.journee       IS DISTINCT FROM EXCLUDED.journee
                  OR (EXCLUDED.equipement_id IS NOT NULL AND core.matchs.equipement_id IS DISTINCT FROM EXCLUDED.equipement_id)
+                 OR (EXCLUDED.fdm_code IS NOT NULL AND core.matchs.fdm_code IS DISTINCT FROM EXCLUDED.fdm_code)
                THEN now()
                ELSE core.matchs.updated_at
              END
@@ -190,6 +192,7 @@ export async function runMatchsEtl(saison: string): Promise<EtlReport> {
           statut,
           p.journee,
           p.equipement_id ?? null,
+          p.fdm_code ?? null,
         ],
       );
 
