@@ -296,6 +296,30 @@ describe("runMatchsEtl", () => {
     expect(after.rows[0]!.updated_at.getTime()).toBeGreaterThan(before.rows[0]!.updated_at.getTime());
   });
 
+  it("propagates fdm_code from raw payload to core.matchs", async () => {
+    await seedHierarchy("PO1", "EQ_DOM", "EQ_EXT");
+    await insertRawMatch(
+      {
+        ext_rencontre_id: "R10",
+        ext_poule_id: "PO1",
+        ext_equipe_dom_id: "EQ_DOM",
+        ext_equipe_ext_id: "EQ_EXT",
+        date_heure: "2026-04-25T20:30:00+02:00",
+        journee: 1,
+        fdm_code: "VAGPOQJ",
+        source_url: "https://x/",
+      },
+      "R10",
+    );
+    const report = await runMatchsEtl(SAISON);
+    expect(report.rows_inserted).toBe(1);
+
+    const row = await query<{ fdm_code: string | null }>(
+      `SELECT fdm_code FROM core.matchs WHERE id_ffhb_match = 'R10'`,
+    );
+    expect(row.rows[0]!.fdm_code).toBe("VAGPOQJ");
+  });
+
   it("skips when equipe_dom_id === equipe_ext_id after FK resolution", async () => {
     await seedHierarchy("PO1", "EQ_DOM", "EQ_EXT");
     await insertRawMatch(
