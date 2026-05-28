@@ -2,7 +2,7 @@ import { parseArgs } from "node:util";
 import * as cheerio from "cheerio";
 import { logger } from "@/lib/logger.js";
 import { closePool, query } from "@/db/client.js";
-import { fetchHtml } from "@/scrapers/shared/http-client.js";
+import { fetchHtml, fetchBinary } from "@/scrapers/shared/http-client.js";
 import { startScrapeRun } from "@/scrapers/shared/scrape-run.js";
 import { insertRaw } from "@/scrapers/shared/raw-insert.js";
 import { parseClubsListing } from "@/scrapers/ffhandball/clubs.scraper.js";
@@ -18,6 +18,7 @@ import { parseCompetitionDetail } from "@/scrapers/ffhandball/competition-detail
 import { parseRencontreList } from "@/scrapers/ffhandball/rencontre-list.scraper.js";
 import { parseClassement } from "@/scrapers/ffhandball/classement.scraper.js";
 import { parseStatsJoueurs } from "@/scrapers/ffhandball/stats-joueurs.scraper.js";
+import { parseFdmPdf } from "@/scrapers/ffhandball/fdm-pdf.parser.js";
 
 interface CliArgs {
   entity: string;
@@ -681,6 +682,86 @@ async function scrapeStatsJoueurs(
   }
 }
 
+async function scrapeFeuillesMatch(
+  saison: string,
+  opts: { limit?: number },
+): Promise<void> {
+  const run = await startScrapeRun({
+    source_site: "media-ffhb-fdm.ffhandball.fr",
+    scraper_name: "feuilles-match",
+    saison,
+  });
+  logger.info({ run_id: run.id, ...opts }, "starting feuilles-match scrape");
+
+  try {
+    // 1. Codes uniques à scraper (filtrer ceux déjà en raw.feuilles_match)
+    const codesRes = await query<{ fdm_code: string }>(
+      `SELECT DISTINCT m.payload->>'fdm_code' AS fdm_code
+         FROM raw.matchs m
+        WHERE m.saison = $1
+          AND m.payload->>'fdm_code' IS NOT NULL
+          AND m.payload->>'fdm_code' != ''
+          AND NOT EXISTS (
+            SELECT 1 FROM raw.feuilles_match fm
+            WHERE fm.natural_key = m.payload->>'fdm_code' AND fm.saison = $1
+          )
+        ORDER BY fdm_code`,
+      [saison],
+    );
+
+    let toProcess = codesRes.rows;
+    if (opts.limit !== undefined) toProcess = toProcess.slice(0, opts.limit);
+    logger.info({ count: toProcess.length }, "fdm codes to process");
+
+    let totalSuccess = 0;
+    let total404 = 0;
+    let parseFail = 0;
+
+    for (const { fdm_code } of toProcess) {
+      if (fdm_code.length < 4) {
+        logger.warn({ fdm_code }, "fdm_code too short, skip");
+        continue;
+      }
+      const url = `https://media-ffhb-fdm.ffhandball.fr/fdm/${fdm_code[0]}/${fdm_code[1]}/${fdm_code[2]}/${fdm_code[3]}/${fdm_code}.pdf`;
+      const res = await fetchBinary(url);
+      await run.incrementPages(1);
+
+      if (res.status === 404) {
+        total404++;
+        continue;
+      }
+      if (res.status >= 400) {
+        logger.warn({ url, status: res.status }, "FdM fetch failed");
+        continue;
+      }
+
+      const parsed = await parseFdmPdf(res.body, url, fdm_code);
+      if (!parsed) {
+        parseFail++;
+        continue;
+      }
+
+      await insertRaw("feuilles_match", {
+        scrape_run_id: run.id,
+        source_url: url,
+        source_site: "media-ffhb-fdm.ffhandball.fr",
+        natural_key: fdm_code,
+        payload: parsed,
+        saison,
+        http_status: res.status,
+      });
+      totalSuccess++;
+    }
+
+    logger.info({ totalSuccess, total404, parseFail, totalProcessed: toProcess.length }, "feuilles-match scrape done");
+    await run.finishSuccess();
+  } catch (err) {
+    logger.error({ err }, "feuilles-match scrape failed");
+    await run.finishFailure(err);
+    throw err;
+  }
+}
+
 async function main(): Promise<void> {
   const args = parseCliArgs();
   if (args.entity === "clubs") {
@@ -706,6 +787,8 @@ async function main(): Promise<void> {
     });
   } else if (args.entity === "stats-joueurs") {
     await scrapeStatsJoueurs(args.saison, { limit: args.limit });
+  } else if (args.entity === "feuilles-match") {
+    await scrapeFeuillesMatch(args.saison, { limit: args.limit });
   } else {
     throw new Error(`unknown entity: ${args.entity}`);
   }
