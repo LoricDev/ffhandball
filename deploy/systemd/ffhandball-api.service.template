@@ -1,0 +1,25 @@
+[Unit]
+Description=ffhandball API HTTP
+After=network.target docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User={{USER}}
+Group={{USER}}
+WorkingDirectory={{APP_DIR}}
+ExecStart={{NODE_PATH}} --env-file={{APP_DIR}}/.env --import tsx {{APP_DIR}}/src/api/server.ts
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths={{APP_DIR}}/db/data {{APP_DIR}}/logs
+
+[Install]
+WantedBy=multi-user.target
