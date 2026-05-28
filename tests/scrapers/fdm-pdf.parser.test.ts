@@ -107,3 +107,64 @@ describe("parseFdmPdf — cas dégradés", () => {
     expect(r).toBeNull();
   });
 });
+
+describe("parseFdmPdf — actions (Page 2)", () => {
+  it("extracts chronological actions from VAGPOQJ déroulé", async () => {
+    const buf = await readFile(fixturePath("fdm-VAGPOQJ.pdf"));
+    const r = await parseFdmPdf(buf, SOURCE_URL, "VAGPOQJ");
+    expect(r).not.toBeNull();
+    expect(r!.actions.length).toBeGreaterThan(40);
+
+    // 1ère action : 02:41 — Arrêt JR N°95 MACEL dylan
+    const first = r!.actions[0]!;
+    expect(first.ordre).toBe(0);
+    expect(first.periode).toBe(1);
+    expect(first.temps_seconds).toBe(2 * 60 + 41);
+    expect(first.type_action).toBe("arret");
+    expect(first.cote).toBe("recevant");
+    expect(first.numero_maillot).toBe(95);
+    expect(first.acteur_role).toBe("joueur");
+  });
+
+  it("recognizes buts and tirs with cote dom/ext", async () => {
+    const buf = await readFile(fixturePath("fdm-VAGPOQJ.pdf"));
+    const r = await parseFdmPdf(buf, SOURCE_URL, "VAGPOQJ");
+    const buts = r!.actions.filter((a) => a.type_action === "but");
+    const tirs = r!.actions.filter((a) => a.type_action === "tir");
+    expect(buts.length).toBeGreaterThan(10);
+    expect(tirs.length).toBeGreaterThan(5);
+    expect(buts.every((b) => b.cote === "recevant" || b.cote === "visiteur")).toBe(true);
+  });
+
+  it("parses sanctions (avertissement, 2MN)", async () => {
+    const buf = await readFile(fixturePath("fdm-VAGPOQJ.pdf"));
+    const r = await parseFdmPdf(buf, SOURCE_URL, "VAGPOQJ");
+    const avert = r!.actions.find((a) => a.type_action === "avertissement");
+    expect(avert).toBeDefined();
+    const exclu = r!.actions.find((a) => a.type_action === "exclusion_2min");
+    expect(exclu).toBeDefined();
+  });
+
+  it("parses temps mort with cote", async () => {
+    const buf = await readFile(fixturePath("fdm-VAGPOQJ.pdf"));
+    const r = await parseFdmPdf(buf, SOURCE_URL, "VAGPOQJ");
+    const tm = r!.actions.find((a) => a.type_action === "temps_mort_recevant" || a.type_action === "temps_mort_visiteur");
+    expect(tm).toBeDefined();
+  });
+
+  it("recognizes protocole commotion", async () => {
+    const buf = await readFile(fixturePath("fdm-VAGPOQJ.pdf"));
+    const r = await parseFdmPdf(buf, SOURCE_URL, "VAGPOQJ");
+    const pc = r!.actions.find((a) => a.type_action === "protocole_commotion");
+    expect(pc).toBeDefined();
+    expect(pc!.acteur_role).toBe("joueur");
+  });
+
+  it("ordre is strictly monotonic (0, 1, 2, ...)", async () => {
+    const buf = await readFile(fixturePath("fdm-VAGPOQJ.pdf"));
+    const r = await parseFdmPdf(buf, SOURCE_URL, "VAGPOQJ");
+    for (let i = 0; i < r!.actions.length; i++) {
+      expect(r!.actions[i]!.ordre).toBe(i);
+    }
+  });
+});
