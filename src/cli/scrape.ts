@@ -17,6 +17,7 @@ import {
 import { parseCompetitionDetail } from "@/scrapers/ffhandball/competition-detail.scraper.js";
 import { parseRencontreList } from "@/scrapers/ffhandball/rencontre-list.scraper.js";
 import { parseClassement } from "@/scrapers/ffhandball/classement.scraper.js";
+import { parseStatsJoueurs } from "@/scrapers/ffhandball/stats-joueurs.scraper.js";
 
 interface CliArgs {
   entity: string;
@@ -607,6 +608,79 @@ async function scrapeClassements(
   }
 }
 
+async function scrapeStatsJoueurs(
+  saison: string,
+  opts: { limit?: number },
+): Promise<void> {
+  const run = await startScrapeRun({
+    source_site: "ffhandball.fr",
+    scraper_name: "stats-joueurs",
+    saison,
+  });
+  logger.info({ run_id: run.id, ...opts }, "starting stats-joueurs scrape");
+
+  try {
+    // Filtre niveau='national' en amont (gain ~95% des fetches)
+    const poulesRes = await query<{
+      ext_poule_id: string;
+      detail_url: string;
+    }>(
+      `SELECT po.id_ffhb AS ext_poule_id, c.detail_url
+         FROM core.poules po
+         JOIN core.phases ph       ON ph.id = po.phase_id
+         JOIN core.competitions c  ON c.id = ph.competition_id
+        WHERE po.saison_code = $1
+          AND c.niveau = 'national'
+          AND c.detail_url IS NOT NULL
+        ORDER BY c.id_ffhb, po.id_ffhb`,
+      [saison],
+    );
+
+    let poules = poulesRes.rows;
+    if (opts.limit !== undefined) poules = poules.slice(0, opts.limit);
+    logger.info({ count: poules.length }, "national poules to process");
+
+    let totalInserted = 0;
+    let pouleSansStats = 0;
+
+    for (const po of poules) {
+      const url = `${po.detail_url}poule-${po.ext_poule_id}/statistiques/`;
+      const res = await fetchHtml(url);
+      await run.incrementPages(1);
+      if (res.status >= 400) {
+        logger.warn({ url, status: res.status }, "stats page failed");
+        continue;
+      }
+      const parsed = parseStatsJoueurs(res.body, url, po.ext_poule_id);
+      if (parsed.length === 0) {
+        pouleSansStats++;
+        continue;
+      }
+      for (const s of parsed) {
+        await insertRaw("stats_joueurs", {
+          scrape_run_id: run.id,
+          source_url: s.source_url,
+          source_site: "ffhandball.fr",
+          natural_key: `${s.ext_poule_id}-${s.individu_id}`,
+          payload: s,
+          saison,
+          http_status: res.status,
+        });
+        totalInserted++;
+      }
+    }
+    logger.info(
+      { totalInserted, pouleSansStats, totalPoules: poules.length },
+      "stats-joueurs scrape done",
+    );
+    await run.finishSuccess();
+  } catch (err) {
+    logger.error({ err }, "stats-joueurs scrape failed");
+    await run.finishFailure(err);
+    throw err;
+  }
+}
+
 async function main(): Promise<void> {
   const args = parseCliArgs();
   if (args.entity === "clubs") {
@@ -630,6 +704,8 @@ async function main(): Promise<void> {
       level: args.level as "national" | "regional" | "departemental" | undefined,
       limit: args.limit,
     });
+  } else if (args.entity === "stats-joueurs") {
+    await scrapeStatsJoueurs(args.saison, { limit: args.limit });
   } else {
     throw new Error(`unknown entity: ${args.entity}`);
   }
