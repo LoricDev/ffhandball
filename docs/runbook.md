@@ -551,12 +551,17 @@ Puis re-lancer `etl --entity=classements`. `raw.classements` n'est pas touché.
 - Un classement peut être vide (`classements: []`) en début de saison — log info, pas warning
 - Re-run quotidien recommandé (cron, cf. `docs/DEPLOY.md`) pour maintenir `capture_date` frais
 
-## Scraper les stats joueurs (national uniquement)
+## Scraper les stats joueurs (national + régional séniors)
 
 Alimente `core.stats_joueurs` depuis le composant `competitions---stats-joueurs`.
-**Scope : compétitions nationales uniquement.** Les autres niveaux retournent un
-soft-404 silencieux (`page-header.is404=true`), détecté et géré proprement par
-le scraper.
+**Scope : compétitions nationales + régionales séniors** (N3, Prénationale,
+Excellence, Honneur, 1ère Div...). Le flag source `afficherStatsJoueurs="1"` dans
+les attributs de `competitions---competition-main-menu` détermine quelles
+compétitions exposent les stats. Régional jeunes et départemental = `"0"`.
+
+Le flag est stocké dans `core.competitions.afficher_stats_joueurs` (BOOLEAN) et
+sert de filtre dans la requête stats-joueurs. **Prérequis : avoir re-scrappé les
+compétitions** pour remplir ce flag (cf. dépendance ci-dessous).
 
 ### Données disponibles publiquement
 
@@ -571,15 +576,15 @@ poste/position joueur — derrière login GestHand (RGPD).
 ### Scrape
 
 ```bash
-# Dev — 3 poules nationales
-npm run scrape -- --entity=stats-joueurs --saison=2025-2026 --limit=3
+# Dev — 20 poules (nationales + régionales selon ordre c.id_ffhb)
+npm run scrape -- --entity=stats-joueurs --saison=2025-2026 --limit=20
 
-# Run complet national (~50-100 poules nationales, ~2-3 min)
+# Run complet national + régional séniors (~500-1000 poules, ~15-30 min)
 npm run scrape -- --entity=stats-joueurs --saison=2025-2026
 ```
 
-Pas d'option `--level` — par design seules les compétitions nationales ont des
-stats publiques. Le filtre `niveau='national'` est appliqué en amont.
+Pas d'option `--level` — le filtre `afficher_stats_joueurs=true` est appliqué en
+amont et couvre tous les niveaux concernés (national + régional séniors).
 
 ### ETL
 
@@ -590,16 +595,39 @@ npm run etl -- --entity=stats-joueurs --saison=2025-2026
 **Ordre obligatoire global** : `competitions → phases → poules → equipes →
 engagements → matchs → arbitres → match_officiels → classements → stats-joueurs`.
 
+**Important** : si `core.competitions.afficher_stats_joueurs` est NULL pour les
+compétitions régionales, relancer d'abord :
+```bash
+npm run scrape -- --entity=competitions --saison=2025-2026
+npm run etl -- --entity=competitions --saison=2025-2026
+```
+
 ### Suivre la couverture
 
 ```sql
--- Counts
-SELECT 'stats_joueurs' AS t, count(*) FROM core.stats_joueurs
+-- Counts global + par niveau
+SELECT 'stats_joueurs_total' AS t, count(*) FROM core.stats_joueurs
 UNION ALL SELECT 'equipe_id_resolu', count(equipe_id) FROM core.stats_joueurs
 UNION ALL SELECT 'taux_resolution_pct',
        (count(equipe_id) * 100 / NULLIF(count(*), 0))::text::int FROM core.stats_joueurs;
 
--- Top 20 buteurs nationaux toutes compétitions confondues
+-- Distribution par niveau de compétition
+SELECT c.niveau, count(*) AS stats_count
+  FROM core.stats_joueurs s
+  JOIN core.poules po ON po.id = s.poule_id
+  JOIN core.phases ph ON ph.id = po.phase_id
+  JOIN core.competitions c ON c.id = ph.competition_id
+ GROUP BY c.niveau ORDER BY c.niveau;
+
+-- Couverture flag afficher_stats_joueurs par niveau
+SELECT niveau,
+       count(*) FILTER (WHERE afficher_stats_joueurs = true) AS avec_stats,
+       count(*) FILTER (WHERE afficher_stats_joueurs = false) AS sans_stats,
+       count(*) FILTER (WHERE afficher_stats_joueurs IS NULL) AS null_flag,
+       count(*) AS total
+  FROM core.competitions GROUP BY niveau ORDER BY niveau;
+
+-- Top 20 buteurs toutes compétitions confondues
 SELECT s.nom, s.prenom, s.equipe_libelle, s.total_buts, s.match_count,
        round(s.total_buts::numeric / NULLIF(s.match_count, 0), 2) AS buts_par_match
   FROM core.stats_joueurs s
@@ -634,8 +662,16 @@ Puis re-lancer `etl --entity=stats-joueurs`. `raw.stats_joueurs` n'est pas touch
 
 ### Notes opérationnelles
 
-- **National uniquement** : par design, le composant n'est pas exposé sur régional/dép. Le scraper filtre `niveau='national'` en amont → ~50-100 fetches au lieu de ~5k
-- `core.joueurs` (table FFHB officielle) reste **vide** — les identités complètes nécessiteraient un accès GestHand authentifié
-- L'`equipe_libelle` est conservé en clair même quand `equipe_id` est NULL — permet de matcher manuellement les cas non résolus ou d'enrichir via une feature future de fuzzy matching
-- Volumétrie totale : ~15-30k lignes (287 joueurs × ~50-100 poules nationales)
-- Re-run quotidien possible via cron (cf. `docs/DEPLOY.md`) — feature peu coûteuse à actualiser
+- **Scope étendu** : national (~20 compétitions) + régional séniors (~190-340
+  compétitions selon les 19 ligues). Le filtre `afficher_stats_joueurs=true`
+  exclut automatiquement le régional jeunes et le départemental (flag=false)
+- **Dépendance flag** : le champ `afficher_stats_joueurs` est rempli lors du
+  scrape des compétitions. Si NULL pour le régional, re-scrapper les compétitions
+  avant de lancer stats-joueurs
+- `core.joueurs` (table FFHB officielle) reste **vide** — les identités complètes
+  nécessiteraient un accès GestHand authentifié
+- L'`equipe_libelle` est conservé en clair même quand `equipe_id` est NULL
+- Volumétrie totale : **~30-100k lignes** (~250-350 compétitions × ~3-12
+  équipes × ~12 joueurs), vs ~15-30k national-only
+- Re-run quotidien possible via cron (cf. `docs/DEPLOY.md`) — plus coûteux
+  qu'avant (~15-30 min au lieu de ~2-3 min)
