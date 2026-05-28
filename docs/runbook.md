@@ -816,6 +816,7 @@ open http://localhost:3000/docs
 - `GET /ready` — readiness check (DB connection)
 - `GET /clubs?q=...&departement=...&limit=20&offset=0` — liste paginée
 - `GET /clubs/:id_ffhb` — détail club + salle
+- `GET /clubs/:id_ffhb/matchs?saison=2025-2026&include_ententes=true&date_from=...&date_to=...&statut=...&limit=20&offset=0` — calendrier des matchs d'un club (équipe principale, réserves et ententes)
 - `GET /matchs?poule_id_ffhb=...&date_from=...&date_to=...&statut=...` — liste
 - `GET /matchs/:id_ffhb_match` — détail enrichi (compositions + actions + arbitres + fdm_url)
 - `GET /classements?poule_id_ffhb=X` — classement poule
@@ -823,6 +824,31 @@ open http://localhost:3000/docs
 - `GET /search?q=...&type=clubs|equipes|joueurs|all` — fuzzy search
 - `GET /openapi.json` — spec OpenAPI 3.1
 - `GET /docs` — Swagger UI
+
+#### Détail : GET /clubs/:id_ffhb/matchs
+
+Endpoint le plus complexe : retourne le calendrier d'un club incluant les matchs des équipes liées.
+
+**Paramètres query :**
+- `saison` : code saison (défaut `2025-2026`)
+- `include_ententes` : `true` (défaut) | `false` — inclure les matchs des équipes ententes
+- `date_from` / `date_to` : filtre plage dates (ISO 8601)
+- `statut` : `joue` | `a_jouer` | `reporte` | `annule` | `forfait`
+- `limit` / `offset` : pagination (max 100)
+
+**Détection des équipes liées :** matching textuel via `ILIKE` sur `core.equipes.nom` :
+1. Équipe principale : `nom = club.nom` (match exact, majuscules)
+2. Équipes réserve : `nom ILIKE club.nom || ' %'` (capture "X 2", "X B", etc.)
+3. Ententes (si `include_ententes=true`) : nom contient ENTENTE/ENT _et_ au moins un mot distinctif du club (≥ 4 chars)
+
+**Champs enrichis sur chaque match :**
+- `club_recevant` : true si l'équipe liée est à domicile
+- `via_entente` : true si match via une équipe entente
+- `via_principal` : true si match via l'équipe principale (vs réserve/entente)
+
+**`meta.equipes_liees`** : liste transparente des équipes détectées comme liées au club, avec `is_principal` et `is_entente`.
+
+**Limitation connue :** matching textuel (`ILIKE`). Des faux positifs/négatifs sont possibles si les noms de clubs/équipes sont mal formés. La solution propre est la résolution future de `core.equipes.club_id`.
 
 ### Rate-limit
 
