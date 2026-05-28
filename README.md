@@ -42,6 +42,10 @@ Détails complets (options, rate-limit, format réponse) : [docs/runbook.md#api-
 - **Tests** : Vitest (~250 tests passants)
 - **Logs** : pino
 
+## Déploiement en production
+
+Pour déployer en prod sur un VPS frais : voir [`deploy/README.md`](deploy/README.md) — 1 commande, tout automatisé (DB, API, nginx, HTTPS, cron).
+
 ## Démarrage rapide
 
 ```bash
