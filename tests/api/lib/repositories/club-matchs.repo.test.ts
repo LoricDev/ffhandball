@@ -174,6 +174,22 @@ describe("getClubMatchsCalendar — couches de précision", () => {
     expect(r.equipes_liees.find((e) => e.nom === "ENTENTE GAMMA DELTA")).toBeDefined();
   });
 
+  it("résout le club par son code FFHB 7 chiffres (code_ffhb) et l'expose", async () => {
+    // CLUB_A a pour id_ffhb "1720" et email CODE_A@ffhandball.net → code_ffhb généré = CODE_A
+    const r = await getClubMatchsCalendar({
+      id_ffhb: CODE_A, // "5221105" — le code 7 chiffres, PAS l'id_club
+      saison: SAISON,
+      include_ententes: true,
+      limit: 50,
+      offset: 0,
+    });
+    expect(r.club).not.toBeNull();
+    expect(r.club!.id_ffhb).toBe(CLUB_A);
+    expect(r.club!.code_ffhb).toBe(CODE_A);
+    // la couche licence (clé = code_ffhb) lie bien l'entente
+    expect(r.equipes_liees.find((e) => e.nom === "ENTENTE GAMMA DELTA")).toBeDefined();
+  });
+
   it("exclut l'entente quand include_ententes=false", async () => {
     const r = await getClubMatchsCalendar({
       id_ffhb: CLUB_A,
