@@ -39,7 +39,7 @@ Détails complets (options, rate-limit, format réponse) : [docs/runbook.md#api-
 - **Scraping** : Cheerio (HTML), p-retry (résilience)
 - **Validation** : Zod
 - **API** : Hono 4 + @hono/zod-openapi + @hono/swagger-ui
-- **Tests** : Vitest (~250 tests passants)
+- **Tests** : Vitest (~300 tests passants)
 - **Logs** : pino
 
 ## Déploiement en production
@@ -56,7 +56,7 @@ npm install
 npm run db:up              # Postgres + Adminer
 npm run db:migrate         # 17 migrations
 npm run db:seed            # saisons + ligues + départements
-npm test                   # ~250 tests (run en séquentiel pour éviter deadlocks)
+npm test                   # ~300 tests (run en séquentiel pour éviter deadlocks)
 
 # Smoke test : 5 compétitions nationales avec leurs équipes
 npm run scrape -- --entity=competitions --saison=2025-2026 --level=national --limit=5
