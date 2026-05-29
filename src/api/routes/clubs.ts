@@ -9,6 +9,9 @@ import {
   clubMatchsQuerySchema,
 } from "@/api/schemas/club-matchs.api.js";
 import { getClubMatchsCalendar } from "@/api/lib/repositories/club-matchs.repo.js";
+import { clubEquipeSchema } from "@/api/schemas/equipe.api.js";
+import { saisonQuerySchema } from "@/api/schemas/competition.api.js";
+import { listClubEquipes } from "@/api/lib/repositories/equipe.repo.js";
 
 const clubs = new OpenAPIHono();
 
@@ -160,6 +163,46 @@ clubs.openapi(clubMatchsRoute, async (c) => {
       equipes_liees: result.equipes_liees,
     },
   });
+});
+
+const clubEquipesRoute = createRoute({
+  method: "get",
+  path: "/clubs/{id_ffhb}/equipes",
+  tags: ["clubs"],
+  summary: "Équipes propres d'un club (pont autoritatif ext_structure_id = id_ffhb)",
+  request: {
+    params: z.object({
+      id_ffhb: z.string().openapi({ example: "1720", description: "id_club FFHB OU code FFHB 7 chiffres" }),
+    }),
+    query: saisonQuerySchema,
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            data: z.array(clubEquipeSchema),
+            meta: z.object({
+              club: z.object({ id_ffhb: z.string(), code_ffhb: z.string().nullable(), nom: z.string() }),
+            }),
+          }),
+        },
+      },
+      description: "Équipes du club (avec leurs engagements)",
+    },
+    404: { content: { "application/json": { schema: errorResponseSchema } }, description: "Club introuvable" },
+  },
+});
+
+clubs.openapi(clubEquipesRoute, async (c) => {
+  const { id_ffhb } = c.req.valid("param");
+  const { saison } = c.req.valid("query");
+  const club = await getClubByIdFfhb(id_ffhb); // résout par id_ffhb OU code_ffhb
+  if (!club) {
+    return c.json({ error: { code: "NOT_FOUND" as const, message: `Club id_ffhb=${id_ffhb} introuvable` } }, 404);
+  }
+  const data = await listClubEquipes(club.id_ffhb, saison);
+  return c.json({ data, meta: { club: { id_ffhb: club.id_ffhb, code_ffhb: club.code_ffhb, nom: club.nom } } });
 });
 
 export default clubs;
