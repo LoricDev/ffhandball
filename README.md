@@ -20,7 +20,7 @@ Pipeline de scraping et de structuration des données du handball français
 
 ## API HTTP
 
-API REST read-only basée sur **Hono 4** avec spec **OpenAPI 3.1** auto-générée et rate-limit IP intégré (60 req/min configurable).
+API REST read-only basée sur **Hono 4** avec spec **OpenAPI 3.1** auto-générée et rate-limit IP intégré (60 req/min configurable). **Authentification par clé API optionnelle** (`API_AUTH_ENABLED`) pour un accès payant : voir [docs/runbook.md#authentification-par-clé-api-monétisation](docs/runbook.md#api-http-publique).
 
 ```bash
 npm run api        # → http://localhost:3000
@@ -39,7 +39,7 @@ Détails complets (options, rate-limit, format réponse) : [docs/runbook.md#api-
 - **Scraping** : Cheerio (HTML), p-retry (résilience)
 - **Validation** : Zod
 - **API** : Hono 4 + @hono/zod-openapi + @hono/swagger-ui
-- **Tests** : Vitest (~300 tests passants)
+- **Tests** : Vitest (~320 tests passants)
 - **Logs** : pino
 
 ## Déploiement en production
@@ -54,9 +54,9 @@ Pour déployer en prod sur un VPS frais : voir [`deploy/README.md`](deploy/READM
 cp .env.example .env       # adapter SCRAPE_USER_AGENT avec un email de contact
 npm install
 npm run db:up              # Postgres + Adminer
-npm run db:migrate         # 17 migrations
+npm run db:migrate         # 18 migrations
 npm run db:seed            # saisons + ligues + départements
-npm test                   # ~300 tests (run en séquentiel pour éviter deadlocks)
+npm test                   # ~320 tests (run en séquentiel pour éviter deadlocks)
 
 # Smoke test : 5 compétitions nationales avec leurs équipes
 npm run scrape -- --entity=competitions --saison=2025-2026 --level=national --limit=5
@@ -159,7 +159,7 @@ Détails complets, options, suivi de couverture SQL : voir `docs/runbook.md`.
 ```
 ffhandball/
 ├── db/
-│   ├── migrations/      # 17 migrations SQL séquentielles
+│   ├── migrations/      # 18 migrations SQL séquentielles
 │   ├── seeds/           # saisons, ligues, départements
 │   └── data/            # volume Docker (gitignored)
 ├── docs/
@@ -203,6 +203,6 @@ Pour ajouter une nouvelle entité :
 
 ## Statut
 
-**17 entités modèle • 17 migrations • 10 scrapers • 13 ETLs • 28 endpoints API • ~300 tests passants**
+**17 entités modèle • 18 migrations • 10 scrapers • 13 ETLs • 28 endpoints API • ~320 tests passants**
 
 Pipeline production-ready. Voir `docs/DEPLOY.md` pour déployer et `docs/runbook.md` pour toutes les commandes opérationnelles.
