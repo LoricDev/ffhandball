@@ -54,7 +54,7 @@ Pour déployer en prod sur un VPS frais : voir [`deploy/README.md`](deploy/READM
 cp .env.example .env       # adapter SCRAPE_USER_AGENT avec un email de contact
 npm install
 npm run db:up              # Postgres + Adminer
-npm run db:migrate         # 15 migrations
+npm run db:migrate         # 16 migrations
 npm run db:seed            # saisons + ligues + départements
 npm test                   # ~250 tests (run en séquentiel pour éviter deadlocks)
 
@@ -159,7 +159,7 @@ Détails complets, options, suivi de couverture SQL : voir `docs/runbook.md`.
 ```
 ffhandball/
 ├── db/
-│   ├── migrations/      # 15 migrations SQL séquentielles
+│   ├── migrations/      # 16 migrations SQL séquentielles
 │   ├── seeds/           # saisons, ligues, départements
 │   └── data/            # volume Docker (gitignored)
 ├── docs/
@@ -203,6 +203,6 @@ Pour ajouter une nouvelle entité :
 
 ## Statut
 
-**17 entités modèle • 15 migrations • 10 scrapers • 13 ETLs • 9 endpoints API • ~250 tests passants**
+**17 entités modèle • 16 migrations • 10 scrapers • 13 ETLs • 9 endpoints API • ~270 tests passants**
 
 Pipeline production-ready. Voir `docs/DEPLOY.md` pour déployer et `docs/runbook.md` pour toutes les commandes opérationnelles.
