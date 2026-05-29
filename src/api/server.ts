@@ -15,13 +15,21 @@ import statsJoueursRoutes from "@/api/routes/stats-joueurs.js";
 import arbitresRoutes from "@/api/routes/arbitres.js";
 import sallesRoutes from "@/api/routes/salles.js";
 import referentielsRoutes from "@/api/routes/referentiels.js";
+import adminRoutes from "@/api/routes/admin.js";
 import { env } from "@/config/env.js";
 import { logger } from "@/lib/logger.js";
 import { requestLoggerMiddleware } from "@/api/middleware/request-logger.js";
 import { errorHandlerMiddleware } from "@/api/middleware/error-handler.js";
 import { rateLimitMiddleware } from "@/api/middleware/rate-limit.js";
+import { apiKeyAuthMiddleware } from "@/api/middleware/auth.js";
 
-export function buildApp(): OpenAPIHono {
+export interface BuildAppOptions {
+  /** Active l'auth par clé API. Défaut : env.API_AUTH_ENABLED. */
+  authEnabled?: boolean;
+}
+
+export function buildApp(opts: BuildAppOptions = {}): OpenAPIHono {
+  const authEnabled = opts.authEnabled ?? env.API_AUTH_ENABLED;
   const app = new OpenAPIHono({
     defaultHook: (result, c) => {
       if (!result.success) {
@@ -39,11 +47,13 @@ export function buildApp(): OpenAPIHono {
     },
   });
 
-  // Middlewares (ordre important)
+  // Middlewares (ordre important : auth avant rate-limit pour la limite par clé)
   app.use("*", requestLoggerMiddleware());
   app.use("*", errorHandlerMiddleware());
+  if (authEnabled) app.use("*", apiKeyAuthMiddleware());
   app.use("*", rateLimitMiddleware());
 
+  app.route("/", adminRoutes);
   app.route("/", healthRoutes);
   app.route("/", clubsRoutes);
   app.route("/", matchsRoutes);
@@ -59,14 +69,21 @@ export function buildApp(): OpenAPIHono {
   app.route("/", referentielsRoutes);
 
   // OpenAPI spec + Swagger UI
+  app.openAPIRegistry.registerComponent("securitySchemes", "bearerAuth", {
+    type: "http",
+    scheme: "bearer",
+    description: "Clé API : Authorization: Bearer <token>. Requise si l'auth est activée.",
+  });
   app.doc31("/openapi.json", {
     openapi: "3.1.0",
     info: {
       version: "1.0.0",
       title: "ffhandball API",
       description:
-        "API publique read-only sur les données handball français scrapées de FFHandball",
+        "API read-only sur les données handball français scrapées de FFHandball." +
+        (authEnabled ? " Authentification par clé API requise (Authorization: Bearer)." : ""),
     },
+    ...(authEnabled ? { security: [{ bearerAuth: [] }] } : {}),
   });
 
   app.get("/docs", swaggerUI({ url: "/openapi.json" }));
