@@ -3,10 +3,11 @@ import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import {
   arbitreListItemSchema,
   arbitreMatchItemSchema,
+  arbitreDetailSchema,
   arbitreListQuerySchema,
 } from "@/api/schemas/arbitre.api.js";
 import { paginationMetaSchema, paginationQuerySchema, errorResponseSchema } from "@/api/schemas/common.js";
-import { listArbitres, getArbitreMatchs } from "@/api/lib/repositories/arbitre.repo.js";
+import { listArbitres, getArbitreMatchs, getArbitreDetail } from "@/api/lib/repositories/arbitre.repo.js";
 
 const arbitres = new OpenAPIHono();
 
@@ -32,6 +33,32 @@ arbitres.openapi(listRoute, async (c) => {
   const q = c.req.valid("query");
   const { data, total } = await listArbitres({ q: q.q, niveau: q.niveau, limit: q.limit, offset: q.offset });
   return c.json({ data, meta: { total, limit: q.limit, offset: q.offset } });
+});
+
+const detailRoute = createRoute({
+  method: "get",
+  path: "/arbitres/{id_ffhb}",
+  tags: ["arbitres"],
+  summary: "Détail d'un arbitre (+ nombre de matchs arbitrés)",
+  request: {
+    params: z.object({ id_ffhb: z.string().openapi({ example: "286170", description: "Identifiant FFHB de l'arbitre" }) }),
+  },
+  responses: {
+    200: {
+      content: { "application/json": { schema: z.object({ data: arbitreDetailSchema }) } },
+      description: "Détail de l'arbitre",
+    },
+    404: { content: { "application/json": { schema: errorResponseSchema } }, description: "Arbitre introuvable" },
+  },
+});
+
+arbitres.openapi(detailRoute, async (c) => {
+  const { id_ffhb } = c.req.valid("param");
+  const data = await getArbitreDetail(id_ffhb);
+  if (!data) {
+    return c.json({ error: { code: "NOT_FOUND" as const, message: `Arbitre id_ffhb=${id_ffhb} introuvable` } }, 404);
+  }
+  return c.json({ data });
 });
 
 const matchsRoute = createRoute({
