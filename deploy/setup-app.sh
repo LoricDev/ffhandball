@@ -37,6 +37,9 @@ if [ -z "$POSTGRES_PASSWORD" ]; then
   echo ""
 fi
 
+# Secret admin pour /admin/api-keys (toujours généré : prêt si tu actives l'auth plus tard).
+ADMIN_SECRET=$(openssl rand -hex 32 2>/dev/null || tr -dc 'a-f0-9' < /dev/urandom | head -c 64)
+
 DATE_NOW=$(date +%Y-%m-%d)
 
 echo ""
@@ -84,6 +87,7 @@ sed \
   -e "s|{{DOMAIN}}|${DOMAIN}|g" \
   -e "s|{{CONTACT_EMAIL}}|${CONTACT_EMAIL}|g" \
   -e "s|{{POSTGRES_PASSWORD}}|${POSTGRES_PASSWORD}|g" \
+  -e "s|{{ADMIN_SECRET}}|${ADMIN_SECRET}|g" \
   -e "s|{{DATE}}|${DATE_NOW}|g" \
   "$TEMPLATE" > "$ENV_FILE"
 
@@ -253,7 +257,12 @@ echo "  API locale   : http://localhost:3000"
 echo "  Logs API     : journalctl -u ffhandball-api -f"
 echo "  Statut       : systemctl status ffhandball-api"
 echo ""
-echo "IMPORTANT : Sauvegarder le mot de passe Postgres :"
+echo "IMPORTANT : Sauvegarder ces secrets (aussi dans $ENV_FILE) :"
 echo "  POSTGRES_PASSWORD : $POSTGRES_PASSWORD"
-echo "  (Stocké aussi dans $ENV_FILE)"
+echo "  ADMIN_SECRET      : $ADMIN_SECRET"
+echo ""
+echo "Auth API : désactivée (API_AUTH_ENABLED=false). Pour facturer :"
+echo "  1) npm run apikey -- create --label=<email> --months=1   # 1re clé"
+echo "  2) Passer API_AUTH_ENABLED=true dans $ENV_FILE"
+echo "  3) sudo systemctl restart ffhandball-api"
 echo ""
