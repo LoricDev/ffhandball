@@ -4,7 +4,6 @@ import {
   extractDistinctiveTokens,
   buildWholeWordPattern,
   rankToConfidence,
-  code7FromEmail,
   RANK_BY_CONFIDENCE,
   LICENCE_MATCH_MIN_PLAYERS,
   type MatchMethod,
@@ -52,29 +51,27 @@ export interface ClubMatchsOptions {
 }
 
 export interface ClubMatchsResult {
-  club: { id_ffhb: string; nom: string } | null;
+  club: { id_ffhb: string; code_ffhb: string | null; nom: string } | null;
   equipes_liees: EquipeLiee[];
   matchs: ClubMatchItem[];
   total: number;
 }
 
 export async function getClubMatchsCalendar(opts: ClubMatchsOptions): Promise<ClubMatchsResult> {
-  // 1. Récupérer le club (email inclus : son préfixe = code FFHB 7 chiffres,
-  //    clé de jointure des licences — cf. resolveLinkedTeams couche "licence")
-  const clubRes = await query<{ id_ffhb: string; nom: string; email: string | null }>(
-    `SELECT id_ffhb, nom, email FROM core.clubs WHERE id_ffhb = $1`,
+  // 1. Récupérer le club. Résolution par id_ffhb (= id_club monclub) OU par code_ffhb
+  //    (code FFHB 7 chiffres public). code_ffhb sert aussi de clé à la couche "licence".
+  const clubRes = await query<{ id_ffhb: string; code_ffhb: string | null; nom: string }>(
+    `SELECT id_ffhb, code_ffhb, nom FROM core.clubs WHERE id_ffhb = $1 OR code_ffhb = $1`,
     [opts.id_ffhb],
   );
   if (clubRes.rowCount === 0) {
     return { club: null, equipes_liees: [], matchs: [], total: 0 };
   }
-  const clubRow = clubRes.rows[0]!;
-  // Objet club exposé dans la réponse : on n'expose PAS l'email (PII).
-  const club = { id_ffhb: clubRow.id_ffhb, nom: clubRow.nom };
+  const club = clubRes.rows[0]!;
 
   // 2. Résolution multi-signal des équipes liées (licence + structure + textuel)
   const equipes_liees = await resolveLinkedTeams(
-    clubRow,
+    club,
     opts.saison,
     opts.include_ententes,
     opts.min_confidence,
@@ -198,20 +195,18 @@ export async function getClubMatchsCalendar(opts: ClubMatchsOptions): Promise<Cl
  *
  * Deux espaces d'ID distincts coexistent côté FFHB :
  *  - `club.id_ffhb` = id_club monclub (= ext_structure_id des équipes) → couche `structure`.
- *  - le code FFHB 7 chiffres (préfixe du `email_club`, ex. 5221105@ffhandball.net) = préfixe des
- *    numéros de licence → couche `licence`. Dérivé ici de `club.email`.
+ *  - `club.code_ffhb` = code FFHB 7 chiffres (colonne générée depuis l'email, = préfixe des
+ *    numéros de licence) → couche `licence`. null si inconnu → couche licence inerte.
  */
 async function resolveLinkedTeams(
-  club: { id_ffhb: string; nom: string; email: string | null },
+  club: { id_ffhb: string; code_ffhb: string | null; nom: string },
   saison: string,
   include_ententes: boolean,
   min_confidence?: Confidence,
 ): Promise<EquipeLiee[]> {
   const pattern = buildWholeWordPattern(extractDistinctiveTokens(club.nom)); // string | null
   const minRank = min_confidence ? RANK_BY_CONFIDENCE[min_confidence] : null;
-  // Code FFHB 7 chiffres = préfixe de l'email club (clé de jointure des licences).
-  // null si l'email est absent ou non conforme → la couche licence est alors inerte.
-  const code7 = code7FromEmail(club.email);
+  const code7 = club.code_ffhb; // clé licence (null-safe : si null, couche licence inerte)
 
   const sql = `
     WITH comp AS (
