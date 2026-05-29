@@ -4,6 +4,7 @@ import {
   extractDistinctiveTokens,
   buildWholeWordPattern,
   rankToConfidence,
+  code7FromEmail,
   RANK_BY_CONFIDENCE,
   LICENCE_MATCH_MIN_PLAYERS,
   type MatchMethod,
@@ -58,19 +59,22 @@ export interface ClubMatchsResult {
 }
 
 export async function getClubMatchsCalendar(opts: ClubMatchsOptions): Promise<ClubMatchsResult> {
-  // 1. Récupérer le club
-  const clubRes = await query<{ id_ffhb: string; nom: string }>(
-    `SELECT id_ffhb, nom FROM core.clubs WHERE id_ffhb = $1`,
+  // 1. Récupérer le club (email inclus : son préfixe = code FFHB 7 chiffres,
+  //    clé de jointure des licences — cf. resolveLinkedTeams couche "licence")
+  const clubRes = await query<{ id_ffhb: string; nom: string; email: string | null }>(
+    `SELECT id_ffhb, nom, email FROM core.clubs WHERE id_ffhb = $1`,
     [opts.id_ffhb],
   );
   if (clubRes.rowCount === 0) {
     return { club: null, equipes_liees: [], matchs: [], total: 0 };
   }
-  const club = clubRes.rows[0]!;
+  const clubRow = clubRes.rows[0]!;
+  // Objet club exposé dans la réponse : on n'expose PAS l'email (PII).
+  const club = { id_ffhb: clubRow.id_ffhb, nom: clubRow.nom };
 
   // 2. Résolution multi-signal des équipes liées (licence + structure + textuel)
   const equipes_liees = await resolveLinkedTeams(
-    club,
+    clubRow,
     opts.saison,
     opts.include_ententes,
     opts.min_confidence,
@@ -186,19 +190,28 @@ export async function getClubMatchsCalendar(opts: ClubMatchsOptions): Promise<Cl
  * Résout les équipes liées à un club via une union de 5 signaux, dédupliquées par équipe
  * en gardant la confiance maximale :
  *  - licence   (haute)   : ≥ LICENCE_MATCH_MIN_PLAYERS licenciés du club ont joué pour l'équipe
- *  - structure (haute)   : equipes.ext_structure_id = club.id_ffhb
+ *                          (clé = code FFHB 7 chiffres = préfixe licence = split_part(email,'@',1))
+ *  - structure (haute)   : equipes.ext_structure_id = club.id_ffhb (= id_club monclub)
  *  - nom_exact (haute)   : e.nom = club.nom
  *  - nom_reserve (moy.)  : e.nom ILIKE club.nom || ' %'
  *  - nom_entente (basse) : entente partageant un token distinctif (mot entier) avec le club
+ *
+ * Deux espaces d'ID distincts coexistent côté FFHB :
+ *  - `club.id_ffhb` = id_club monclub (= ext_structure_id des équipes) → couche `structure`.
+ *  - le code FFHB 7 chiffres (préfixe du `email_club`, ex. 5221105@ffhandball.net) = préfixe des
+ *    numéros de licence → couche `licence`. Dérivé ici de `club.email`.
  */
 async function resolveLinkedTeams(
-  club: { id_ffhb: string; nom: string },
+  club: { id_ffhb: string; nom: string; email: string | null },
   saison: string,
   include_ententes: boolean,
   min_confidence?: Confidence,
 ): Promise<EquipeLiee[]> {
   const pattern = buildWholeWordPattern(extractDistinctiveTokens(club.nom)); // string | null
   const minRank = min_confidence ? RANK_BY_CONFIDENCE[min_confidence] : null;
+  // Code FFHB 7 chiffres = préfixe de l'email club (clé de jointure des licences).
+  // null si l'email est absent ou non conforme → la couche licence est alors inerte.
+  const code7 = code7FromEmail(club.email);
 
   const sql = `
     WITH comp AS (
@@ -222,7 +235,7 @@ async function resolveLinkedTeams(
       UNION ALL
       SELECT e.id, 'structure', 3
         FROM core.equipes e
-       WHERE e.saison_code = $2 AND e.ext_structure_id = $1
+       WHERE e.saison_code = $2 AND e.ext_structure_id = $8
       UNION ALL
       SELECT e.id, 'nom_exact', 3
         FROM core.equipes e
@@ -270,13 +283,14 @@ async function resolveLinkedTeams(
     is_principal: boolean;
     is_entente: boolean;
   }>(sql, [
-    club.id_ffhb,
-    saison,
-    LICENCE_MATCH_MIN_PLAYERS,
-    club.nom,
-    pattern,
-    include_ententes,
-    minRank,
+    code7, // $1 — clé licence (code FFHB 7 chiffres, null-safe : si null, couche licence inerte)
+    saison, // $2
+    LICENCE_MATCH_MIN_PLAYERS, // $3
+    club.nom, // $4
+    pattern, // $5
+    include_ententes, // $6
+    minRank, // $7
+    club.id_ffhb, // $8 — clé structure (= id_club monclub = ext_structure_id)
   ]);
 
   return res.rows.map((r) => ({
