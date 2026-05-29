@@ -11,6 +11,18 @@ export const equipeLieeSchema = z
     is_entente: z
       .boolean()
       .openapi({ description: "True si l'équipe est une entente (nom contient ENTENTE / ENT)" }),
+    match_method: z
+      .enum(["licence", "structure", "nom_exact", "nom_reserve", "nom_entente"])
+      .openapi({
+        description:
+          "Méthode de détection du lien : licence (≥3 licenciés du club ont joué pour l'équipe), structure (ext_structure_id), nom_exact, nom_reserve, nom_entente",
+        example: "nom_exact",
+      }),
+    confidence: z.enum(["haute", "moyenne", "basse"]).openapi({
+      description:
+        "Confiance du lien : haute (licence/structure/nom_exact), moyenne (nom_reserve), basse (nom_entente)",
+      example: "haute",
+    }),
   })
   .openapi("EquipeLiee");
 
@@ -44,6 +56,10 @@ export const clubMatchItemSchema = z
     via_principal: z
       .boolean()
       .openapi({ description: "True si ce match est lié au club via son équipe principale (vs réserve ou entente)" }),
+    confidence: z.enum(["haute", "moyenne", "basse"]).openapi({
+      description: "Confiance du lien équipe↔club qui rattache ce match au club",
+      example: "haute",
+    }),
   })
   .openapi("ClubMatchItem");
 
@@ -84,6 +100,14 @@ export const clubMatchsQuerySchema = z.object({
     .openapi({
       description: "Filtre sur le statut du match",
       example: "joue",
+    }),
+  min_confidence: z
+    .enum(["haute", "moyenne", "basse"])
+    .optional()
+    .openapi({
+      description:
+        "Filtre les équipes liées (et leurs matchs) par confiance minimale. Absent = toutes confiances.",
+      example: "haute",
     }),
   limit: z.coerce
     .number()
