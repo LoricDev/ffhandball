@@ -139,9 +139,13 @@ npm run api
 Endpoints à tester :
 ```bash
 curl http://localhost:3000/health
-curl http://localhost:3000/clubs?q=brest&limit=5
-open http://localhost:3000/docs   # Swagger UI interactif
+curl http://localhost:3000/saisons
+curl "http://localhost:3000/clubs?q=brest&limit=5"
+curl "http://localhost:3000/competitions?saison=2025-2026&niveau=national&limit=5"
+open http://localhost:3000/docs   # Swagger UI interactif (28 endpoints documentés)
 ```
+
+> 28 endpoints au total — liste complète dans [`docs/runbook.md`](runbook.md#api-http-publique).
 
 ## Troubleshooting
 
