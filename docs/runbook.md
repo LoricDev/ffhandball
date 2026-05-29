@@ -934,6 +934,10 @@ curl -X POST .../admin/api-keys/ffhb_xxxxxxxx/revoke -H "X-Admin-Secret: $ADMIN_
 Sans `ADMIN_SECRET` configuré, `/admin/*` renvoie `503`. Le token n'est **jamais** restitué après
 création (seul son hash sha256 est stocké).
 
+**Intégration site de paiement (Stripe → endpoints admin) :** voir
+[`docs/billing-integration.md`](billing-integration.md) (flux abonnement/renouvellement/résiliation,
+exemples de webhooks, règles de sécurité).
+
 ### Rate-limit
 
 Par défaut 60 req/min **par IP** (`API_RATE_LIMIT_PER_MIN`). Si l'auth est activée, les requêtes
