@@ -132,6 +132,10 @@ export const clubMatchsMetaSchema = z
     club: z
       .object({
         id_ffhb: z.string(),
+        code_ffhb: z.string().nullable().openapi({
+          description: "Code FFHB 7 chiffres (préfixe licences / FdM). null si inconnu.",
+          example: "5221105",
+        }),
         nom: z.string(),
       })
       .openapi({ description: "Informations du club" }),
