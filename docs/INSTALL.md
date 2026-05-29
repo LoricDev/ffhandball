@@ -84,7 +84,7 @@ docker ps | grep ffhandball-postgres
 ### 5. Migrations et seeds
 
 ```bash
-npm run db:migrate    # Applique toutes les migrations 0001 → 0017
+npm run db:migrate    # Applique toutes les migrations 0001 → 0018
 npm run db:seed       # Charge saisons, ligues, départements
 ```
 
@@ -92,7 +92,7 @@ Pour vérifier :
 
 ```bash
 npm run db:psql
-\dt core.*        # Doit lister 14 tables (clubs, salles, competitions, ...)
+\dt core.*        # Doit lister 15 tables (clubs, salles, competitions, ..., api_keys)
 \dt raw.*         # Doit lister 11 raw tables (clubs, salles, matchs, ...)
 SELECT * FROM core.saisons;
 \q
@@ -108,7 +108,7 @@ npx vitest run --no-file-parallelism --pool=forks --poolOptions.forks.singleFork
 npm test
 ```
 
-Tous les tests doivent passer (~250 en mode séquentiel à date).
+Tous les tests doivent passer (~320 en mode séquentiel à date).
 
 ## Premier scrape (smoke test)
 
@@ -142,7 +142,7 @@ curl http://localhost:3000/health
 curl http://localhost:3000/saisons
 curl "http://localhost:3000/clubs?q=brest&limit=5"
 curl "http://localhost:3000/competitions?saison=2025-2026&niveau=national&limit=5"
-open http://localhost:3000/docs   # Swagger UI interactif (28 endpoints documentés)
+open http://localhost:3000/docs   # Swagger UI interactif (28 endpoints + auth optionnelle)
 ```
 
 > 28 endpoints au total — liste complète dans [`docs/runbook.md`](runbook.md#api-http-publique).
@@ -243,7 +243,7 @@ npm run db:migrate       # nouvelles migrations
 npx vitest run --no-file-parallelism --pool=forks --poolOptions.forks.singleFork
 ```
 
-Les migrations 0001-0017 sont idempotentes. Les ETLs sont idempotents — tu peux relancer après chaque mise à jour sans craindre de doublons.
+Les migrations 0001-0018 sont idempotentes. Les ETLs sont idempotents — tu peux relancer après chaque mise à jour sans craindre de doublons.
 
 ## Mise en place pour développement actif
 
