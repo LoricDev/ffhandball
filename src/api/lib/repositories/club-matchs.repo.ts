@@ -1,5 +1,14 @@
 // src/api/lib/repositories/club-matchs.repo.ts
 import { query } from "@/db/client.js";
+import {
+  extractDistinctiveTokens,
+  buildWholeWordPattern,
+  rankToConfidence,
+  RANK_BY_CONFIDENCE,
+  LICENCE_MATCH_MIN_PLAYERS,
+  type MatchMethod,
+  type Confidence,
+} from "@/api/lib/club-matching.js";
 
 export interface EquipeLiee {
   id: bigint;
@@ -7,6 +16,8 @@ export interface EquipeLiee {
   nom: string;
   is_principal: boolean;
   is_entente: boolean;
+  match_method: MatchMethod;
+  confidence: Confidence;
 }
 
 export interface ClubMatchItem {
@@ -24,6 +35,7 @@ export interface ClubMatchItem {
   club_recevant: boolean;
   via_entente: boolean;
   via_principal: boolean;
+  confidence: Confidence;
 }
 
 export interface ClubMatchsOptions {
@@ -33,6 +45,7 @@ export interface ClubMatchsOptions {
   date_from?: string;
   date_to?: string;
   statut?: string;
+  min_confidence?: Confidence;
   limit: number;
   offset: number;
 }
@@ -55,50 +68,13 @@ export async function getClubMatchsCalendar(opts: ClubMatchsOptions): Promise<Cl
   }
   const club = clubRes.rows[0]!;
 
-  // 2. Récupérer les équipes liées au club via matching textuel
-  const equipesSql = `
-    WITH club_info AS (
-      SELECT nom FROM core.clubs WHERE id_ffhb = $1
-    ),
-    words_raw AS (
-      SELECT lower(word) AS word
-      FROM club_info, LATERAL regexp_split_to_table(nom, '\\s+') AS word
-    ),
-    keywords AS (
-      SELECT DISTINCT word FROM words_raw WHERE length(word) >= 4
-    )
-    SELECT DISTINCT
-      e.id,
-      e.id_ffhb,
-      e.nom,
-      (e.nom = (SELECT nom FROM club_info)) AS is_principal,
-      (e.nom ILIKE '%ENTENTE%' OR e.nom ILIKE 'ENT %' OR e.nom ILIKE '% ENT %') AS is_entente
-    FROM core.equipes e
-    WHERE e.saison_code = $2
-      AND (
-        -- Équipe principale : match exact
-        e.nom = (SELECT nom FROM club_info)
-        -- Équipes réserve : nom club + suffixe
-        OR e.nom ILIKE (SELECT nom FROM club_info) || ' %'
-        -- Ententes (uniquement si include_ententes = true)
-        OR ($3 = true
-            AND (e.nom ILIKE '%ENTENTE%' OR e.nom ILIKE 'ENT %' OR e.nom ILIKE '% ENT %')
-            AND EXISTS (
-              SELECT 1 FROM keywords kw
-              WHERE lower(e.nom) LIKE '%' || kw.word || '%'
-            ))
-      )
-    ORDER BY e.nom
-  `;
-  const equipesRes = await query<{
-    id: bigint;
-    id_ffhb: string;
-    nom: string;
-    is_principal: boolean;
-    is_entente: boolean;
-  }>(equipesSql, [opts.id_ffhb, opts.saison, opts.include_ententes]);
-
-  const equipes_liees = equipesRes.rows;
+  // 2. Résolution multi-signal des équipes liées (licence + structure + textuel)
+  const equipes_liees = await resolveLinkedTeams(
+    club,
+    opts.saison,
+    opts.include_ententes,
+    opts.min_confidence,
+  );
 
   if (equipes_liees.length === 0) {
     return { club, equipes_liees: [], matchs: [], total: 0 };
@@ -199,8 +175,117 @@ export async function getClubMatchsCalendar(opts: ClubMatchsOptions): Promise<Cl
       club_recevant: !!domEquipe,
       via_entente: matchedEquipe?.is_entente ?? false,
       via_principal: matchedEquipe?.is_principal ?? false,
+      confidence: matchedEquipe?.confidence ?? "basse",
     };
   });
 
   return { club, equipes_liees, matchs, total };
+}
+
+/**
+ * Résout les équipes liées à un club via une union de 5 signaux, dédupliquées par équipe
+ * en gardant la confiance maximale :
+ *  - licence   (haute)   : ≥ LICENCE_MATCH_MIN_PLAYERS licenciés du club ont joué pour l'équipe
+ *  - structure (haute)   : equipes.ext_structure_id = club.id_ffhb
+ *  - nom_exact (haute)   : e.nom = club.nom
+ *  - nom_reserve (moy.)  : e.nom ILIKE club.nom || ' %'
+ *  - nom_entente (basse) : entente partageant un token distinctif (mot entier) avec le club
+ */
+async function resolveLinkedTeams(
+  club: { id_ffhb: string; nom: string },
+  saison: string,
+  include_ententes: boolean,
+  min_confidence?: Confidence,
+): Promise<EquipeLiee[]> {
+  const pattern = buildWholeWordPattern(extractDistinctiveTokens(club.nom)); // string | null
+  const minRank = min_confidence ? RANK_BY_CONFIDENCE[min_confidence] : null;
+
+  const sql = `
+    WITH comp AS (
+      SELECT mc.equipe_id,
+             count(DISTINCT j.id) FILTER (WHERE left(j.numero_licence, 7) = $1) AS n_club_players,
+             count(DISTINCT left(j.numero_licence, 7)) AS n_distinct_clubs
+        FROM core.match_compositions mc
+        JOIN core.joueurs j ON j.id = mc.joueur_id
+       WHERE mc.equipe_id IN (
+         SELECT mc2.equipe_id
+           FROM core.match_compositions mc2
+           JOIN core.joueurs j2 ON j2.id = mc2.joueur_id
+          WHERE left(j2.numero_licence, 7) = $1
+       )
+       GROUP BY mc.equipe_id
+    ),
+    signals AS (
+      SELECT e.id, 'licence'::text AS method, 3 AS conf_rank
+        FROM core.equipes e JOIN comp ON comp.equipe_id = e.id
+       WHERE e.saison_code = $2 AND comp.n_club_players >= $3
+      UNION ALL
+      SELECT e.id, 'structure', 3
+        FROM core.equipes e
+       WHERE e.saison_code = $2 AND e.ext_structure_id = $1
+      UNION ALL
+      SELECT e.id, 'nom_exact', 3
+        FROM core.equipes e
+       WHERE e.saison_code = $2 AND e.nom = $4
+      UNION ALL
+      SELECT e.id, 'nom_reserve', 2
+        FROM core.equipes e
+       WHERE e.saison_code = $2 AND e.nom ILIKE $4 || ' %'
+      UNION ALL
+      SELECT e.id, 'nom_entente', 1
+        FROM core.equipes e
+       WHERE e.saison_code = $2
+         AND $5::text IS NOT NULL
+         AND e.nom ~* $5
+         AND (e.nom ILIKE '%ENTENTE%' OR e.nom ILIKE 'ENT %' OR e.nom ILIKE '% ENT %')
+    ),
+    agg AS (
+      SELECT e.id, e.id_ffhb, e.nom,
+             max(s.conf_rank) AS conf_rank,
+             (array_agg(s.method ORDER BY s.conf_rank DESC,
+                CASE s.method
+                  WHEN 'licence' THEN 1 WHEN 'structure' THEN 2 WHEN 'nom_exact' THEN 3
+                  WHEN 'nom_reserve' THEN 4 ELSE 5 END))[1] AS match_method,
+             bool_or(s.method = 'nom_exact') AS is_principal,
+             (bool_or(e.nom ILIKE '%ENTENTE%' OR e.nom ILIKE 'ENT %' OR e.nom ILIKE '% ENT %')
+               OR COALESCE(max(comp.n_distinct_clubs), 0) >= 2) AS is_entente
+        FROM signals s
+        JOIN core.equipes e ON e.id = s.id
+        LEFT JOIN comp ON comp.equipe_id = e.id
+       GROUP BY e.id, e.id_ffhb, e.nom
+    )
+    SELECT id, id_ffhb, nom, conf_rank, match_method, is_principal, is_entente
+      FROM agg
+     WHERE ($6 = true OR is_entente = false)
+       AND ($7::int IS NULL OR conf_rank >= $7)
+     ORDER BY nom
+  `;
+
+  const res = await query<{
+    id: bigint;
+    id_ffhb: string;
+    nom: string;
+    conf_rank: number;
+    match_method: MatchMethod;
+    is_principal: boolean;
+    is_entente: boolean;
+  }>(sql, [
+    club.id_ffhb,
+    saison,
+    LICENCE_MATCH_MIN_PLAYERS,
+    club.nom,
+    pattern,
+    include_ententes,
+    minRank,
+  ]);
+
+  return res.rows.map((r) => ({
+    id: r.id,
+    id_ffhb: r.id_ffhb,
+    nom: r.nom,
+    is_principal: r.is_principal,
+    is_entente: r.is_entente,
+    match_method: r.match_method,
+    confidence: rankToConfidence(r.conf_rank),
+  }));
 }
