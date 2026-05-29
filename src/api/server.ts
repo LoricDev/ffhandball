@@ -10,6 +10,7 @@ import joueursRoutes from "@/api/routes/joueurs.js";
 import searchRoutes from "@/api/routes/search.js";
 import competitionsRoutes from "@/api/routes/competitions.js";
 import poulesRoutes from "@/api/routes/poules.js";
+import equipesRoutes from "@/api/routes/equipes.js";
 import { env } from "@/config/env.js";
 import { logger } from "@/lib/logger.js";
 import { requestLoggerMiddleware } from "@/api/middleware/request-logger.js";
@@ -47,6 +48,7 @@ export function buildApp(): OpenAPIHono {
   app.route("/", searchRoutes);
   app.route("/", competitionsRoutes);
   app.route("/", poulesRoutes);
+  app.route("/", equipesRoutes);
 
   // OpenAPI spec + Swagger UI
   app.doc31("/openapi.json", {
