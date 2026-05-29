@@ -1,8 +1,9 @@
 // src/api/routes/clubs.ts
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
-import { clubListItemSchema, clubDetailSchema, clubListQuerySchema } from "@/api/schemas/club.api.js";
+import { clubListItemSchema, clubDetailSchema, clubListQuerySchema, clubClassementItemSchema } from "@/api/schemas/club.api.js";
 import { errorResponseSchema, paginationMetaSchema } from "@/api/schemas/common.js";
-import { listClubs, getClubByIdFfhb } from "@/api/lib/repositories/club.repo.js";
+import { listClubs, getClubByIdFfhb, listClubJoueurs, listClubClassements } from "@/api/lib/repositories/club.repo.js";
+import { rosterJoueurItemSchema } from "@/api/schemas/equipe.api.js";
 import {
   clubMatchItemSchema,
   clubMatchsMetaSchema,
@@ -202,6 +203,80 @@ clubs.openapi(clubEquipesRoute, async (c) => {
     return c.json({ error: { code: "NOT_FOUND" as const, message: `Club id_ffhb=${id_ffhb} introuvable` } }, 404);
   }
   const data = await listClubEquipes(club.id_ffhb, saison);
+  return c.json({ data, meta: { club: { id_ffhb: club.id_ffhb, code_ffhb: club.code_ffhb, nom: club.nom } } });
+});
+
+const clubJoueursRoute = createRoute({
+  method: "get",
+  path: "/clubs/{id_ffhb}/joueurs",
+  tags: ["clubs"],
+  summary: "Joueurs licenciés d'un club (préfixe licence = code FFHB)",
+  request: {
+    params: z.object({ id_ffhb: z.string().openapi({ example: "1720", description: "id_club FFHB OU code FFHB 7 chiffres" }) }),
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            data: z.array(rosterJoueurItemSchema),
+            meta: z.object({
+              club: z.object({ id_ffhb: z.string(), code_ffhb: z.string().nullable(), nom: z.string() }),
+            }),
+          }),
+        },
+      },
+      description: "Joueurs licenciés du club (avec matchs/buts joués). Vide si code_ffhb inconnu.",
+    },
+    404: { content: { "application/json": { schema: errorResponseSchema } }, description: "Club introuvable" },
+  },
+});
+
+clubs.openapi(clubJoueursRoute, async (c) => {
+  const { id_ffhb } = c.req.valid("param");
+  const club = await getClubByIdFfhb(id_ffhb);
+  if (!club) {
+    return c.json({ error: { code: "NOT_FOUND" as const, message: `Club id_ffhb=${id_ffhb} introuvable` } }, 404);
+  }
+  const data = await listClubJoueurs(club.code_ffhb);
+  return c.json({ data, meta: { club: { id_ffhb: club.id_ffhb, code_ffhb: club.code_ffhb, nom: club.nom } } });
+});
+
+const clubClassementsRoute = createRoute({
+  method: "get",
+  path: "/clubs/{id_ffhb}/classements",
+  tags: ["clubs"],
+  summary: "Classements de toutes les équipes du club (dernier snapshot)",
+  request: {
+    params: z.object({ id_ffhb: z.string().openapi({ example: "1720" }) }),
+    query: saisonQuerySchema,
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            data: z.array(clubClassementItemSchema),
+            meta: z.object({
+              club: z.object({ id_ffhb: z.string(), code_ffhb: z.string().nullable(), nom: z.string() }),
+            }),
+          }),
+        },
+      },
+      description: "Positions des équipes du club dans leurs poules",
+    },
+    404: { content: { "application/json": { schema: errorResponseSchema } }, description: "Club introuvable" },
+  },
+});
+
+clubs.openapi(clubClassementsRoute, async (c) => {
+  const { id_ffhb } = c.req.valid("param");
+  const { saison } = c.req.valid("query");
+  const club = await getClubByIdFfhb(id_ffhb);
+  if (!club) {
+    return c.json({ error: { code: "NOT_FOUND" as const, message: `Club id_ffhb=${id_ffhb} introuvable` } }, 404);
+  }
+  const data = await listClubClassements(club.id_ffhb, saison);
   return c.json({ data, meta: { club: { id_ffhb: club.id_ffhb, code_ffhb: club.code_ffhb, nom: club.nom } } });
 });
 

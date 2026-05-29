@@ -32,3 +32,18 @@ export const joueurDetailSchema = z.object({
   stats: joueurStatsSchema,
   historique: z.array(joueurHistoriqueItemSchema),
 }).openapi("JoueurDetail");
+
+export const joueurMatchItemSchema = z
+  .object({
+    id_ffhb_match: z.string(),
+    date_heure: z.union([z.string(), z.date()]).transform((v) => (v instanceof Date ? v.toISOString() : v)),
+    statut: z.string(),
+    equipe_nom: z.string(),
+    adversaire_nom: z.string(),
+    score_equipe: z.number().int().nullable(),
+    score_adversaire: z.number().int().nullable(),
+    buts: z.number().int(),
+    poule_id_ffhb: z.string(),
+    competition_nom: z.string(),
+  })
+  .openapi("JoueurMatchItem");

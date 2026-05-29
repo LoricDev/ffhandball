@@ -14,6 +14,7 @@ import equipesRoutes from "@/api/routes/equipes.js";
 import statsJoueursRoutes from "@/api/routes/stats-joueurs.js";
 import arbitresRoutes from "@/api/routes/arbitres.js";
 import sallesRoutes from "@/api/routes/salles.js";
+import referentielsRoutes from "@/api/routes/referentiels.js";
 import { env } from "@/config/env.js";
 import { logger } from "@/lib/logger.js";
 import { requestLoggerMiddleware } from "@/api/middleware/request-logger.js";
@@ -55,6 +56,7 @@ export function buildApp(): OpenAPIHono {
   app.route("/", statsJoueursRoutes);
   app.route("/", arbitresRoutes);
   app.route("/", sallesRoutes);
+  app.route("/", referentielsRoutes);
 
   // OpenAPI spec + Swagger UI
   app.doc31("/openapi.json", {
