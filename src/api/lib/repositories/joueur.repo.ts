@@ -102,3 +102,59 @@ export async function getJoueurByLicence(numeroLicence: string): Promise<JoueurD
     })),
   };
 }
+
+export interface JoueurMatchItem {
+  id_ffhb_match: string;
+  date_heure: Date;
+  statut: string;
+  equipe_nom: string;
+  adversaire_nom: string;
+  score_equipe: number | null;
+  score_adversaire: number | null;
+  buts: number;
+  poule_id_ffhb: string;
+  competition_nom: string;
+}
+
+/** Historique complet (paginé) des matchs d'un joueur, via match_compositions. null si joueur absent. */
+export async function getJoueurMatchs(
+  numeroLicence: string,
+  limit: number,
+  offset: number,
+): Promise<{ data: JoueurMatchItem[]; total: number } | null> {
+  const jRes = await query<{ id: bigint }>(
+    `SELECT id FROM core.joueurs WHERE numero_licence = $1`,
+    [numeroLicence],
+  );
+  if (jRes.rowCount === 0) return null;
+  const joueurId = jRes.rows[0]!.id;
+
+  const countRes = await query<{ total: number }>(
+    `SELECT count(*)::int AS total FROM core.match_compositions mc WHERE mc.joueur_id = $1`,
+    [joueurId],
+  );
+  const total = countRes.rows[0]!.total;
+
+  const dataRes = await query<JoueurMatchItem>(
+    `SELECT m.id_ffhb_match, m.date_heure, m.statut,
+            ep.nom AS equipe_nom,
+            CASE WHEN m.equipe_dom_id = mc.equipe_id THEN ee.nom ELSE ed.nom END AS adversaire_nom,
+            CASE WHEN m.equipe_dom_id = mc.equipe_id THEN m.score_dom ELSE m.score_ext END AS score_equipe,
+            CASE WHEN m.equipe_dom_id = mc.equipe_id THEN m.score_ext ELSE m.score_dom END AS score_adversaire,
+            mc.but_count AS buts,
+            po.id_ffhb AS poule_id_ffhb, c.nom AS competition_nom
+       FROM core.match_compositions mc
+       JOIN core.matchs m ON m.id = mc.match_id
+       JOIN core.equipes ep ON ep.id = mc.equipe_id
+       JOIN core.equipes ed ON ed.id = m.equipe_dom_id
+       JOIN core.equipes ee ON ee.id = m.equipe_ext_id
+       JOIN core.poules po ON po.id = m.poule_id
+       JOIN core.phases ph ON ph.id = po.phase_id
+       JOIN core.competitions c ON c.id = ph.competition_id
+      WHERE mc.joueur_id = $1
+      ORDER BY m.date_heure ASC
+      LIMIT $2 OFFSET $3`,
+    [joueurId, limit, offset],
+  );
+  return { data: dataRes.rows, total };
+}

@@ -97,3 +97,19 @@ export async function getArbitreMatchs(
   );
   return { data: dataRes.rows, total };
 }
+
+export interface ArbitreDetail extends ArbitreListItem {
+  nb_matchs: number;
+}
+
+export async function getArbitreDetail(idFfhb: string): Promise<ArbitreDetail | null> {
+  const r = await query<ArbitreDetail>(
+    `SELECT a.id_ffhb, a.numero_licence, a.nom_complet, a.nom, a.prenom, a.niveau,
+            (SELECT count(*)::int FROM core.match_officiels mo WHERE mo.arbitre_id = a.id) AS nb_matchs
+       FROM core.arbitres a
+      WHERE a.id_ffhb = $1`,
+    [idFfhb],
+  );
+  if (r.rowCount === 0) return null;
+  return r.rows[0]!;
+}
