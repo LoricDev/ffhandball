@@ -6,6 +6,7 @@ export const errorResponseSchema = z
     error: z.object({
       code: z.enum([
         "BAD_REQUEST",
+        "UNAUTHORIZED",
         "NOT_FOUND",
         "RATE_LIMIT_EXCEEDED",
         "INTERNAL_ERROR",

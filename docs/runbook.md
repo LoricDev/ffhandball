@@ -900,9 +900,44 @@ donne un matching **autoritatif pré-FdM** des équipes propres. Le textuel rest
 **`meta.equipes_liees`** : liste transparente des équipes liées, avec `is_principal`, `is_entente`,
 `match_method` et `confidence`.
 
+### Authentification par clé API (monétisation)
+
+Désactivée par défaut (mode libre). Activée en prod via `API_AUTH_ENABLED=true` dans `.env`.
+
+**Comportement (auth activée) :**
+- Public (sans clé) : `/health`, `/ready`, `/openapi.json`, `/docs`, `/admin/*`.
+- Tout le reste : header `Authorization: Bearer <token>` (ou `X-API-Key: <token>`) requis. Sinon `401 UNAUTHORIZED`.
+- Une clé est refusée si révoquée (`active=false`) ou expirée (`valid_until < now()`).
+- Le rate-limit devient **par clé** (`rate_limit_per_min` de la clé) au lieu de par IP.
+
+**Abonnement :** chaque clé porte `valid_until`. Le système de paiement (site externe) avance cette
+date d'un mois à chaque règlement. Si l'abonnement lapse, la clé expire d'elle-même.
+
+**Gestion des clés — CLI** (sur le serveur) :
+```bash
+npm run apikey -- create --label=client@example.com --months=1   # token affiché UNE FOIS
+npm run apikey -- list
+npm run apikey -- renew  --prefix=ffhb_xxxxxxxx --months=1        # à chaque paiement
+npm run apikey -- revoke --prefix=ffhb_xxxxxxxx
+```
+
+**Gestion des clés — endpoints admin** (pour le site, garde `X-Admin-Secret: $ADMIN_SECRET`) :
+```bash
+# Créer une clé (à l'abonnement) — retourne le token UNE FOIS
+curl -X POST https://api.ton-domaine.fr/admin/api-keys \
+  -H "X-Admin-Secret: $ADMIN_SECRET" -H "content-type: application/json" \
+  -d '{"label":"client@example.com","months":1}'
+# Renouveler (à chaque paiement) / Révoquer (résiliation)
+curl -X POST .../admin/api-keys/ffhb_xxxxxxxx/renew  -H "X-Admin-Secret: $ADMIN_SECRET" -d '{"months":1}'
+curl -X POST .../admin/api-keys/ffhb_xxxxxxxx/revoke -H "X-Admin-Secret: $ADMIN_SECRET"
+```
+Sans `ADMIN_SECRET` configuré, `/admin/*` renvoie `503`. Le token n'est **jamais** restitué après
+création (seul son hash sha256 est stocké).
+
 ### Rate-limit
 
-60 req/min par IP (configurable via `API_RATE_LIMIT_PER_MIN`). Headers retournés :
+Par défaut 60 req/min **par IP** (`API_RATE_LIMIT_PER_MIN`). Si l'auth est activée, les requêtes
+authentifiées sont limitées **par clé** (`rate_limit_per_min` de la clé, défaut `API_KEY_DEFAULT_RATE_LIMIT_PER_MIN`). Headers retournés :
 - `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`
 - 429 + `Retry-After` si dépassé
 
