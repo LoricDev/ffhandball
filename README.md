@@ -73,7 +73,8 @@ npm run etl -- --entity=engagements  --saison=2025-2026
 |---|---|
 | **`docs/INSTALL.md`** | Installation pas-à-pas, troubleshooting |
 | **`docs/DEPLOY.md`** | Déploiement production (VPS, cron nocturne, backup, monitoring) |
-| **`docs/runbook.md`** | Toutes les commandes opérationnelles par entité |
+| **`docs/runbook.md`** | Toutes les commandes opérationnelles par entité + API |
+| **`docs/billing-integration.md`** | Intégration site de paiement ↔ clés API (Stripe → admin) |
 | **`docs/superpowers/specs/`** | Specs design (1 par feature livrée) |
 | **`docs/superpowers/plans/`** | Plans d'implémentation TDD (1 par feature) |
 
