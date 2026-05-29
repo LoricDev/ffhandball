@@ -158,6 +158,35 @@ export async function getEquipeMatchs(
   return { data: dataRes.rows, total };
 }
 
+export interface RosterJoueurItem {
+  numero_licence: string;
+  nom: string;
+  prenom: string;
+  matchs: number;
+  buts: number;
+}
+
+/** Joueurs ayant joué pour une équipe (distincts, via match_compositions). null si équipe absente. */
+export async function getEquipeJoueurs(idFfhb: string, saison: string): Promise<RosterJoueurItem[] | null> {
+  const eqRes = await query<{ id: bigint }>(
+    `SELECT id FROM core.equipes WHERE id_ffhb = $1 AND saison_code = $2`,
+    [idFfhb, saison],
+  );
+  if (eqRes.rowCount === 0) return null;
+  const r = await query<RosterJoueurItem>(
+    `SELECT j.numero_licence, j.nom, j.prenom,
+            count(DISTINCT mc.match_id)::int AS matchs,
+            coalesce(sum(mc.but_count), 0)::int AS buts
+       FROM core.match_compositions mc
+       JOIN core.joueurs j ON j.id = mc.joueur_id
+      WHERE mc.equipe_id = $1
+      GROUP BY j.id, j.numero_licence, j.nom, j.prenom
+      ORDER BY buts DESC, j.nom ASC`,
+    [eqRes.rows[0]!.id],
+  );
+  return r.rows;
+}
+
 /** Équipes propres d'un club (pont autoritatif ext_structure_id = clubs.id_ffhb). */
 export async function listClubEquipes(clubIdFfhb: string, saison: string): Promise<ClubEquipe[]> {
   const eqRes = await query<{ id: bigint; id_ffhb: string; nom: string }>(
