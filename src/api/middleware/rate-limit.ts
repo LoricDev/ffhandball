@@ -7,17 +7,28 @@ const buckets = new Map<string, Bucket>();
 
 export function rateLimitMiddleware(): MiddlewareHandler {
   return async (c, next) => {
-    const ip = c.req.header("x-forwarded-for")?.split(",")[0]?.trim()
-            ?? c.req.header("x-real-ip")
-            ?? "unknown";
     const now = Date.now();
-    const limit = env.API_RATE_LIMIT_PER_MIN;
     const windowMs = 60 * 1000;
 
-    let bucket = buckets.get(ip);
+    // Requête authentifiée par clé → limite par clé ; sinon par IP (comportement historique).
+    const apiKey = c.get("apiKey") as { id: string; rate_limit_per_min: number } | undefined;
+    let bucketKey: string;
+    let limit: number;
+    if (apiKey) {
+      bucketKey = `key:${apiKey.id}`;
+      limit = apiKey.rate_limit_per_min;
+    } else {
+      const ip = c.req.header("x-forwarded-for")?.split(",")[0]?.trim()
+              ?? c.req.header("x-real-ip")
+              ?? "unknown";
+      bucketKey = `ip:${ip}`;
+      limit = env.API_RATE_LIMIT_PER_MIN;
+    }
+
+    let bucket = buckets.get(bucketKey);
     if (!bucket || now > bucket.resetAt) {
       bucket = { count: 0, resetAt: now + windowMs };
-      buckets.set(ip, bucket);
+      buckets.set(bucketKey, bucket);
     }
     bucket.count++;
 

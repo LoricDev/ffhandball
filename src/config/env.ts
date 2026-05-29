@@ -13,6 +13,13 @@ const envSchema = z.object({
   API_RATE_LIMIT_PER_MIN: z.coerce.number().int().default(60),
   API_PAGINATION_DEFAULT_LIMIT: z.coerce.number().int().default(20),
   API_PAGINATION_MAX_LIMIT: z.coerce.number().int().default(100),
+  // Authentification par clé API (monétisation). Désactivée par défaut (mode libre).
+  API_AUTH_ENABLED: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((v) => v === "true"),
+  ADMIN_SECRET: z.string().min(16).optional(),
+  API_KEY_DEFAULT_RATE_LIMIT_PER_MIN: z.coerce.number().int().positive().default(120),
 });
 
 export const env = envSchema.parse(process.env);
