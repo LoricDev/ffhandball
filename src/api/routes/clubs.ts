@@ -50,7 +50,14 @@ const detailRoute = createRoute({
   method: "get",
   path: "/clubs/{id_ffhb}",
   tags: ["clubs"],
-  request: { params: z.object({ id_ffhb: z.string() }) },
+  request: {
+    params: z.object({
+      id_ffhb: z.string().openapi({
+        description: "id_club FFHB (monclub, ex. 1720) OU code FFHB 7 chiffres (ex. 5221105)",
+        example: "1720",
+      }),
+    }),
+  },
   responses: {
     200: {
       content: { "application/json": { schema: z.object({ data: clubDetailSchema }) } },
@@ -93,7 +100,12 @@ const clubMatchsRoute = createRoute({
     "Le champ `meta.equipes_liees` détaille chaque lien (transparence et debug).",
   ].join("\n"),
   request: {
-    params: z.object({ id_ffhb: z.string().openapi({ example: "C001", description: "Identifiant FFHB du club" }) }),
+    params: z.object({
+      id_ffhb: z.string().openapi({
+        example: "1720",
+        description: "id_club FFHB (monclub) OU code FFHB 7 chiffres (ex. 5221105)",
+      }),
+    }),
     query: clubMatchsQuerySchema,
   },
   responses: {
