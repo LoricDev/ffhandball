@@ -60,3 +60,14 @@ export const RANK_BY_CONFIDENCE: Record<Confidence, number> = { haute: 3, moyenn
 export function rankToConfidence(rank: number): Confidence {
   return rank >= 3 ? "haute" : rank === 2 ? "moyenne" : "basse";
 }
+
+/**
+ * Extrait le code FFHB 7 chiffres du club depuis son email (`5221105@ffhandball.net` → `5221105`).
+ * Ce code = préfixe des numéros de licence (clé de la couche `licence`). Distinct de `clubs.id_ffhb`
+ * (= id_club monclub). Retourne null si l'email est absent ou si le préfixe n'est pas 7 chiffres.
+ */
+export function code7FromEmail(email: string | null | undefined): string | null {
+  if (!email) return null;
+  const prefix = email.split("@")[0] ?? "";
+  return /^\d{7}$/.test(prefix) ? prefix : null;
+}
