@@ -4,7 +4,6 @@ import {
   extractDistinctiveTokens,
   buildWholeWordPattern,
   rankToConfidence,
-  code7FromEmail,
   STOPWORDS,
 } from "@/api/lib/club-matching.js";
 
@@ -51,21 +50,5 @@ describe("rankToConfidence", () => {
     expect(rankToConfidence(3)).toBe("haute");
     expect(rankToConfidence(2)).toBe("moyenne");
     expect(rankToConfidence(1)).toBe("basse");
-  });
-});
-
-describe("code7FromEmail", () => {
-  it("extrait le code FFHB 7 chiffres du préfixe de l'email", () => {
-    expect(code7FromEmail("5221105@ffhandball.net")).toBe("5221105");
-  });
-  it("retourne null si pas d'email", () => {
-    expect(code7FromEmail(null)).toBeNull();
-    expect(code7FromEmail(undefined)).toBeNull();
-    expect(code7FromEmail("")).toBeNull();
-  });
-  it("retourne null si le préfixe n'est pas 7 chiffres", () => {
-    expect(code7FromEmail("contact@club.fr")).toBeNull();
-    expect(code7FromEmail("12345@ffhandball.net")).toBeNull(); // 5 chiffres
-    expect(code7FromEmail("52211050@ffhandball.net")).toBeNull(); // 8 chiffres
   });
 });
