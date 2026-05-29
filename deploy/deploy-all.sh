@@ -44,9 +44,11 @@ echo ""
 # ─── Phase 2 : Configuration application ─────────────────────────────────────
 
 echo ">>> Phase 2/2 : Configuration de l'application..."
-# Exécuter setup-app.sh en tant que l'utilisateur réel (pas root)
-# sudo -E pour propager APP_DIR et REAL_USER
-sudo -u "$REAL_USER" -E bash "$APP_DIR/deploy/setup-app.sh"
+# Exécuter setup-app.sh en tant que l'utilisateur réel (pas root).
+# -H : HOME = home de l'utilisateur (indispensable pour trouver nvm/Node dans ~/.nvm).
+# NB : on n'utilise PAS -E (qui conserverait HOME=/root). APP_DIR et REAL_USER sont
+# recalculés par setup-app.sh (défauts corrects : chemin du script + whoami).
+sudo -u "$REAL_USER" -H bash "$APP_DIR/deploy/setup-app.sh"
 echo ">>> Phase 2/2 : OK"
 echo ""
 
