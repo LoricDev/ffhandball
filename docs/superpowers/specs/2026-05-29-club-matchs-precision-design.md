@@ -41,7 +41,7 @@ la **confiance maximale** (et la méthode correspondante).
 | `structure` | `haute` | `equipes.ext_structure_id = club.id_ffhb` | équipes propres | équipes scrapées |
 | `nom_exact` | `haute` | `e.nom = club.nom` | non | toujours |
 | `nom_reserve` | `moyenne` | `e.nom ILIKE club.nom || ' %'` | non | toujours |
-| `nom_entente` | `basse` | entente détectée **et** partage un token **distinctif** (après STOPWORDS) **et** `similarity(e.nom, club.nom) >= SIMILARITY_THRESHOLD` (0.3) | heuristique | toujours |
+| `nom_entente` | `basse` | entente détectée **et** partage ≥ 1 token **distinctif** (après STOPWORDS) en **mot entier** (`e.nom ~* '\m' || token || '\M'`) | heuristique | toujours |
 
 ### Ordre de priorité de la confiance
 
@@ -72,8 +72,16 @@ DES, LA, LE, LES, ET, SUR, EN, AUX
 
 Un token est **distinctif** s'il fait ≥ 4 caractères, n'est pas dans STOPWORDS, et n'est pas
 purement numérique. La couche `nom_entente` exige qu'une entente partage ≥ 1 token distinctif
-**et** dépasse le seuil de similarité trigram — ce qui élimine les faux positifs sur mots
-génériques (deux clubs « X HANDBALL » et « Y HANDBALL » ne se matchent plus mutuellement).
+en **correspondance mot-entier** (frontières de mot regex `\m…\M` côté Postgres) — ce qui élimine
+les faux positifs sur mots génériques (deux clubs « X HANDBALL » et « Y HANDBALL » ne se matchent
+plus mutuellement, leur seul token commun « HANDBALL » étant un STOPWORD) sans introduire de faux
+négatifs (un token de ville comme « BREST » matche « ENTENTE BREST PLOUDA » en mot entier).
+
+**Pourquoi pas un seuil trigram sur les noms complets ?** La similarité trigram entre deux noms
+complets (« ENTENTE BREST PLOUDA » vs « BREST BRETAGNE HANDBALL ») tombe souvent sous 0.3 même
+quand les équipes partagent une ville — un tel garde-fou produirait des **faux négatifs**. Le
+matching mot-entier sur tokens distinctifs (eux-mêmes ≥ 4 chars et spécifiques) est à la fois plus
+précis et plus sûr. (pg_trgm reste utilisé pour le `/search` global, hors périmètre ici.)
 
 ## Contrat API (changements additifs, rétro-compatibles)
 
@@ -118,8 +126,7 @@ la description multi-signal (licence/structure/textuel) avec mention des niveaux
   `min_confidence`.
 - **Modify** `src/api/routes/clubs.ts` : passer `min_confidence` ; mettre à jour description.
 - **Create** `src/api/lib/club-matching.ts` : constantes (`LICENCE_MATCH_MIN_PLAYERS`,
-  `SIMILARITY_THRESHOLD`, `STOPWORDS`) + helper `extractDistinctiveTokens(nom)` pur (testable
-  unitairement sans DB).
+  `STOPWORDS`) + helper `extractDistinctiveTokens(nom)` pur (testable unitairement sans DB).
 - **Modify** `tests/api/routes/clubs.test.ts` : tests précision (licence, structure, faux
   positifs textuels, `min_confidence`, `include_ententes=false`, non-régression des 14 tests).
 - **Create** `tests/api/lib/club-matching.test.ts` : tests unitaires `extractDistinctiveTokens`.
@@ -146,11 +153,11 @@ la description multi-signal (licence/structure/textuel) avec mention des niveaux
 
 - **`BRETAGNE` dans STOPWORDS ?** Les noms de région sont ambigus : « BREST BRETAGNE HANDBALL »
   a `BRETAGNE` comme token semi-distinctif. On **n'inclut pas** les régions dans STOPWORDS (trop
-  de clubs légitimes les portent) ; le garde-fou est la **similarité trigram** combinée, pas le
-  seul partage de token. STOPWORDS se limite aux mots **structurels** (handball, club, asso…).
+  de clubs légitimes les portent) ; le garde-fou est la **correspondance mot-entier** sur tokens
+  ≥ 4 chars, pas le simple substring. STOPWORDS se limite aux mots **structurels** (handball,
+  club, asso…).
 - **Seuil licence = 3** : constante ajustable. Compromis entre capturer les petites ententes et
   filtrer les mutations ponctuelles.
-- **Seuil trigram = 0.3** : valeur pg_trgm par défaut raisonnable ; ajustable.
 - **Dégradation gracieuse** : sans données FdM, les couches `licence` disparaissent ; sans
   `ext_structure_id` scrapé, `structure` disparaît. Le textuel raffiné reste toujours actif.
 - **YAGNI** : pas de table de mapping club↔équipe matérialisée ni de résolution `club_id` dans
