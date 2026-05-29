@@ -4,8 +4,12 @@ import { query, closePool } from "@/db/client.js";
 import { getClubMatchsCalendar } from "@/api/lib/repositories/club-matchs.repo.js";
 
 const SAISON = "2025-2026";
-const CLUB_A = "5655011"; // entente member A
-const CLUB_B = "6275001"; // entente member B
+// IDs réalistes : id_ffhb = id_club monclub (= ext_structure_id des équipes),
+// distinct du code FFHB 7 chiffres (préfixe licence, porté par l'email club).
+const CLUB_A = "1720"; // id_club monclub (entente member A)
+const CLUB_B = "2331"; // id_club monclub (entente member B)
+const CODE_A = "5221105"; // code FFHB 7 chiffres de A (préfixe licence)
+const CODE_B = "5759083"; // code FFHB 7 chiffres de B (préfixe licence)
 
 let pouleId: bigint;
 let equipeEntenteId: bigint;
@@ -33,7 +37,8 @@ async function addComposition(matchId: bigint, joueurId: bigint, equipeId: bigin
 beforeAll(async () => {
   // Nettoyage ciblé
   await query(
-    `DELETE FROM core.match_compositions WHERE joueur_id IN (SELECT id FROM core.joueurs WHERE numero_licence LIKE '5655011%' OR numero_licence LIKE '6275001%')`,
+    `DELETE FROM core.match_compositions WHERE joueur_id IN (SELECT id FROM core.joueurs WHERE numero_licence LIKE $1 || '%' OR numero_licence LIKE $2 || '%')`,
+    [CODE_A, CODE_B],
   );
   await query(`DELETE FROM core.matchs WHERE id_ffhb_match LIKE 'PREC-M-%'`);
   await query(`DELETE FROM core.equipes WHERE id_ffhb LIKE 'PREC-EQ-%' AND saison_code = $1`, [SAISON]);
@@ -41,7 +46,10 @@ beforeAll(async () => {
   await query(`DELETE FROM core.phases WHERE id_ffhb = 'PREC-PH' AND saison_code = $1`, [SAISON]);
   await query(`DELETE FROM core.competitions WHERE id_ffhb = 'PREC-COMP'`);
   await query(`DELETE FROM core.clubs WHERE id_ffhb IN ($1, $2)`, [CLUB_A, CLUB_B]);
-  await query(`DELETE FROM core.joueurs WHERE numero_licence LIKE '5655011%' OR numero_licence LIKE '6275001%'`);
+  await query(`DELETE FROM core.joueurs WHERE numero_licence LIKE $1 || '%' OR numero_licence LIKE $2 || '%'`, [
+    CODE_A,
+    CODE_B,
+  ]);
 
   await query(
     `INSERT INTO core.saisons (saison_code, date_debut, date_fin)
@@ -49,10 +57,10 @@ beforeAll(async () => {
     [SAISON],
   );
   await query(
-    `INSERT INTO core.clubs (id_ffhb, nom, last_seen_at) VALUES
-       ($1, 'CLUB ALPHA HANDBALL', now()), ($2, 'CLUB BETA HANDBALL', now())
-     ON CONFLICT (id_ffhb) DO UPDATE SET nom = EXCLUDED.nom`,
-    [CLUB_A, CLUB_B],
+    `INSERT INTO core.clubs (id_ffhb, nom, email, last_seen_at) VALUES
+       ($1, 'CLUB ALPHA HANDBALL', $3, now()), ($2, 'CLUB BETA HANDBALL', $4, now())
+     ON CONFLICT (id_ffhb) DO UPDATE SET nom = EXCLUDED.nom, email = EXCLUDED.email`,
+    [CLUB_A, CLUB_B, `${CODE_A}@ffhandball.net`, `${CODE_B}@ffhandball.net`],
   );
   const comp = await query<{ id: bigint }>(
     `INSERT INTO core.competitions (id_ffhb, nom, niveau, saison_code, last_seen_at)
@@ -111,10 +119,11 @@ beforeAll(async () => {
     [pouleId, equipeStructId, equipeAdvId],
   );
 
-  // Compositions : 3 licenciés A + 3 licenciés B dans l'entente → n_distinct_clubs=2
+  // Compositions : 3 licenciés A + 3 licenciés B dans l'entente → n_distinct_clubs=2.
+  // Préfixe licence = code FFHB 7 chiffres (CODE_A/CODE_B), pas l'id_ffhb (=id_club).
   for (let i = 1; i <= 3; i++) {
-    const jA = await seedJoueur(`5655011${100000 + i}`, `JOUEUR_A${i}`);
-    const jB = await seedJoueur(`6275001${100000 + i}`, `JOUEUR_B${i}`);
+    const jA = await seedJoueur(`${CODE_A}${100000 + i}`, `JOUEUR_A${i}`);
+    const jB = await seedJoueur(`${CODE_B}${100000 + i}`, `JOUEUR_B${i}`);
     await addComposition(m1.rows[0]!.id, jA, equipeEntenteId);
     await addComposition(m1.rows[0]!.id, jB, equipeEntenteId);
   }

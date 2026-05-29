@@ -19,11 +19,21 @@ signal structurel autoritatif.
 
 | Fait | Preuve |
 |---|---|
-| `core.clubs.id_ffhb` = code structure FFHB à 7 chiffres | fixture `6275001`, `6275002` ; schéma `z.string().regex(/^\d+$/)` |
-| Préfixe (7 chiffres) du `numero_licence` joueur = code du club | `5655011`100522 → club `5655011` ; la FdM affiche `…(5655011)` |
+| **DEUX espaces d'ID club distincts** côté FFHB (vérifié sur données réelles) | voir ci-dessous |
+| `core.clubs.id_ffhb` (chemin prod monclub) = `id_club` monclub | JDA Dijon `1720`, ST Amand `2325`, Sambre `2331` |
+| `core.equipes.ext_structure_id` = `id_club` monclub = `clubs.id_ffhb` | JDA `ext_structureId=1720` = `id_club=1720` (3+ clubs confirmés) → **couche `structure`** |
+| Code FFHB **7 chiffres** = préfixe `email_club` (`5221105@ffhandball.net`) = préfixe `numero_licence` = code FdM `(…)` | distinct de `id_club` → **couche `licence`** |
 | `core.match_compositions.equipe_id` = équipe pour laquelle le joueur a joué ce match | schéma confirmé (FK `core.equipes`) |
 | `core.equipes.club_id` est **NULL** | l'ETL equipes le laisse non résolu (warning « club_id non résolu ») |
-| `core.equipes.ext_structure_id` = code structure de l'équipe | optionnel, peuplé sur scrapes réels (calendar-button) |
+
+> ⚠️ **Correction post-investigation (2026-05-29).** Le chemin d'ingestion prod des clubs est
+> monclub (`/clubs` listing 404e), donc `clubs.id_ffhb` = `id_club` monclub (ex. `1720`), **pas** le
+> code FFHB 7 chiffres. Conséquences :
+> - **couche `structure`** : `equipes.ext_structure_id = clubs.id_ffhb` est **correct** (même espace
+>   d'ID = `id_club`). C'est le **pont autoritatif pré-FdM** pour les équipes propres.
+> - **couche `licence`** : doit se clé sur le **code 7 chiffres dérivé de `clubs.email`**
+>   (`split_part(email,'@',1)`), **pas** sur `id_ffhb`. Sinon le préfixe licence (7 ch.) ≠ `id_ffhb`
+>   (= id_club) et la couche ne matche jamais.
 
 **Conséquence clé :** le préfixe de licence est le **seul signal qui identifie les ententes de
 façon fiable** — un club fournit plusieurs licenciés à son entente, donc un seuil de N licenciés
@@ -37,8 +47,8 @@ la **confiance maximale** (et la méthode correspondante).
 
 | Méthode | Confiance | Règle | Ententes ? | Données requises |
 |---|---|---|---|---|
-| `licence` | `haute` | ≥ `LICENCE_MATCH_MIN_PLAYERS` (=3) licenciés distincts préfixés `club.id_ffhb` ont joué pour l'équipe | ✅ **oui, précisément** | FdM (`match_compositions`) |
-| `structure` | `haute` | `equipes.ext_structure_id = club.id_ffhb` | équipes propres | équipes scrapées |
+| `licence` | `haute` | ≥ `LICENCE_MATCH_MIN_PLAYERS` (=3) licenciés distincts préfixés par le **code 7 chiffres** du club (`code7FromEmail(clubs.email)`) ont joué pour l'équipe | ✅ **oui, précisément** | FdM (`match_compositions`) |
+| `structure` | `haute` | `equipes.ext_structure_id = club.id_ffhb` (= `id_club` monclub) | équipes propres (réserves incl.) | équipes scrapées (**pré-FdM**) |
 | `nom_exact` | `haute` | `e.nom = club.nom` | non | toujours |
 | `nom_reserve` | `moyenne` | `e.nom ILIKE club.nom || ' %'` | non | toujours |
 | `nom_entente` | `basse` | entente détectée **et** partage ≥ 1 token **distinctif** (après STOPWORDS) en **mot entier** (`e.nom ~* '\m' || token || '\M'`) | heuristique | toujours |
