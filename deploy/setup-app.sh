@@ -31,7 +31,10 @@ fi
 read -rsp "Mot de passe Postgres [Entrée = auto-généré 32 chars] : " POSTGRES_PASSWORD
 echo ""
 if [ -z "$POSTGRES_PASSWORD" ]; then
-  POSTGRES_PASSWORD=$(tr -dc 'A-Za-z0-9!@#%^*_-' < /dev/urandom | head -c 32 || true)
+  # Charset alphanumérique uniquement : URL-safe (le mot de passe est injecté dans
+  # DATABASE_URL=postgresql://user:MDP@host — des caractères comme @ # % cassent l'URL).
+  # 32 caractères alphanumériques ≈ 190 bits d'entropie : largement suffisant.
+  POSTGRES_PASSWORD=$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 32 || true)
   log "Mot de passe Postgres auto-généré (sauvegardez-le !)."
   echo "  POSTGRES_PASSWORD : $POSTGRES_PASSWORD"
   echo ""
