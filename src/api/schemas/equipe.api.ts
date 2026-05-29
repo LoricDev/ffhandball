@@ -26,6 +26,16 @@ export const clubEquipeSchema = z
   .object({ id_ffhb: z.string(), nom: z.string(), engagements: z.array(engagementRefSchema) })
   .openapi("ClubEquipe");
 
+export const rosterJoueurItemSchema = z
+  .object({
+    numero_licence: z.string(),
+    nom: z.string(),
+    prenom: z.string(),
+    matchs: z.number().int(),
+    buts: z.number().int(),
+  })
+  .openapi("RosterJoueurItem");
+
 export const equipeMatchsQuerySchema = z.object({
   saison: z.string().regex(/^\d{4}-\d{4}$/).default("2025-2026"),
   date_from: z.string().optional(),

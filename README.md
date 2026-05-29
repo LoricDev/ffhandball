@@ -28,7 +28,7 @@ npm run api:dev    # watch mode (dev)
 open http://localhost:3000/docs   # Swagger UI interactif
 ```
 
-Endpoints : `/health`, `/ready`, `/clubs`, `/clubs/:id_ffhb`, `/clubs/:id_ffhb/matchs`, `/clubs/:id_ffhb/equipes`, `/competitions`, `/competitions/:id_ffhb`, `/poules/:id_ffhb`, `/equipes/:id_ffhb`, `/equipes/:id_ffhb/matchs`, `/matchs`, `/matchs/:id`, `/classements`, `/stats-joueurs`, `/joueurs/:numero_licence`, `/arbitres`, `/arbitres/:id_ffhb/matchs`, `/salles/:id_ffhb`, `/salles/:id_ffhb/matchs`, `/search`, `/openapi.json`. Les endpoints clubs acceptent `id_ffhb` (id_club monclub) **ou** le code FFHB 7 chiffres.
+Endpoints : `/health`, `/ready`, `/saisons`, `/departements`, `/ligues`, `/clubs`, `/clubs/:id_ffhb`, `/clubs/:id_ffhb/matchs`, `/clubs/:id_ffhb/equipes`, `/clubs/:id_ffhb/joueurs`, `/clubs/:id_ffhb/classements`, `/competitions`, `/competitions/:id_ffhb`, `/poules/:id_ffhb`, `/equipes/:id_ffhb`, `/equipes/:id_ffhb/matchs`, `/equipes/:id_ffhb/joueurs`, `/matchs`, `/matchs/:id`, `/classements`, `/stats-joueurs`, `/joueurs/:numero_licence`, `/joueurs/:numero_licence/matchs`, `/arbitres`, `/arbitres/:id_ffhb`, `/arbitres/:id_ffhb/matchs`, `/salles/:id_ffhb`, `/salles/:id_ffhb/matchs`, `/search`, `/openapi.json`. Les endpoints clubs acceptent `id_ffhb` (id_club monclub) **ou** le code FFHB 7 chiffres.
 
 Détails complets (options, rate-limit, format réponse) : [docs/runbook.md#api-http-publique](docs/runbook.md#api-http-publique).
 
@@ -203,6 +203,6 @@ Pour ajouter une nouvelle entité :
 
 ## Statut
 
-**17 entités modèle • 17 migrations • 10 scrapers • 13 ETLs • 20 endpoints API • ~290 tests passants**
+**17 entités modèle • 17 migrations • 10 scrapers • 13 ETLs • 28 endpoints API • ~300 tests passants**
 
 Pipeline production-ready. Voir `docs/DEPLOY.md` pour déployer et `docs/runbook.md` pour toutes les commandes opérationnelles.
