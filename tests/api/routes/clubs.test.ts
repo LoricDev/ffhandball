@@ -214,7 +214,8 @@ describe("GET /clubs/:id_ffhb/matchs", () => {
     await query(`DELETE FROM core.poules WHERE id_ffhb = 'CAL-PO-01' AND saison_code = '2025-2026'`);
     await query(`DELETE FROM core.phases WHERE id_ffhb = 'CAL-PH-01' AND saison_code = '2025-2026'`);
     await query(`DELETE FROM core.competitions WHERE id_ffhb = 'CAL-COMP-01'`);
-    await query(`DELETE FROM core.clubs WHERE id_ffhb IN ('CAL-C001', 'CAL-C002')`);
+    await query(`DELETE FROM core.equipes WHERE id_ffhb = 'CAL-EQ-FP' AND saison_code = '2025-2026'`);
+    await query(`DELETE FROM core.clubs WHERE id_ffhb IN ('CAL-C001', 'CAL-C002', 'CAL-C003')`);
 
     // Seed club principal
     await query(
@@ -360,6 +361,48 @@ describe("GET /clubs/:id_ffhb/matchs", () => {
     expect(entente!.is_entente).toBe(true);
     // L'équipe non liée (PARIS 92) ne doit PAS apparaître
     expect(equipes.find((e) => e.nom === "PARIS 92")).toBeUndefined();
+  });
+
+  it("expose match_method et confidence sur les équipes liées", async () => {
+    const res = await app.request("/clubs/CAL-C001/matchs?saison=2025-2026");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      meta: { equipes_liees: { nom: string; match_method: string; confidence: string }[] };
+    };
+    const principal = body.meta.equipes_liees.find((e) => e.nom === "BREST BRETAGNE HANDBALL")!;
+    expect(principal.match_method).toBe("nom_exact");
+    expect(principal.confidence).toBe("haute");
+    const reserve = body.meta.equipes_liees.find((e) => e.nom === "BREST BRETAGNE HANDBALL 2")!;
+    expect(reserve.match_method).toBe("nom_reserve");
+    expect(reserve.confidence).toBe("moyenne");
+  });
+
+  it("ne lie pas une entente partageant seulement un mot générique (HANDBALL)", async () => {
+    // Club au nom générique + entente sans token distinctif commun
+    await query(
+      `INSERT INTO core.clubs (id_ffhb, nom, last_seen_at)
+       VALUES ('CAL-C003', 'ALPHACITY HANDBALL', now())
+       ON CONFLICT (id_ffhb) DO UPDATE SET nom = EXCLUDED.nom`,
+    );
+    await query(
+      `INSERT INTO core.equipes (id_ffhb, nom, saison_code, last_seen_at)
+       VALUES ('CAL-EQ-FP', 'ENTENTE HANDBALL BETAVILLE', '2025-2026', now())
+       ON CONFLICT (id_ffhb, saison_code) DO UPDATE SET nom = EXCLUDED.nom`,
+    );
+    const res = await app.request("/clubs/CAL-C003/matchs?saison=2025-2026");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { meta: { equipes_liees: { nom: string }[] } };
+    expect(body.meta.equipes_liees.find((e) => e.nom === "ENTENTE HANDBALL BETAVILLE")).toBeUndefined();
+  });
+
+  it("min_confidence=haute exclut les réserves (moyenne)", async () => {
+    const res = await app.request("/clubs/CAL-C001/matchs?saison=2025-2026&min_confidence=haute");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      meta: { equipes_liees: { nom: string; confidence: string }[] };
+    };
+    expect(body.meta.equipes_liees.every((e) => e.confidence === "haute")).toBe(true);
+    expect(body.meta.equipes_liees.find((e) => e.nom === "BREST BRETAGNE HANDBALL 2")).toBeUndefined();
   });
 
   it("returns 200 with empty data when club has no linked teams", async () => {
