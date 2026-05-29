@@ -84,7 +84,7 @@ docker ps | grep ffhandball-postgres
 ### 5. Migrations et seeds
 
 ```bash
-npm run db:migrate    # Applique toutes les migrations 0001 → 0016
+npm run db:migrate    # Applique toutes les migrations 0001 → 0017
 npm run db:seed       # Charge saisons, ligues, départements
 ```
 
@@ -239,7 +239,7 @@ npm run db:migrate       # nouvelles migrations
 npx vitest run --no-file-parallelism --pool=forks --poolOptions.forks.singleFork
 ```
 
-Les migrations 0001-0016 sont idempotentes. Les ETLs sont idempotents — tu peux relancer après chaque mise à jour sans craindre de doublons.
+Les migrations 0001-0017 sont idempotentes. Les ETLs sont idempotents — tu peux relancer après chaque mise à jour sans craindre de doublons.
 
 ## Mise en place pour développement actif
 

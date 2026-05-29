@@ -180,7 +180,7 @@ describe("GET /clubs", () => {
 describe("GET /clubs/:id_ffhb", () => {
   beforeEach(async () => {
     _resetBuckets();
-    await query(`DELETE FROM core.clubs WHERE id_ffhb IN ('C001', 'C002', 'CAL-C001', 'CAL-C002')`);
+    await query(`DELETE FROM core.clubs WHERE id_ffhb IN ('C001', 'C002', 'CAL-C001', 'CAL-C002', '1720')`);
   });
 
   it("returns detail with 200", async () => {
@@ -190,6 +190,27 @@ describe("GET /clubs/:id_ffhb", () => {
     const body = (await res.json()) as { data: { id_ffhb: string; nom: string } };
     expect(body.data.id_ffhb).toBe("C001");
     expect(body.data.nom).toBe("BREST HBC");
+  });
+
+  it("résout par id_ffhb OU par code_ffhb (7 chiffres) et expose code_ffhb", async () => {
+    // Club avec email → code_ffhb généré = "5221105"
+    await query(
+      `INSERT INTO core.clubs (id_ffhb, nom, email, last_seen_at)
+       VALUES ('1720', 'JDA DIJON HANDBALL', '5221105@ffhandball.net', now())
+       ON CONFLICT (id_ffhb) DO UPDATE SET nom = EXCLUDED.nom, email = EXCLUDED.email`,
+    );
+    // Par id_club
+    const byId = await app.request("/clubs/1720");
+    expect(byId.status).toBe(200);
+    const b1 = (await byId.json()) as { data: { id_ffhb: string; code_ffhb: string | null } };
+    expect(b1.data.id_ffhb).toBe("1720");
+    expect(b1.data.code_ffhb).toBe("5221105");
+    // Par code FFHB 7 chiffres → résout le même club
+    const byCode = await app.request("/clubs/5221105");
+    expect(byCode.status).toBe(200);
+    const b2 = (await byCode.json()) as { data: { id_ffhb: string; code_ffhb: string | null } };
+    expect(b2.data.id_ffhb).toBe("1720");
+    expect(b2.data.code_ffhb).toBe("5221105");
   });
 
   it("returns 404 when club not found", async () => {
