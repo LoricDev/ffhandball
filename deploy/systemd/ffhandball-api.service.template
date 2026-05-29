@@ -14,12 +14,11 @@ RestartSec=5
 StandardOutput=journal
 StandardError=journal
 
-# Hardening
+# Hardening (ProtectSystem=full : /usr /boot /etc en lecture seule ; APP_DIR reste
+# inscriptible pour le cache de compilation tsx. L'API n'écrit aucun fichier — logs → journald.)
 NoNewPrivileges=true
 PrivateTmp=true
-ProtectSystem=strict
-ProtectHome=read-only
-ReadWritePaths={{APP_DIR}}/db/data {{APP_DIR}}/logs
+ProtectSystem=full
 
 [Install]
 WantedBy=multi-user.target
