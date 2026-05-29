@@ -3,6 +3,7 @@ import { query } from "@/db/client.js";
 
 export interface ClubListItem {
   id_ffhb: string;
+  code_ffhb: string | null;
   nom: string;
   ville: string | null;
   departement_code: string | null;
@@ -62,7 +63,7 @@ export async function listClubs(opts: ClubListOptions): Promise<{ data: ClubList
   params.push(opts.limit);
   params.push(opts.offset);
   const dataSql = `
-    SELECT c.id_ffhb, c.nom, c.ville, d.code AS departement_code,
+    SELECT c.id_ffhb, c.code_ffhb, c.nom, c.ville, d.code AS departement_code,
            c.telephone, c.email, c.site_web
       FROM core.clubs c
       LEFT JOIN core.departements d ON d.id = c.departement_id
@@ -74,9 +75,10 @@ export async function listClubs(opts: ClubListOptions): Promise<{ data: ClubList
 }
 
 export async function getClubByIdFfhb(idFfhb: string): Promise<ClubDetail | null> {
+  // Résolution par id_ffhb (= id_club monclub) OU par code_ffhb (code FFHB 7 chiffres public).
   const sql = `
     SELECT
-      c.id_ffhb, c.nom, c.ville, d.code AS departement_code,
+      c.id_ffhb, c.code_ffhb, c.nom, c.ville, d.code AS departement_code,
       c.telephone, c.email, c.site_web,
       c.sigle, c.adresse_correspondance, c.latitude, c.longitude,
       c.logo_club, c.effectif_estime,
@@ -85,7 +87,7 @@ export async function getClubByIdFfhb(idFfhb: string): Promise<ClubDetail | null
     FROM core.clubs c
     LEFT JOIN core.departements d ON d.id = c.departement_id
     LEFT JOIN core.salles s ON s.id = c.salle_principale_id
-    WHERE c.id_ffhb = $1`;
+    WHERE c.id_ffhb = $1 OR c.code_ffhb = $1`;
   const r = await query<Record<string, unknown>>(sql, [idFfhb]);
   if (r.rowCount === 0) return null;
   const row = r.rows[0]!;
@@ -100,6 +102,7 @@ export async function getClubByIdFfhb(idFfhb: string): Promise<ClubDetail | null
     : null;
   return {
     id_ffhb: row.id_ffhb as string,
+    code_ffhb: row.code_ffhb as string | null,
     nom: row.nom as string,
     ville: row.ville as string | null,
     departement_code: row.departement_code as string | null,
