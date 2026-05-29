@@ -810,45 +810,95 @@ npm run api:dev
 open http://localhost:3000/docs
 ```
 
-### Endpoints disponibles V1
+### Endpoints disponibles
 
+**Santé & référentiels**
 - `GET /health` — liveness check
 - `GET /ready` — readiness check (DB connection)
-- `GET /clubs?q=...&departement=...&limit=20&offset=0` — liste paginée
-- `GET /clubs/:id_ffhb` — détail club + salle
-- `GET /clubs/:id_ffhb/matchs?saison=2025-2026&include_ententes=true&date_from=...&date_to=...&statut=...&limit=20&offset=0` — calendrier des matchs d'un club (équipe principale, réserves et ententes)
+- `GET /saisons` — saisons disponibles (la plus récente en premier)
+- `GET /departements` — référentiel départements (code, nom)
+- `GET /ligues` — référentiel ligues (code, nom)
+
+**Clubs** (le `:id_ffhb` accepte l'`id_club` monclub **ou** le code FFHB 7 chiffres — cf. « Deux systèmes d'ID » plus bas)
+- `GET /clubs?q=...&departement=...&limit=20&offset=0` — liste paginée (expose `code_ffhb`)
+- `GET /clubs/:id_ffhb` — détail club + salle (+ `code_ffhb`)
+- `GET /clubs/:id_ffhb/matchs?saison=&include_ententes=&date_from=&date_to=&statut=&min_confidence=&limit=&offset=` — calendrier (cf. détail plus bas)
+- `GET /clubs/:id_ffhb/equipes?saison=` — équipes propres du club (pont `ext_structure_id = id_ffhb`)
+- `GET /clubs/:id_ffhb/joueurs` — joueurs licenciés du club (préfixe licence = `code_ffhb`) + matchs/buts
+- `GET /clubs/:id_ffhb/classements?saison=` — positions de toutes les équipes du club (dernier snapshot)
+
+**Compétitions / poules**
+- `GET /competitions?saison=&niveau=&sexe=&q=&limit=&offset=` — liste paginée
+- `GET /competitions/:id_ffhb` — détail + phases + poules imbriquées
+- `GET /poules/:id_ffhb?saison=` — poule + contexte compétition/phase + classement inline
+
+**Équipes**
+- `GET /equipes/:id_ffhb?saison=` — détail (club via pont `ext_structure_id`, + engagements)
+- `GET /equipes/:id_ffhb/matchs?saison=&date_from=&date_to=&statut=&limit=&offset=` — matchs (dom + ext)
+- `GET /equipes/:id_ffhb/joueurs?saison=` — effectif (joueurs distincts via `match_compositions`)
+
+**Matchs**
 - `GET /matchs?poule_id_ffhb=...&date_from=...&date_to=...&statut=...` — liste
 - `GET /matchs/:id_ffhb_match` — détail enrichi (compositions + actions + arbitres + fdm_url)
+
+**Classements & stats**
 - `GET /classements?poule_id_ffhb=X` — classement poule
+- `GET /stats-joueurs?poule_id_ffhb=X&limit=&offset=` — buteurs/stats de la poule (dernier snapshot)
+
+**Joueurs & arbitres**
 - `GET /joueurs/:numero_licence` — détail + stats agrégées + historique 10 derniers matchs
+- `GET /joueurs/:numero_licence/matchs?limit=&offset=` — historique complet paginé
+- `GET /arbitres?q=...&niveau=...&limit=&offset=` — liste (recherche floue)
+- `GET /arbitres/:id_ffhb` — détail (+ `nb_matchs`)
+- `GET /arbitres/:id_ffhb/matchs?limit=&offset=` — matchs arbitrés
+
+**Salles**
+- `GET /salles/:id_ffhb` — détail salle
+- `GET /salles/:id_ffhb/matchs?date_from=&date_to=&statut=&limit=&offset=` — matchs accueillis
+
+**Recherche & méta**
 - `GET /search?q=...&type=clubs|equipes|joueurs|all` — fuzzy search
 - `GET /openapi.json` — spec OpenAPI 3.1
 - `GET /docs` — Swagger UI
 
+### Deux systèmes d'ID club (important)
+
+Côté FFHB, deux identifiants distincts coexistent :
+- **`id_club` monclub** (ex. `1720`) = `core.clubs.id_ffhb` = `core.equipes.ext_structure_id`. C'est le `:id_ffhb` historique des routes clubs, et la clé de la couche **structure**.
+- **Code FFHB 7 chiffres** (ex. `5221105`, préfixe de `email_club`) = `core.clubs.code_ffhb` (colonne générée) = préfixe des `numero_licence` = code sur les FdM. C'est la clé de la couche **licence**.
+
+Les endpoints clubs (`/clubs/:id_ffhb`, `/clubs/:id_ffhb/matchs|equipes|joueurs|classements`) résolvent **l'un ou l'autre**.
+
 #### Détail : GET /clubs/:id_ffhb/matchs
 
-Endpoint le plus complexe : retourne le calendrier d'un club incluant les matchs des équipes liées.
+Endpoint le plus complexe : retourne le calendrier d'un club incluant les matchs des équipes liées,
+détectées par une **union multi-signal** (cf. spec `docs/superpowers/specs/2026-05-29-club-matchs-precision-design.md`).
 
 **Paramètres query :**
 - `saison` : code saison (défaut `2025-2026`)
 - `include_ententes` : `true` (défaut) | `false` — inclure les matchs des équipes ententes
 - `date_from` / `date_to` : filtre plage dates (ISO 8601)
 - `statut` : `joue` | `a_jouer` | `reporte` | `annule` | `forfait`
+- `min_confidence` : `haute` | `moyenne` | `basse` — ne garder que les liens de confiance ≥ seuil
 - `limit` / `offset` : pagination (max 100)
 
-**Détection des équipes liées :** matching textuel via `ILIKE` sur `core.equipes.nom` :
-1. Équipe principale : `nom = club.nom` (match exact, majuscules)
-2. Équipes réserve : `nom ILIKE club.nom || ' %'` (capture "X 2", "X B", etc.)
-3. Ententes (si `include_ententes=true`) : nom contient ENTENTE/ENT _et_ au moins un mot distinctif du club (≥ 4 chars)
+**Détection des équipes liées (5 signaux, tag `match_method` + `confidence`) :**
+| Méthode | Confiance | Règle | Données |
+|---|---|---|---|
+| `licence` | haute | ≥ 3 licenciés du club (`left(numero_licence,7) = code_ffhb`) ont joué pour l'équipe | FdM (`match_compositions`) |
+| `structure` | haute | `equipes.ext_structure_id = club.id_ffhb` (= id_club) — capture les équipes propres + réserves | équipes scrapées (pré-FdM) |
+| `nom_exact` | haute | `nom = club.nom` | toujours |
+| `nom_reserve` | moyenne | `nom ILIKE club.nom || ' %'` (« X 2 », « X B »…) | toujours |
+| `nom_entente` | basse | entente partageant un token distinctif (mot entier, hors STOPWORDS) avec le club | toujours |
 
-**Champs enrichis sur chaque match :**
-- `club_recevant` : true si l'équipe liée est à domicile
-- `via_entente` : true si match via une équipe entente
-- `via_principal` : true si match via l'équipe principale (vs réserve/entente)
+La couche `licence` est le seul signal qui capture les **ententes** de façon fiable (un club fournit
+plusieurs licenciés à son entente). Elle ne s'active qu'avec des données FdM. La couche `structure`
+donne un matching **autoritatif pré-FdM** des équipes propres. Le textuel reste le fallback.
 
-**`meta.equipes_liees`** : liste transparente des équipes détectées comme liées au club, avec `is_principal` et `is_entente`.
+**Champs enrichis sur chaque match :** `club_recevant`, `via_entente`, `via_principal`, `confidence`.
 
-**Limitation connue :** matching textuel (`ILIKE`). Des faux positifs/négatifs sont possibles si les noms de clubs/équipes sont mal formés. La solution propre est la résolution future de `core.equipes.club_id`.
+**`meta.equipes_liees`** : liste transparente des équipes liées, avec `is_principal`, `is_entente`,
+`match_method` et `confidence`.
 
 ### Rate-limit
 
