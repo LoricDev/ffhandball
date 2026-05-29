@@ -1,5 +1,21 @@
 // src/api/lib/repositories/club.repo.ts
 import { query } from "@/db/client.js";
+import type { RosterJoueurItem } from "@/api/lib/repositories/equipe.repo.js";
+
+export interface ClubClassementItem {
+  equipe: { id_ffhb: string; nom: string };
+  poule: { id_ffhb: string; nom: string };
+  competition: { id_ffhb: string; nom: string; niveau: string | null };
+  position: number;
+  points: number;
+  joues: number;
+  gagnes: number;
+  nuls: number;
+  perdus: number;
+  buts_pour: number;
+  buts_contre: number;
+  difference: number;
+}
 
 export interface ClubListItem {
   id_ffhb: string;
@@ -117,4 +133,72 @@ export async function getClubByIdFfhb(idFfhb: string): Promise<ClubDetail | null
     effectif_estime: row.effectif_estime as number | null,
     salle_principale: salle,
   };
+}
+
+/** Joueurs licenciés d'un club (préfixe licence = code_ffhb), avec matchs/buts joués. */
+export async function listClubJoueurs(code7: string | null): Promise<RosterJoueurItem[]> {
+  if (!code7) return [];
+  const r = await query<RosterJoueurItem>(
+    `SELECT j.numero_licence, j.nom, j.prenom,
+            count(DISTINCT mc.match_id)::int AS matchs,
+            coalesce(sum(mc.but_count), 0)::int AS buts
+       FROM core.joueurs j
+       LEFT JOIN core.match_compositions mc ON mc.joueur_id = j.id
+      WHERE left(j.numero_licence, 7) = $1
+      GROUP BY j.id, j.numero_licence, j.nom, j.prenom
+      ORDER BY buts DESC, j.nom ASC`,
+    [code7],
+  );
+  return r.rows;
+}
+
+/** Classements de toutes les équipes propres d'un club (dernier snapshot par équipe). */
+export async function listClubClassements(clubIdFfhb: string, saison: string): Promise<ClubClassementItem[]> {
+  const r = await query<{
+    equipe_id_ffhb: string;
+    equipe_nom: string;
+    poule_id_ffhb: string;
+    poule_nom: string;
+    comp_id_ffhb: string;
+    comp_nom: string;
+    comp_niveau: string | null;
+    position: number;
+    points: number;
+    joues: number;
+    gagnes: number;
+    nuls: number;
+    perdus: number;
+    buts_pour: number;
+    buts_contre: number;
+    difference: number;
+  }>(
+    `SELECT DISTINCT ON (e.id)
+            e.id_ffhb AS equipe_id_ffhb, e.nom AS equipe_nom,
+            po.id_ffhb AS poule_id_ffhb, po.nom AS poule_nom,
+            c.id_ffhb AS comp_id_ffhb, c.nom AS comp_nom, c.niveau AS comp_niveau,
+            cl.position, cl.points, cl.joues, cl.gagnes, cl.nuls, cl.perdus,
+            cl.buts_pour, cl.buts_contre, cl.difference
+       FROM core.equipes e
+       JOIN core.classements cl ON cl.equipe_id = e.id
+       JOIN core.poules po ON po.id = cl.poule_id
+       JOIN core.phases ph ON ph.id = po.phase_id
+       JOIN core.competitions c ON c.id = ph.competition_id
+      WHERE e.ext_structure_id = $1 AND e.saison_code = $2
+      ORDER BY e.id, cl.capture_date DESC`,
+    [clubIdFfhb, saison],
+  );
+  return r.rows.map((row) => ({
+    equipe: { id_ffhb: row.equipe_id_ffhb, nom: row.equipe_nom },
+    poule: { id_ffhb: row.poule_id_ffhb, nom: row.poule_nom },
+    competition: { id_ffhb: row.comp_id_ffhb, nom: row.comp_nom, niveau: row.comp_niveau },
+    position: row.position,
+    points: row.points,
+    joues: row.joues,
+    gagnes: row.gagnes,
+    nuls: row.nuls,
+    perdus: row.perdus,
+    buts_pour: row.buts_pour,
+    buts_contre: row.buts_contre,
+    difference: row.difference,
+  }));
 }

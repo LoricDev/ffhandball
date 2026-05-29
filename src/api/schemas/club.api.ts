@@ -34,6 +34,21 @@ export const clubDetailSchema = clubListItemSchema.extend({
   }).nullable(),
 }).openapi("ClubDetail");
 
+export const clubClassementItemSchema = z.object({
+  equipe: z.object({ id_ffhb: z.string(), nom: z.string() }),
+  poule: z.object({ id_ffhb: z.string(), nom: z.string() }),
+  competition: z.object({ id_ffhb: z.string(), nom: z.string(), niveau: z.string().nullable() }),
+  position: z.number().int(),
+  points: z.number().int(),
+  joues: z.number().int(),
+  gagnes: z.number().int(),
+  nuls: z.number().int(),
+  perdus: z.number().int(),
+  buts_pour: z.number().int(),
+  buts_contre: z.number().int(),
+  difference: z.number().int(),
+}).openapi("ClubClassementItem");
+
 export const clubListQuerySchema = z.object({
   q: z.string().min(2).optional().openapi({ description: "Fuzzy search on nom (min 2 chars)" }),
   departement: z.string().regex(/^(\d{2,3}|2A|2B)$/).optional().openapi({ description: "Code département (ex: 75, 2A, 974)" }),

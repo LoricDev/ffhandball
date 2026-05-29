@@ -1,8 +1,8 @@
 // src/api/routes/joueurs.ts
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
-import { joueurDetailSchema } from "@/api/schemas/joueur.api.js";
-import { errorResponseSchema } from "@/api/schemas/common.js";
-import { getJoueurByLicence } from "@/api/lib/repositories/joueur.repo.js";
+import { joueurDetailSchema, joueurMatchItemSchema } from "@/api/schemas/joueur.api.js";
+import { errorResponseSchema, paginationMetaSchema, paginationQuerySchema } from "@/api/schemas/common.js";
+import { getJoueurByLicence, getJoueurMatchs } from "@/api/lib/repositories/joueur.repo.js";
 
 const joueurs = new OpenAPIHono();
 
@@ -33,6 +33,41 @@ joueurs.openapi(detailRoute, async (c) => {
     );
   }
   return c.json({ data: joueur });
+});
+
+const matchsRoute = createRoute({
+  method: "get",
+  path: "/joueurs/{numero_licence}/matchs",
+  tags: ["joueurs"],
+  summary: "Historique complet (paginé) des matchs d'un joueur",
+  request: {
+    params: z.object({ numero_licence: z.string() }),
+    query: paginationQuerySchema,
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.object({ data: z.array(joueurMatchItemSchema), meta: paginationMetaSchema }),
+        },
+      },
+      description: "Matchs du joueur (triés par date_heure ASC)",
+    },
+    404: { content: { "application/json": { schema: errorResponseSchema } }, description: "Joueur not found" },
+  },
+});
+
+joueurs.openapi(matchsRoute, async (c) => {
+  const { numero_licence } = c.req.valid("param");
+  const q = c.req.valid("query");
+  const result = await getJoueurMatchs(numero_licence, q.limit, q.offset);
+  if (!result) {
+    return c.json(
+      { error: { code: "NOT_FOUND" as const, message: `Joueur numero_licence=${numero_licence} introuvable` } },
+      404,
+    );
+  }
+  return c.json({ data: result.data, meta: { total: result.total, limit: q.limit, offset: q.offset } });
 });
 
 export default joueurs;

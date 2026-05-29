@@ -30,3 +30,7 @@ export const arbitreListQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(100).default(20),
   offset: z.coerce.number().int().nonnegative().default(0),
 });
+
+export const arbitreDetailSchema = arbitreListItemSchema
+  .extend({ nb_matchs: z.number().int() })
+  .openapi("ArbitreDetail");
