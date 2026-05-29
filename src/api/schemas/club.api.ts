@@ -2,7 +2,14 @@
 import { z } from "@hono/zod-openapi";
 
 export const clubListItemSchema = z.object({
-  id_ffhb: z.string(),
+  id_ffhb: z.string().openapi({ description: "Identifiant club FFHB (id_club monclub)", example: "1720" }),
+  code_ffhb: z
+    .string()
+    .nullable()
+    .openapi({
+      description: "Code FFHB 7 chiffres (préfixe des licences / code sur les FdM). null si inconnu.",
+      example: "5221105",
+    }),
   nom: z.string(),
   ville: z.string().nullable(),
   departement_code: z.string().nullable(),
