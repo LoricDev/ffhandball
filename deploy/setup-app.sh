@@ -67,7 +67,11 @@ if [ -z "$NODE_PATH" ]; then
   NODE_PATH=$(command -v node 2>/dev/null || true)
 fi
 if [ -z "$NODE_PATH" ]; then
-  echo "ERROR: node introuvable. Vérifier que install-server.sh s'est bien exécuté." >&2
+  # Dernier recours : chercher directement le binaire installé par nvm (version la plus récente)
+  NODE_PATH=$(ls -d "$HOME"/.nvm/versions/node/*/bin/node 2>/dev/null | sort -V | tail -1 || true)
+fi
+if [ -z "$NODE_PATH" ]; then
+  echo "ERROR: node introuvable dans \$HOME=$HOME (.nvm). Vérifier install-server.sh." >&2
   exit 1
 fi
 log "Node path : $NODE_PATH ($(${NODE_PATH} --version))"
