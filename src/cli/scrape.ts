@@ -3,7 +3,7 @@ import * as cheerio from "cheerio";
 import { logger } from "@/lib/logger.js";
 import { closePool, query } from "@/db/client.js";
 import { fetchHtml, fetchBinary } from "@/scrapers/shared/http-client.js";
-import { startScrapeRun } from "@/scrapers/shared/scrape-run.js";
+import { startScrapeRun, type ScrapeRunHandle } from "@/scrapers/shared/scrape-run.js";
 import { insertRaw } from "@/scrapers/shared/raw-insert.js";
 import { parseClubsListing } from "@/scrapers/ffhandball/clubs.scraper.js";
 import { parseClubDetail } from "@/scrapers/ffhandball/club-details.scraper.js";
@@ -80,6 +80,27 @@ function parseCliArgs(): CliArgs {
     level,
     journees,
   };
+}
+
+/**
+ * Fetch HTML "tolérant" : incrémente le compteur de pages et, en cas d'échec HTTP
+ * persistant (après les retries), logue un warning et renvoie null au lieu de lever
+ * une exception. Permet de sauter une page fautive (ex: 500 ffhandball.fr sur une
+ * compétition précise) sans faire échouer tout le run.
+ */
+async function tryFetchHtml(
+  run: ScrapeRunHandle,
+  url: string,
+): Promise<Awaited<ReturnType<typeof fetchHtml>> | null> {
+  try {
+    const res = await fetchHtml(url);
+    await run.incrementPages(1);
+    return res;
+  } catch (err) {
+    await run.incrementPages(1);
+    logger.warn({ url, err: String(err) }, "page fetch failed after retries, skipping");
+    return null;
+  }
 }
 
 async function scrapeClubs(saison: string, url: string): Promise<void> {
@@ -254,10 +275,15 @@ async function scrapeCompetitions(
       detail_url: string;
     }> = [];
 
+    let listSkipped = 0;
     for (const niveau of levels) {
       const listUrl = `https://www.ffhandball.fr/competitions/saison-${saison}-${extSaisonId}/${niveau}/`;
-      const listRes = await fetchHtml(listUrl);
-      await run.incrementPages(1);
+      const listRes = await tryFetchHtml(run, listUrl);
+      if (!listRes) {
+        listSkipped++;
+        logger.warn({ url: listUrl, niveau }, "liste par niveau injoignable, niveau sauté");
+        continue;
+      }
 
       if (niveau === "national") {
         const comps = parseCompetitionList(listRes.body, "national", listUrl, saison, extSaisonId);
@@ -283,12 +309,8 @@ async function scrapeCompetitions(
           // T1 a découvert que les URLs per-structure nécessitent le préfixe "o-"
           // Pattern : /<niveau>/o-{slug(libelle)}-{ext_structure_id}/
           const structUrl = `https://www.ffhandball.fr/competitions/saison-${saison}-${extSaisonId}/${niveau}/o-${slugifyLibelle(s.libelle)}-${s.ext_structure_id}/`;
-          const structRes = await fetchHtml(structUrl);
-          await run.incrementPages(1);
-          if (structRes.status >= 400) {
-            logger.warn({ url: structUrl, status: structRes.status }, "per-structure page failed");
-            continue;
-          }
+          const structRes = await tryFetchHtml(run, structUrl);
+          if (!structRes) continue;
           const comps = parseCompetitionList(
             structRes.body,
             niveau,
@@ -326,11 +348,11 @@ async function scrapeCompetitions(
     let insertedEquipes = 0;
     let insertedEngagements = 0;
     let parseFailed = 0;
+    let detailSkipped = 0;
     for (const { ext_competition_id, detail_url } of competitions) {
-      const res = await fetchHtml(detail_url);
-      await run.incrementPages(1);
-      if (res.status >= 400) {
-        logger.warn({ detail_url, status: res.status }, "detail page failed");
+      const res = await tryFetchHtml(run, detail_url);
+      if (!res) {
+        detailSkipped++;
         continue;
       }
       const parsed = parseCompetitionDetail(res.body, detail_url, ext_competition_id);
@@ -390,7 +412,7 @@ async function scrapeCompetitions(
     }
 
     logger.info(
-      { totalCompetitions, insertedPhases, insertedPoules, insertedEquipes, insertedEngagements, parseFailed },
+      { totalCompetitions, insertedPhases, insertedPoules, insertedEquipes, insertedEngagements, parseFailed, listSkipped, detailSkipped },
       "competitions scrape done",
     );
     await run.finishSuccess();

@@ -15,6 +15,7 @@
     "apikey": "node --env-file=.env --import tsx src/cli/apikey.ts",
     "status": "node --env-file=.env --import tsx src/cli/status.ts",
     "pipeline": "node --env-file=.env --import tsx src/cli/pipeline.ts",
+    "mail:test": "node --env-file=.env --import tsx src/cli/mail-test.ts",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
     "db:reset": "docker compose down -v && docker compose up -d",
