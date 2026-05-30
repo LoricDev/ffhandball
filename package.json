@@ -13,6 +13,7 @@
     "scrape": "node --env-file=.env --import tsx src/cli/scrape.ts",
     "etl": "node --env-file=.env --import tsx src/cli/etl.ts",
     "apikey": "node --env-file=.env --import tsx src/cli/apikey.ts",
+    "status": "node --env-file=.env --import tsx src/cli/status.ts",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
     "db:reset": "docker compose down -v && docker compose up -d",
