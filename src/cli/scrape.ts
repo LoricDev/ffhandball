@@ -765,7 +765,7 @@ async function scrapeFeuillesMatch(
 async function main(): Promise<void> {
   const args = parseCliArgs();
   if (args.entity === "clubs") {
-    const url = args.url ?? "https://www.ffhandball.fr/clubs";
+    const url = args.url ?? "https://monclub.ffhandball.fr";
     await scrapeClubs(args.saison, url);
   } else if (args.entity === "club-details") {
     await scrapeClubDetails(args.saison, { limit: args.limit, slug: args.slug });
