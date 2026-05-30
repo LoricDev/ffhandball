@@ -6,6 +6,7 @@
 import { parseArgs } from "node:util";
 import { spawnSync } from "node:child_process";
 import { canonicalizeSaison } from "@/etl/shared/parse-saison.js";
+import { sendPipelineSuccess, sendPipelineFailure } from "@/lib/mailer.js";
 
 interface Step {
   label: string;
@@ -72,7 +73,7 @@ function run(cmd: "scrape" | "etl", entity: string, saison: string, extraArgs: s
   }
 }
 
-function main(): void {
+async function main(): Promise<void> {
   const { saison, from, dryRun } = parseCliArgs();
 
   let steps = PIPELINE;
@@ -92,6 +93,7 @@ function main(): void {
 
   const total = steps.length;
   let current = 0;
+  const completed: { label: string; duration: string }[] = [];
 
   for (const step of steps) {
     current++;
@@ -104,18 +106,29 @@ function main(): void {
     }
 
     const start = Date.now();
-    run(step.cmd, step.entity, saison, step.extraArgs ?? []);
+    try {
+      run(step.cmd, step.entity, saison, step.extraArgs ?? []);
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`\n✗ ${errMsg}\n`);
+      await sendPipelineFailure(saison, step.label, errMsg, completed);
+      process.exit(1);
+    }
     const secs = ((Date.now() - start) / 1000).toFixed(1);
     process.stdout.write(`  ✓ done (${secs}s)\n`);
+    completed.push({ label: step.label, duration: `${secs}s` });
   }
 
   process.stdout.write("\n" + "─".repeat(50) + "\n");
-  process.stdout.write(dryRun ? "Dry run terminé.\n" : `✓ Pipeline ${saison} terminé.\n`);
+  if (dryRun) {
+    process.stdout.write("Dry run terminé.\n");
+  } else {
+    process.stdout.write(`✓ Pipeline ${saison} terminé.\n`);
+    await sendPipelineSuccess(saison, completed);
+  }
 }
 
-try {
-  main();
-} catch (err) {
+main().catch((err) => {
   process.stderr.write(`\n✗ ${err instanceof Error ? err.message : String(err)}\n`);
   process.exit(1);
-}
+});
