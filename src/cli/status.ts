@@ -42,9 +42,9 @@ interface EtlRow {
   status: string;
   started_at: Date;
   finished_at: Date | null;
-  inserted: number | null;
-  updated: number | null;
-  rejected: number | null;
+  rows_inserted: number | null;
+  rows_updated: number | null;
+  rows_rejected: number | null;
   error_message: string | null;
 }
 
@@ -122,7 +122,7 @@ async function main(): Promise<void> {
 
   // --- ETL ---
   const etlRes = await query<EtlRow>(
-    `SELECT entity, status, started_at, finished_at, inserted, updated, rejected, error_message
+    `SELECT entity, status, started_at, finished_at, rows_inserted, rows_updated, rows_rejected, error_message
        FROM core.etl_runs
       WHERE saison = $1
       ORDER BY entity, started_at DESC`,
@@ -149,7 +149,7 @@ async function main(): Promise<void> {
     } else {
       const icon = statusIcon(row.status);
       process.stdout.write(
-        `  ${col(entity, 16)} ${icon} ${col(row.status, 8)} ${col(fmt(row.started_at), 20)} ${col(String(row.inserted ?? "-"), 6)} ${col(String(row.updated ?? "-"), 6)} ${col(String(row.rejected ?? "-"), 6)}`,
+        `  ${col(entity, 16)} ${icon} ${col(row.status, 8)} ${col(fmt(row.started_at), 20)} ${col(String(row.rows_inserted ?? "-"), 6)} ${col(String(row.rows_updated ?? "-"), 6)} ${col(String(row.rows_rejected ?? "-"), 6)}`,
       );
       if (row.error_message) {
         process.stdout.write(`  ⚠ ${row.error_message.slice(0, 40)}`);
