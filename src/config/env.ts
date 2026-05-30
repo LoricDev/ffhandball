@@ -20,6 +20,13 @@ const envSchema = z.object({
     .transform((v) => v === "true"),
   ADMIN_SECRET: z.string().min(16).optional(),
   API_KEY_DEFAULT_RATE_LIMIT_PER_MIN: z.coerce.number().int().positive().default(120),
+  // Notifications mail (optionnel — désactivé si absent)
+  MAIL_HOST:     z.string().optional(),
+  MAIL_PORT:     z.coerce.number().int().default(587),
+  MAIL_USER:     z.string().optional(),
+  MAIL_PASSWORD: z.string().optional(),
+  MAIL_FROM:     z.string().optional(),
+  MAIL_TO:       z.string().optional(),
 });
 
 export const env = envSchema.parse(process.env);
