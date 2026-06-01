@@ -45,11 +45,11 @@ run_step() {
 # Scrape FdM complet (sans --limit — scrape toutes les FdM non encore en raw)
 # Le scraper est idempotent : saute les FdM déjà présentes en raw via natural_key
 run_step "scrape feuilles-match (complet, sans limit)" \
-  npm run scrape -- --entity=feuilles-match --saison="$SAISON"
+  pnpm scrape --entity=feuilles-match --saison="$SAISON"
 
 # ETL cascade : joueurs + match_compositions + match_actions + match_officiels arbitres
 run_step "etl feuilles-match (cascade)" \
-  npm run etl -- --entity=feuilles-match --saison="$SAISON"
+  pnpm etl --entity=feuilles-match --saison="$SAISON"
 
 if [ "$ERRORS" -eq 0 ]; then
   log "=== cron-monthly-fdm-full terminé avec succès ==="

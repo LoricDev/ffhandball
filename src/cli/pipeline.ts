@@ -1,5 +1,5 @@
 // src/cli/pipeline.ts — pipeline complet scrape + ETL pour une saison.
-// Usage : npm run pipeline -- --saison=2025-2026 [--from=matchs] [--dry-run]
+// Usage : pnpm pipeline --saison=2025-2026 [--from=matchs] [--dry-run]
 //
 // --from=<étape>  : reprendre à partir d'une étape spécifique (skip les précédentes)
 // --dry-run       : affiche les étapes sans les exécuter
@@ -66,10 +66,11 @@ function parseCliArgs(): { saison: string; from?: string; dryRun: boolean } {
 }
 
 function run(cmd: "scrape" | "etl", entity: string, saison: string, extraArgs: string[]): void {
-  const args = ["run", cmd, "--", `--entity=${entity}`, `--saison=${saison}`, ...extraArgs];
-  const result = spawnSync("npm", args, { stdio: "inherit", shell: true });
+  // pnpm transmet directement les args qui suivent le nom du script (pas de `--` nécessaire).
+  const args = ["run", cmd, `--entity=${entity}`, `--saison=${saison}`, ...extraArgs];
+  const result = spawnSync("pnpm", args, { stdio: "inherit", shell: true });
   if (result.status !== 0) {
-    throw new Error(`Étape échouée : npm run ${cmd} -- --entity=${entity} (exit ${result.status ?? "signal"})`);
+    throw new Error(`Étape échouée : pnpm ${cmd} --entity=${entity} (exit ${result.status ?? "signal"})`);
   }
 }
 
@@ -101,7 +102,7 @@ async function main(): Promise<void> {
     process.stdout.write(`\n${prefix} ${step.label}...\n`);
 
     if (dryRun) {
-      process.stdout.write(`  → npm run ${step.cmd} -- --entity=${step.entity} --saison=${saison}${step.extraArgs ? " " + step.extraArgs.join(" ") : ""}\n`);
+      process.stdout.write(`  → pnpm ${step.cmd} --entity=${step.entity} --saison=${saison}${step.extraArgs ? " " + step.extraArgs.join(" ") : ""}\n`);
       continue;
     }
 

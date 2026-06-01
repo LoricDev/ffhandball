@@ -132,49 +132,49 @@ adminer:
 ### 5. Démarrage initial
 
 ```bash
-npm install --omit=dev    # production : pas de devDependencies
-npm run db:up
+pnpm install --prod --frozen-lockfile    # production : pas de devDependencies
+pnpm db:up
 sleep 10                   # attendre Postgres healthy
-npm run db:migrate
-npm run db:seed
+pnpm db:migrate
+pnpm db:seed
 ```
 
 ### 6. Premier scrape complet
 
 ```bash
 # Phase 1 : entités structurelles (~30 min)
-npm run scrape -- --entity=clubs --saison=2025-2026 --url=https://www.ffhandball.fr/clubs
-npm run etl    -- --entity=clubs --saison=2025-2026
+pnpm scrape --entity=clubs --saison=2025-2026 --url=https://www.ffhandball.fr/clubs
+pnpm etl --entity=clubs --saison=2025-2026
 
-npm run scrape -- --entity=club-details --saison=2025-2026
-npm run etl    -- --entity=salles --saison=2025-2026
-npm run etl    -- --entity=clubs  --saison=2025-2026   # re-run pour résoudre salle_principale_id
+pnpm scrape --entity=club-details --saison=2025-2026
+pnpm etl --entity=salles --saison=2025-2026
+pnpm etl --entity=clubs  --saison=2025-2026   # re-run pour résoudre salle_principale_id
 
 # Phase 2 : compétitions/équipes (~60 min)
-npm run scrape -- --entity=competitions --saison=2025-2026
-npm run etl    -- --entity=competitions --saison=2025-2026
-npm run etl    -- --entity=phases       --saison=2025-2026
-npm run etl    -- --entity=poules       --saison=2025-2026
-npm run etl    -- --entity=equipes      --saison=2025-2026
-npm run etl    -- --entity=engagements  --saison=2025-2026
+pnpm scrape --entity=competitions --saison=2025-2026
+pnpm etl --entity=competitions --saison=2025-2026
+pnpm etl --entity=phases       --saison=2025-2026
+pnpm etl --entity=poules       --saison=2025-2026
+pnpm etl --entity=equipes      --saison=2025-2026
+pnpm etl --entity=engagements  --saison=2025-2026
 
 # Phase 3 : matchs (--journees=all = 17-33h, à lancer en plusieurs nuits)
-npm run scrape -- --entity=matchs --saison=2025-2026 --journees=all
-npm run etl    -- --entity=matchs           --saison=2025-2026
-npm run etl    -- --entity=arbitres         --saison=2025-2026
-npm run etl    -- --entity=match_officiels  --saison=2025-2026
+pnpm scrape --entity=matchs --saison=2025-2026 --journees=all
+pnpm etl --entity=matchs           --saison=2025-2026
+pnpm etl --entity=arbitres         --saison=2025-2026
+pnpm etl --entity=match_officiels  --saison=2025-2026
 
 # Phase 4 — Feuilles de match PDFs (MULTI-NUITS : ~30-100h selon scope)
 
 # Re-scrape matchs pour récupérer fdm_code dans core.matchs (~1h)
-npm run scrape -- --entity=matchs --saison=2025-2026
-npm run etl -- --entity=matchs --saison=2025-2026
+pnpm scrape --entity=matchs --saison=2025-2026
+pnpm etl --entity=matchs --saison=2025-2026
 
 # Scrape FdM (long, prévoir cron nocturne sur plusieurs jours)
-npm run scrape -- --entity=feuilles-match --saison=2025-2026
+pnpm scrape --entity=feuilles-match --saison=2025-2026
 
 # ETL cascade (joueurs + compositions + match_actions + match_officiels arbitres)
-npm run etl -- --entity=feuilles-match --saison=2025-2026
+pnpm etl --entity=feuilles-match --saison=2025-2026
 ```
 
 ## API HTTP en production
@@ -185,7 +185,7 @@ Après le scrape initial, démarrer l'API HTTP publique :
 
 ```bash
 cd /opt/ffhandball
-npm run api &
+pnpm api &
 curl http://localhost:3000/health
 ```
 
@@ -308,12 +308,12 @@ mkdir -p "$(dirname "$LOG")"
 echo "[$(date)] Starting daily scrape" >> "$LOG"
 
 # 1. Scrape journée courante matchs
-npm run scrape -- --entity=matchs --saison="$SAISON" >> "$LOG" 2>&1
+pnpm scrape --entity=matchs --saison="$SAISON" >> "$LOG" 2>&1
 
 # 2. ETLs en cascade (idempotents, ré-exécutables sans risque)
-npm run etl -- --entity=matchs           --saison="$SAISON" >> "$LOG" 2>&1
-npm run etl -- --entity=arbitres         --saison="$SAISON" >> "$LOG" 2>&1
-npm run etl -- --entity=match_officiels  --saison="$SAISON" >> "$LOG" 2>&1
+pnpm etl --entity=matchs           --saison="$SAISON" >> "$LOG" 2>&1
+pnpm etl --entity=arbitres         --saison="$SAISON" >> "$LOG" 2>&1
+pnpm etl --entity=match_officiels  --saison="$SAISON" >> "$LOG" 2>&1
 
 echo "[$(date)] Daily scrape done" >> "$LOG"
 ```
@@ -362,7 +362,7 @@ sudo nano /etc/logrotate.d/ffhandball
 
 ### Suivi de l'activité
 
-Requêtes SQL utiles à exécuter régulièrement (via Adminer ou `npm run db:psql`) :
+Requêtes SQL utiles à exécuter régulièrement (via Adminer ou `pnpm db:psql`) :
 
 ```sql
 -- Derniers scrape_runs (5 derniers)
@@ -536,8 +536,8 @@ Les feuilles de match exposent publiquement nom, prénom, numéro de licence FFH
 ```bash
 cd /opt/ffhandball
 git pull origin master
-npm install --omit=dev
-npm run db:migrate      # idempotent
+pnpm install --prod --frozen-lockfile
+pnpm db:migrate      # idempotent
 # Pas besoin de re-scraper après MAJ (les ETLs idempotents peuvent rejouer)
 ```
 
@@ -551,8 +551,8 @@ Les migrations sont versionnées dans `db/migrations/`, idempotentes via `IF NOT
 docker compose down -v    # ⚠️ supprime le volume db/data
 docker compose up -d
 sleep 10
-npm run db:migrate
-npm run db:seed
+pnpm db:migrate
+pnpm db:seed
 # Puis re-lancer un scrape complet (~24h pour les 3 niveaux)
 ```
 
