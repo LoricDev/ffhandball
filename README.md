@@ -23,8 +23,8 @@ Pipeline de scraping et de structuration des données du handball français
 API REST read-only basée sur **Hono 4** avec spec **OpenAPI 3.1** auto-générée et rate-limit IP intégré (60 req/min configurable). **Authentification par clé API optionnelle** (`API_AUTH_ENABLED`) pour un accès payant : voir [docs/runbook.md#authentification-par-clé-api-monétisation](docs/runbook.md#api-http-publique).
 
 ```bash
-npm run api        # → http://localhost:3000
-npm run api:dev    # watch mode (dev)
+pnpm api        # → http://localhost:3000
+pnpm api:dev    # watch mode (dev)
 open http://localhost:3000/docs   # Swagger UI interactif
 ```
 
@@ -52,19 +52,19 @@ Pour déployer en prod sur un VPS frais : voir [`deploy/README.md`](deploy/READM
 # Pré-requis : Node 20+, Docker
 
 cp .env.example .env       # adapter SCRAPE_USER_AGENT avec un email de contact
-npm install
-npm run db:up              # Postgres + Adminer
-npm run db:migrate         # 18 migrations
-npm run db:seed            # saisons + ligues + départements
-npm test                   # ~320 tests (run en séquentiel pour éviter deadlocks)
+pnpm install
+pnpm db:up              # Postgres + Adminer
+pnpm db:migrate         # 18 migrations
+pnpm db:seed            # saisons + ligues + départements
+pnpm test                   # ~320 tests (run en séquentiel pour éviter deadlocks)
 
 # Smoke test : 5 compétitions nationales avec leurs équipes
-npm run scrape -- --entity=competitions --saison=2025-2026 --level=national --limit=5
-npm run etl -- --entity=competitions --saison=2025-2026
-npm run etl -- --entity=phases       --saison=2025-2026
-npm run etl -- --entity=poules       --saison=2025-2026
-npm run etl -- --entity=equipes      --saison=2025-2026
-npm run etl -- --entity=engagements  --saison=2025-2026
+pnpm scrape --entity=competitions --saison=2025-2026 --level=national --limit=5
+pnpm etl --entity=competitions --saison=2025-2026
+pnpm etl --entity=phases       --saison=2025-2026
+pnpm etl --entity=poules       --saison=2025-2026
+pnpm etl --entity=equipes      --saison=2025-2026
+pnpm etl --entity=engagements  --saison=2025-2026
 ```
 
 ## Documentation
@@ -109,40 +109,40 @@ ffhandball.fr / monclub.ffhandball.fr
 
 ```bash
 # Phase 1 — Clubs & salles (~1h)
-npm run scrape -- --entity=clubs        --saison=2025-2026 --url=https://www.ffhandball.fr/clubs
-npm run scrape -- --entity=club-details --saison=2025-2026
-npm run etl -- --entity=salles --saison=2025-2026
-npm run etl -- --entity=clubs  --saison=2025-2026
+pnpm scrape --entity=clubs        --saison=2025-2026 --url=https://www.ffhandball.fr/clubs
+pnpm scrape --entity=club-details --saison=2025-2026
+pnpm etl --entity=salles --saison=2025-2026
+pnpm etl --entity=clubs  --saison=2025-2026
 
 # Phase 2 — Compétitions / phases / poules / équipes / engagements (~1h)
-npm run scrape -- --entity=competitions --saison=2025-2026
-npm run etl -- --entity=competitions  --saison=2025-2026
-npm run etl -- --entity=phases        --saison=2025-2026
-npm run etl -- --entity=poules        --saison=2025-2026
-npm run etl -- --entity=equipes       --saison=2025-2026
-npm run etl -- --entity=engagements   --saison=2025-2026
+pnpm scrape --entity=competitions --saison=2025-2026
+pnpm etl --entity=competitions  --saison=2025-2026
+pnpm etl --entity=phases        --saison=2025-2026
+pnpm etl --entity=poules        --saison=2025-2026
+pnpm etl --entity=equipes       --saison=2025-2026
+pnpm etl --entity=engagements   --saison=2025-2026
 
 # Phase 3 — Matchs (journée courante : ~1h ; --journees=all : 17-33h)
-npm run scrape -- --entity=matchs --saison=2025-2026             # courante par défaut
+pnpm scrape --entity=matchs --saison=2025-2026             # courante par défaut
 # OU :
-npm run scrape -- --entity=matchs --saison=2025-2026 --journees=all
+pnpm scrape --entity=matchs --saison=2025-2026 --journees=all
 
-npm run etl -- --entity=matchs           --saison=2025-2026
-npm run etl -- --entity=arbitres         --saison=2025-2026   # depuis raw.matchs
-npm run etl -- --entity=match_officiels  --saison=2025-2026   # depuis raw.matchs
+pnpm etl --entity=matchs           --saison=2025-2026
+pnpm etl --entity=arbitres         --saison=2025-2026   # depuis raw.matchs
+pnpm etl --entity=match_officiels  --saison=2025-2026   # depuis raw.matchs
 
 # Phase 4 — Stats joueurs (national + régional séniors) + classements (~30 min)
-npm run scrape -- --entity=classements --saison=2025-2026
-npm run etl -- --entity=classements --saison=2025-2026
-npm run scrape -- --entity=stats-joueurs --saison=2025-2026
-npm run etl -- --entity=stats-joueurs --saison=2025-2026
+pnpm scrape --entity=classements --saison=2025-2026
+pnpm etl --entity=classements --saison=2025-2026
+pnpm scrape --entity=stats-joueurs --saison=2025-2026
+pnpm etl --entity=stats-joueurs --saison=2025-2026
 
 # Phase 5 — Feuilles de match PDFs (LONG : 30-100h multi-nuits selon scope)
-npm run scrape -- --entity=feuilles-match --saison=2025-2026
-npm run etl -- --entity=feuilles-match --saison=2025-2026   # cascade joueurs+compositions+actions
+pnpm scrape --entity=feuilles-match --saison=2025-2026
+pnpm etl --entity=feuilles-match --saison=2025-2026   # cascade joueurs+compositions+actions
 
 # Phase 6 — Démarrer l'API HTTP
-npm run api                                                  # http://localhost:3000
+pnpm api                                                  # http://localhost:3000
 open http://localhost:3000/docs                              # Swagger UI
 ```
 

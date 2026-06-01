@@ -61,13 +61,13 @@ NODE_ENV=development
 ### 3. Installation des dépendances
 
 ```bash
-npm install
+pnpm install
 ```
 
 ### 4. Démarrage des conteneurs
 
 ```bash
-npm run db:up
+pnpm db:up
 ```
 
 Cela démarre :
@@ -84,14 +84,14 @@ docker ps | grep ffhandball-postgres
 ### 5. Migrations et seeds
 
 ```bash
-npm run db:migrate    # Applique toutes les migrations 0001 → 0018
-npm run db:seed       # Charge saisons, ligues, départements
+pnpm db:migrate    # Applique toutes les migrations 0001 → 0018
+pnpm db:seed       # Charge saisons, ligues, départements
 ```
 
 Pour vérifier :
 
 ```bash
-npm run db:psql
+pnpm db:psql
 \dt core.*        # Doit lister 15 tables (clubs, salles, competitions, ..., api_keys)
 \dt raw.*         # Doit lister 11 raw tables (clubs, salles, matchs, ...)
 SELECT * FROM core.saisons;
@@ -105,7 +105,7 @@ SELECT * FROM core.saisons;
 npx vitest run --no-file-parallelism --pool=forks --poolOptions.forks.singleFork
 
 # Suite parallèle (plus rapide mais peut avoir des deadlocks transitoires)
-npm test
+pnpm test
 ```
 
 Tous les tests doivent passer (~320 en mode séquentiel à date).
@@ -116,10 +116,10 @@ Pour vérifier que le pipeline complet fonctionne sur un échantillon minimal :
 
 ```bash
 # 1. Scrape la liste des clubs (~2326 clubs, ~1 min)
-npm run scrape -- --entity=clubs --saison=2025-2026 --url=https://www.ffhandball.fr/clubs
+pnpm scrape --entity=clubs --saison=2025-2026 --url=https://www.ffhandball.fr/clubs
 
 # 2. ETL clubs
-npm run etl -- --entity=clubs --saison=2025-2026
+pnpm etl --entity=clubs --saison=2025-2026
 
 # 3. Vérifier
 docker exec -i ffhandball-postgres psql -U ffhandball -d ffhandball -c \
@@ -132,7 +132,7 @@ docker exec -i ffhandball-postgres psql -U ffhandball -d ffhandball -c \
 Une fois `core.*` peuplé (même partiellement), lance l'API :
 
 ```bash
-npm run api
+pnpm api
 # → API live sur http://localhost:3000
 ```
 
@@ -188,9 +188,9 @@ npx vitest run --no-file-parallelism --pool=forks --poolOptions.forks.singleFork
 
 ```bash
 # Reset complet (⚠️ drop le volume Docker, perte de toutes les données)
-npm run db:reset
-npm run db:migrate
-npm run db:seed
+pnpm db:reset
+pnpm db:migrate
+pnpm db:seed
 ```
 
 ### Scrape : `429 Too Many Requests`
@@ -213,7 +213,7 @@ API_PORT=3001
 
 Puis :
 ```bash
-npm run api
+pnpm api
 ```
 
 ### API : `pdf-parse` import error en ESM
@@ -231,15 +231,15 @@ Si `db:up` échoue avec une erreur sur `./db/data` :
 ```bash
 sudo chown -R $(whoami) db/data/
 # Ou supprimer pour forcer la recréation :
-rm -rf db/data && npm run db:up && npm run db:migrate && npm run db:seed
+rm -rf db/data && pnpm db:up && pnpm db:migrate && pnpm db:seed
 ```
 
 ## Mise à jour vers une nouvelle version
 
 ```bash
 git pull origin master
-npm install              # nouvelles dépendances éventuelles
-npm run db:migrate       # nouvelles migrations
+pnpm install              # nouvelles dépendances éventuelles
+pnpm db:migrate       # nouvelles migrations
 npx vitest run --no-file-parallelism --pool=forks --poolOptions.forks.singleFork
 ```
 
@@ -251,17 +251,17 @@ Si tu souhaites contribuer / développer :
 
 ```bash
 # Mode watch tests
-npm run test:watch
+pnpm test:watch
 
 # Connexion à la DB
-npm run db:psql
+pnpm db:psql
 
 # Logs Postgres
 docker logs -f ffhandball-postgres
 
 # Stop / restart proprement
-npm run db:down
-npm run db:up
+pnpm db:down
+pnpm db:up
 ```
 
 ## Pour aller plus loin

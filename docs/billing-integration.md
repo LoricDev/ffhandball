@@ -132,10 +132,10 @@ La doc interactive (`/docs`, Swagger) propose un bouton **Authorize** pour colle
 Pour bootstrapper ou dépanner directement sur le serveur :
 
 ```bash
-npm run apikey -- create --label=client@example.com --months=1   # token affiché UNE fois
-npm run apikey -- list
-npm run apikey -- renew  --prefix=ffhb_xxxxxxxx --months=1
-npm run apikey -- revoke --prefix=ffhb_xxxxxxxx
+pnpm apikey create --label=client@example.com --months=1   # token affiché UNE fois
+pnpm apikey list
+pnpm apikey renew  --prefix=ffhb_xxxxxxxx --months=1
+pnpm apikey revoke --prefix=ffhb_xxxxxxxx
 ```
 
 ## Activer l'auth en production

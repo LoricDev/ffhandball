@@ -108,9 +108,9 @@ log ".env créé (chmod 600)."
 # Pas de modification du docker-compose.yml — on utilise le .env qui le charge.
 export POSTGRES_PASSWORD
 
-# ─── 3. npm install ──────────────────────────────────────────────────────────
+# ─── 3. pnpm install ───────────────────────────────────────────────────────────
 
-log "Installation des dépendances npm (production)..."
+log "Installation des dépendances pnpm (production)..."
 cd "$APP_DIR"
 
 # Charger nvm pour cette session
@@ -119,14 +119,14 @@ export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
 nvm use 20 > /dev/null 2>&1 || true
 
-npm install --omit=dev --silent
-log "npm install OK."
+pnpm install --prod --frozen-lockfile
+log "pnpm install OK."
 
 # ─── 4. DB : up + migrate + seed ─────────────────────────────────────────────
 
 log "Démarrage de Postgres via Docker Compose..."
 cd "$APP_DIR"
-npm run db:up
+pnpm db:up
 
 log "Attente que Postgres soit healthy (30s max)..."
 ATTEMPTS=0
@@ -142,11 +142,11 @@ done
 log "Postgres OK."
 
 log "Exécution des migrations..."
-npm run db:migrate
+pnpm db:migrate
 log "Migrations OK."
 
 log "Exécution des seeds..."
-npm run db:seed
+pnpm db:seed
 log "Seeds OK."
 
 # ─── 5. systemd service ───────────────────────────────────────────────────────
@@ -269,7 +269,7 @@ echo "  POSTGRES_PASSWORD : $POSTGRES_PASSWORD"
 echo "  ADMIN_SECRET      : $ADMIN_SECRET"
 echo ""
 echo "Auth API : désactivée (API_AUTH_ENABLED=false). Pour facturer :"
-echo "  1) npm run apikey -- create --label=<email> --months=1   # 1re clé"
+echo "  1) pnpm apikey create --label=<email> --months=1   # 1re clé"
 echo "  2) Passer API_AUTH_ENABLED=true dans $ENV_FILE"
 echo "  3) sudo systemctl restart ffhandball-api"
 echo ""
