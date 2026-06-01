@@ -1,5 +1,5 @@
 // src/cli/apikey.ts — gestion des clés API en ligne de commande.
-// Usage : npm run apikey -- <create|list|renew|revoke> [options]
+// Usage : pnpm apikey <create|list|renew|revoke> [options]
 import { parseArgs } from "node:util";
 import { closePool } from "@/db/client.js";
 import { createApiKey, listApiKeys, renewApiKey, revokeApiKey } from "@/api/lib/repositories/api-keys.repo.js";
@@ -7,7 +7,7 @@ import { createApiKey, listApiKeys, renewApiKey, revokeApiKey } from "@/api/lib/
 function usage(): void {
   process.stdout.write(
     [
-      "Usage : npm run apikey -- <commande> [options]",
+      "Usage : pnpm apikey <commande> [options]",
       "",
       "  create   --label=<email/nom> [--months=1] [--rate=120] [--no-expiry]",
       "  list",

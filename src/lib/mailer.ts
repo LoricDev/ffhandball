@@ -82,7 +82,7 @@ export async function sendPipelineFailure(saison: string, failedStep: string, er
       </thead>
       <tbody>${rows}</tbody>
     </table>
-    <p style="color:#64748b">Relance possible avec : <code>npm run pipeline -- --saison=${saison} --from=${failedStep.split(" ").pop()}</code></p>
+    <p style="color:#64748b">Relance possible avec : <code>pnpm pipeline --saison=${saison} --from=${failedStep.split(" ").pop()}</code></p>
     ` : ""}
   `;
   await sendMail(`[ffhandball] ❌ Pipeline ${saison} échoué — ${failedStep}`, html);

@@ -42,30 +42,30 @@ run_step() {
 
 # 1. Matchs journée courante
 run_step "scrape matchs (journée courante)" \
-  npm run scrape -- --entity=matchs --saison="$SAISON"
+  pnpm scrape --entity=matchs --saison="$SAISON"
 
 run_step "etl matchs" \
-  npm run etl -- --entity=matchs --saison="$SAISON"
+  pnpm etl --entity=matchs --saison="$SAISON"
 
 run_step "etl arbitres" \
-  npm run etl -- --entity=arbitres --saison="$SAISON"
+  pnpm etl --entity=arbitres --saison="$SAISON"
 
 run_step "etl match_officiels" \
-  npm run etl -- --entity=match_officiels --saison="$SAISON"
+  pnpm etl --entity=match_officiels --saison="$SAISON"
 
 # 2. Classements
 run_step "scrape classements" \
-  npm run scrape -- --entity=classements --saison="$SAISON"
+  pnpm scrape --entity=classements --saison="$SAISON"
 
 run_step "etl classements" \
-  npm run etl -- --entity=classements --saison="$SAISON"
+  pnpm etl --entity=classements --saison="$SAISON"
 
 # 3. Stats joueurs (national + régional séniors)
 run_step "scrape stats-joueurs" \
-  npm run scrape -- --entity=stats-joueurs --saison="$SAISON"
+  pnpm scrape --entity=stats-joueurs --saison="$SAISON"
 
 run_step "etl stats-joueurs" \
-  npm run etl -- --entity=stats-joueurs --saison="$SAISON"
+  pnpm etl --entity=stats-joueurs --saison="$SAISON"
 
 # ─── Bilan ───────────────────────────────────────────────────────────────────
 

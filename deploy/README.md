@@ -67,7 +67,7 @@ systemctl restart ffhandball-api
 ls /var/log/ffhandball/
 
 # Mettre à jour l'application
-cd /opt/ffhandball && git pull && npm install --omit=dev && npm run db:migrate
+cd /opt/ffhandball && git pull && pnpm install --prod --frozen-lockfile && pnpm db:migrate
 systemctl restart ffhandball-api
 ```
 

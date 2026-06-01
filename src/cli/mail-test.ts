@@ -1,5 +1,5 @@
 // src/cli/mail-test.ts — vérifie la config SMTP et envoie un mail de test.
-// Usage : npm run mail:test
+// Usage : pnpm mail:test
 import nodemailer from "nodemailer";
 import { env } from "@/config/env.js";
 

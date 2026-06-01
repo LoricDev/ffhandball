@@ -43,10 +43,10 @@ run_step() {
 # Scrape FdM récents (--limit=2000 comme proxy pour les matchs joués cette semaine)
 # Les FdM déjà présents en raw sont ignorés (idempotence append-only + natural_key)
 run_step "scrape feuilles-match (limit 2000)" \
-  npm run scrape -- --entity=feuilles-match --saison="$SAISON" --limit=2000
+  pnpm scrape --entity=feuilles-match --saison="$SAISON" --limit=2000
 
 run_step "etl feuilles-match" \
-  npm run etl -- --entity=feuilles-match --saison="$SAISON"
+  pnpm etl --entity=feuilles-match --saison="$SAISON"
 
 if [ "$ERRORS" -eq 0 ]; then
   log "=== cron-weekly-fdm-recent terminé avec succès ==="
