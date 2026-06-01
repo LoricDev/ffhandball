@@ -1,13 +1,8 @@
 // src/etl/matchs.etl.ts
 import { query } from "@/db/client.js";
+import { iterateRawBatched } from "@/etl/shared/iterate-raw-batched.js";
 import { rawMatchPayloadSchema, type RawMatchPayload } from "@/schemas/match.schema.js";
 import { logger } from "@/lib/logger.js";
-
-interface RawMatchRow {
-  id: number;
-  natural_key: string;
-  payload: unknown;
-}
 
 export interface EtlReport {
   etl_run_id: number;
@@ -66,16 +61,8 @@ export async function runMatchsEtl(saison: string): Promise<EtlReport> {
   };
 
   try {
-    const rawRows = await query<RawMatchRow>(
-      `SELECT DISTINCT ON (natural_key) id, natural_key, payload
-         FROM raw.matchs
-         WHERE saison = $1
-         ORDER BY natural_key, scraped_at DESC`,
-      [saison],
-    );
-    report.rows_read = rawRows.rowCount ?? 0;
-
-    for (const row of rawRows.rows) {
+    for await (const row of iterateRawBatched("raw.matchs", saison)) {
+      report.rows_read++;
       const parsed = rawMatchPayloadSchema.safeParse(row.payload);
       if (!parsed.success) {
         await query(
