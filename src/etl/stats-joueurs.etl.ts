@@ -1,13 +1,8 @@
 // src/etl/stats-joueurs.etl.ts
 import { query } from "@/db/client.js";
+import { iterateRawBatched } from "@/etl/shared/iterate-raw-batched.js";
 import { rawStatsJoueurPayloadSchema, type RawStatsJoueurPayload } from "@/schemas/stats-joueur.schema.js";
 import { logger } from "@/lib/logger.js";
-
-interface RawStatsRow {
-  id: number;
-  natural_key: string;
-  payload: unknown;
-}
 
 export interface EtlReport {
   etl_run_id: number;
@@ -55,16 +50,8 @@ export async function runStatsJoueursEtl(saison: string): Promise<EtlReport> {
   };
 
   try {
-    const rawRows = await query<RawStatsRow>(
-      `SELECT DISTINCT ON (natural_key) id, natural_key, payload
-         FROM raw.stats_joueurs
-         WHERE saison = $1
-         ORDER BY natural_key, scraped_at DESC`,
-      [saison],
-    );
-    report.rows_read = rawRows.rowCount ?? 0;
-
-    for (const row of rawRows.rows) {
+    for await (const row of iterateRawBatched("raw.stats_joueurs", saison)) {
+      report.rows_read++;
       const parsed = rawStatsJoueurPayloadSchema.safeParse(row.payload);
       if (!parsed.success) {
         await query(
