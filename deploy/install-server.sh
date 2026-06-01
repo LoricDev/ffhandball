@@ -70,6 +70,19 @@ else
   log "Node 20 installé."
 fi
 
+# ─── pnpm via corepack ─────────────────────────────────────────────────────────
+
+log "Activation de pnpm via corepack..."
+sudo -u "$REAL_USER" -- bash -lc '
+  export NVM_DIR="$HOME/.nvm"
+  [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+  nvm use 20 > /dev/null 2>&1 || true
+  corepack enable pnpm
+  corepack prepare pnpm@10.33.4 --activate
+  echo "pnpm $(pnpm --version) prêt."
+'
+log "pnpm activé."
+
 # ─── nginx ───────────────────────────────────────────────────────────────────
 
 if command -v nginx &>/dev/null; then
