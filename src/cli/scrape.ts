@@ -1,8 +1,10 @@
 import { parseArgs } from "node:util";
 import * as cheerio from "cheerio";
 import { logger } from "@/lib/logger.js";
+import { env } from "@/config/env.js";
 import { closePool, query } from "@/db/client.js";
 import { fetchHtml, fetchBinary } from "@/scrapers/shared/http-client.js";
+import { forEachConcurrent } from "@/scrapers/shared/concurrency.js";
 import { startScrapeRun, type ScrapeRunHandle } from "@/scrapers/shared/scrape-run.js";
 import { insertRaw } from "@/scrapers/shared/raw-insert.js";
 import { parseClubsListing } from "@/scrapers/ffhandball/clubs.scraper.js";
@@ -509,20 +511,23 @@ async function scrapeMatchs(
     let pouleSkipped = 0;
     const mode = opts.journees ?? "courante";
 
-    for (const po of poules) {
+    // Poules traitées en parallèle (au plus SCRAPE_CONCURRENCY en vol). Le rate-limit reste
+    // un plancher global par domaine — la concurrence masque la latence d'insertion sans
+    // dépasser le plancher. Les compteurs sont incrémentés de façon synchrone (sûr).
+    await forEachConcurrent(poules, env.SCRAPE_CONCURRENCY, async (po) => {
       const baseUrl = `${po.detail_url}poule-${po.ext_poule_id}/`;
 
       // First fetch : journée courante (no query param)
       const res = await tryFetchHtml(run, baseUrl);
       if (res === null) {
         pouleSkipped++;
-        continue;
+        return;
       }
       const parsed = parseRencontreList(res.body, baseUrl, po.ext_poule_id);
       if (!parsed) {
         logger.warn({ url: baseUrl }, "parseRencontreList returned null");
         pouleSkipped++;
-        continue;
+        return;
       }
 
       const journeeAlreadyFetched = parsed.matchs[0]?.journee;
@@ -564,10 +569,10 @@ async function scrapeMatchs(
           }
         }
       }
-    }
+    });
 
     logger.info(
-      { totalInserted, pouleSkipped, mode },
+      { totalInserted, pouleSkipped, mode, concurrency: env.SCRAPE_CONCURRENCY },
       "matchs scrape done",
     );
     await run.finishSuccess();
@@ -602,22 +607,22 @@ async function scrapeClassements(
     let pouleSkipped = 0;
     let pouleVide = 0;
 
-    for (const po of poules) {
+    await forEachConcurrent(poules, env.SCRAPE_CONCURRENCY, async (po) => {
       const url = `${po.detail_url}poule-${po.ext_poule_id}/classements/`;
       const res = await tryFetchHtml(run, url);
       if (res === null) {
         pouleSkipped++;
-        continue;
+        return;
       }
       const parsed = parseClassement(res.body, url, po.ext_poule_id);
       if (parsed === null) {
         logger.warn({ url }, "parseClassement returned null");
         pouleSkipped++;
-        continue;
+        return;
       }
       if (parsed.length === 0) {
         pouleVide++;
-        continue;
+        return;
       }
       for (const c of parsed) {
         await insertRaw("classements", {
@@ -631,10 +636,10 @@ async function scrapeClassements(
         });
         totalInserted++;
       }
-    }
+    });
 
     logger.info(
-      { totalInserted, pouleSkipped, pouleVide, totalPoules: poules.length },
+      { totalInserted, pouleSkipped, pouleVide, totalPoules: poules.length, concurrency: env.SCRAPE_CONCURRENCY },
       "classements scrape done",
     );
     await run.finishSuccess();
