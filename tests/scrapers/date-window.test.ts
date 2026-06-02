@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { weekendWindow, parseDate, resolveDateWindow } from "@/scrapers/shared/date-window.js";
+import { weekendWindow, liveWindow, parseDate, resolveDateWindow } from "@/scrapers/shared/date-window.js";
 
 // Helper : composante locale lisible (YYYY-MM-DD jour).
 function iso(d: Date): string {
@@ -41,6 +41,40 @@ describe("weekendWindow", () => {
   });
 });
 
+describe("liveWindow", () => {
+  const now = new Date(2026, 5, 6, 18, 0); // sam. 18:00
+
+  it("par défaut : now−2h … now+30min", () => {
+    const w = liveWindow(now);
+    expect(w.from.getTime()).toBe(now.getTime() - 2 * 3600_000);
+    expect(w.to.getTime()).toBe(now.getTime() + 30 * 60_000);
+  });
+
+  it("inclut un match commencé il y a 1h30 (score final en cours de saisie)", () => {
+    const w = liveWindow(now);
+    const kickoff = new Date(now.getTime() - 90 * 60_000);
+    expect(kickoff >= w.from && kickoff < w.to).toBe(true);
+  });
+
+  it("exclut un match commencé il y a 3h", () => {
+    const w = liveWindow(now);
+    const kickoff = new Date(now.getTime() - 3 * 3600_000);
+    expect(kickoff >= w.from).toBe(false);
+  });
+
+  it("inclut un match qui démarre dans 20 min, exclut dans 50 min", () => {
+    const w = liveWindow(now);
+    expect(new Date(now.getTime() + 20 * 60_000) < w.to).toBe(true);
+    expect(new Date(now.getTime() + 50 * 60_000) < w.to).toBe(false);
+  });
+
+  it("bornes configurables", () => {
+    const w = liveWindow(now, { pastMs: 3600_000, futureMs: 0 });
+    expect(w.from.getTime()).toBe(now.getTime() - 3600_000);
+    expect(w.to.getTime()).toBe(now.getTime());
+  });
+});
+
 describe("parseDate", () => {
   it("accepte YYYY-MM-DD (minuit local)", () => {
     const d = parseDate("2026-06-06");
@@ -66,6 +100,13 @@ describe("resolveDateWindow", () => {
     const w = resolveDateWindow({ weekend: true }, now);
     expect(w).not.toBeNull();
     expect(iso(w!.from)).toBe("2026-06-06 sam");
+  });
+
+  it("--live délègue à liveWindow (prioritaire sur --weekend)", () => {
+    const w = resolveDateWindow({ live: true, weekend: true }, now);
+    expect(w).not.toBeNull();
+    expect(w!.from.getTime()).toBe(now.getTime() - 2 * 3600_000);
+    expect(w!.to.getTime()).toBe(now.getTime() + 30 * 60_000);
   });
 
   it("--from/--to explicites priment sur --weekend", () => {

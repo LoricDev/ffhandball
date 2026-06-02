@@ -45,6 +45,7 @@ function parseCliArgs(): CliArgs {
       level: { type: "string" },
       journees: { type: "string" },
       // Scoping temporel (matchs/classements) : ne scraper que les poules qui jouent.
+      live: { type: "boolean" },     // matchs en cours/imminents (now−2h … now+30min)
       weekend: { type: "boolean" },
       from: { type: "string" },
       to: { type: "string" },
@@ -80,7 +81,7 @@ function parseCliArgs(): CliArgs {
   }
 
   const window = resolveDateWindow(
-    { from: values.from, to: values.to, weekend: values.weekend === true },
+    { from: values.from, to: values.to, weekend: values.weekend === true, live: values.live === true },
     new Date(),
   );
 

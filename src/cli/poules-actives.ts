@@ -42,6 +42,7 @@ async function main(): Promise<void> {
   const { values } = parseArgs({
     options: {
       saison: { type: "string" },
+      live: { type: "boolean" },
       weekend: { type: "boolean" },
       from: { type: "string" },
       to: { type: "string" },
@@ -55,8 +56,10 @@ async function main(): Promise<void> {
 
   // Par défaut : le week-end courant.
   const window =
-    resolveDateWindow({ from: values.from, to: values.to, weekend: values.weekend === true }, new Date()) ??
-    weekendWindow(new Date());
+    resolveDateWindow(
+      { from: values.from, to: values.to, weekend: values.weekend === true, live: values.live === true },
+      new Date(),
+    ) ?? weekendWindow(new Date());
 
   const res = await query<{ niveau: string; poules: string; matchs: string }>(
     `SELECT c.niveau,
