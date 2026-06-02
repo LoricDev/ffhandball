@@ -151,10 +151,6 @@ function col(s: string, width: number): string {
   return s.length >= width ? s.slice(0, width) : s + " ".repeat(width - s.length);
 }
 
-function rcol(s: string, width: number): string {
-  return s.length >= width ? s.slice(0, width) : " ".repeat(width - s.length) + s;
-}
-
 function durationSec(start: Date | null, end: Date | null): number | null {
   if (!start || !end) return null;
   return Math.round((end.getTime() - start.getTime()) / 1000);
@@ -184,6 +180,48 @@ function lastActivity(rows: { finished_at: Date | null; started_at: Date }[]): D
 const W = 80;
 function out(s = ""): void {
   process.stdout.write(s + "\n");
+}
+
+type Align = "l" | "r";
+interface Column {
+  header: string;
+  align: Align;
+}
+
+// Rend une section tabulaire à largeurs dynamiques : chaque colonne est dimensionnée
+// sur la plus longue valeur réelle (en-tête comprise), donc aucune valeur n'est jamais
+// tronquée — contrairement à un padding fixe qui corromprait les grands nombres groupés.
+function renderTable(
+  title: string,
+  columns: Column[],
+  rows: string[][],
+  totals?: string[],
+): void {
+  const all = totals ? [...rows, totals] : rows;
+  const widths = columns.map((c, i) =>
+    Math.max(c.header.length, ...all.map((r) => (r[i] ?? "").length)),
+  );
+  const fit = (s: string, i: number): string =>
+    columns[i]!.align === "r" ? s.padStart(widths[i]!) : s.padEnd(widths[i]!);
+  const indent = "  ";
+  const gap = "  ";
+  const line = (cells: string[]): string =>
+    (indent + columns.map((c, i) => fit(cells[i] ?? "", i)).join(gap)).replace(/\s+$/u, "");
+  const innerRule =
+    indent + widths.map((w) => "─".repeat(w)).join("─".repeat(gap.length));
+  const width = Math.max(W, indent.length + widths.reduce((a, b) => a + b, 0) + gap.length * (widths.length - 1));
+
+  out();
+  out("─".repeat(width));
+  out(title);
+  out("─".repeat(width));
+  out(line(columns.map((c) => c.header)));
+  out(innerRule);
+  for (const r of rows) out(line(r));
+  if (totals) {
+    out(innerRule);
+    out(line(totals));
+  }
 }
 
 // ── Collecte ─────────────────────────────────────────────────────────────────
@@ -289,87 +327,93 @@ function renderHeader(
 }
 
 function renderScrape(latestScrape: Map<string, ScrapeRow>): void {
-  out();
-  out("─".repeat(W));
-  out("SCRAPE");
-  out("─".repeat(W));
-  out(
-    `  ${col("entity", 15)} ${col("état", 11)} ${col("démarré", 17)} ${col("durée", 9)} ${rcol("pages", 6)} ${rcol("âge", 5)}`,
-  );
-  out("  " + "─".repeat(W - 2));
-  for (const entity of SCRAPE_ENTITIES) {
+  const cols: Column[] = [
+    { header: "entity", align: "l" },
+    { header: "état", align: "l" },
+    { header: "démarré", align: "l" },
+    { header: "durée", align: "l" },
+    { header: "pages", align: "r" },
+    { header: "âge", align: "r" },
+  ];
+  const rows = SCRAPE_ENTITIES.map((entity) => {
     const row = latestScrape.get(entity);
-    if (!row) {
-      out(`  ${col(entity, 15)} ${col("—", 11)}`);
-      continue;
-    }
-    const etat = `${statusIcon(row.status)} ${row.status}`;
-    out(
-      `  ${col(entity, 15)} ${col(etat, 11)} ${col(fmtDate(row.started_at), 17)} ` +
-        `${col(fmtDuration(row.started_at, row.finished_at, row.status), 9)} ` +
-        `${rcol(num(row.pages_scraped), 6)} ${rcol(fmtAge(row.finished_at ?? row.started_at), 5)}`,
-    );
-  }
+    if (!row) return [entity, "—", "", "", "", ""];
+    return [
+      entity,
+      `${statusIcon(row.status)} ${row.status}`,
+      fmtDate(row.started_at),
+      fmtDuration(row.started_at, row.finished_at, row.status),
+      num(row.pages_scraped),
+      fmtAge(row.finished_at ?? row.started_at),
+    ];
+  });
+  renderTable("SCRAPE", cols, rows);
 }
 
 function renderEtl(latestEtl: Map<string, EtlRow>): void {
-  out();
-  out("─".repeat(W));
-  out("ETL");
-  out("─".repeat(W));
-  out(
-    `  ${col("entity", 15)} ${col("état", 11)} ${col("démarré", 17)} ${col("durée", 8)} ` +
-      `${rcol("read", 6)} ${rcol("ins", 6)} ${rcol("upd", 6)} ${rcol("rej", 5)} ${rcol("warn", 5)}`,
-  );
-  out("  " + "─".repeat(W - 2));
-  for (const entity of ETL_ENTITIES) {
+  const cols: Column[] = [
+    { header: "entity", align: "l" },
+    { header: "état", align: "l" },
+    { header: "démarré", align: "l" },
+    { header: "durée", align: "l" },
+    { header: "read", align: "r" },
+    { header: "ins", align: "r" },
+    { header: "upd", align: "r" },
+    { header: "rej", align: "r" },
+    { header: "warn", align: "r" },
+  ];
+  const rows = ETL_ENTITIES.map((entity) => {
     const row = latestEtl.get(entity);
-    if (!row) {
-      out(`  ${col(entity, 15)} ${col("—", 11)}`);
-      continue;
-    }
-    const etat = `${statusIcon(row.status)} ${row.status}`;
-    out(
-      `  ${col(entity, 15)} ${col(etat, 11)} ${col(fmtDate(row.started_at), 17)} ` +
-        `${col(fmtDuration(row.started_at, row.finished_at, row.status), 8)} ` +
-        `${rcol(num(row.rows_read), 6)} ${rcol(num(row.rows_inserted), 6)} ` +
-        `${rcol(num(row.rows_updated), 6)} ${rcol(num(row.rows_rejected), 5)} ${rcol(num(row.warnings_count), 5)}`,
-    );
-  }
+    if (!row) return [entity, "—", "", "", "", "", "", "", ""];
+    return [
+      entity,
+      `${statusIcon(row.status)} ${row.status}`,
+      fmtDate(row.started_at),
+      fmtDuration(row.started_at, row.finished_at, row.status),
+      num(row.rows_read),
+      num(row.rows_inserted),
+      num(row.rows_updated),
+      num(row.rows_rejected),
+      num(row.warnings_count),
+    ];
+  });
+  renderTable("ETL", cols, rows);
 }
 
 function renderRawVolume(saison: string, rows: RawVolume[]): void {
-  out();
-  out("─".repeat(W));
-  out(`VOLUMÉTRIE RAW — saison ${saison} (lignes capturées, append-only)`);
-  out("─".repeat(W));
-  out(`  ${col("table", 18)} ${rcol("lignes", 10)} ${rcol("uniques", 10)}  ${col("dernière capture", 16)}`);
-  out("  " + "─".repeat(W - 2));
+  const cols: Column[] = [
+    { header: "table", align: "l" },
+    { header: "lignes", align: "r" },
+    { header: "uniques", align: "r" },
+    { header: "dernière capture", align: "l" },
+  ];
   let totLignes = 0;
   let totUniques = 0;
-  for (const r of rows) {
+  const body = rows.map((r) => {
     totLignes += r.total;
     totUniques += r.uniques;
-    out(
-      `  ${col(r.table, 18)} ${rcol(num(r.total), 10)} ${rcol(num(r.uniques), 10)}  ${col(fmtDate(r.last), 16)}`,
-    );
-  }
-  out("  " + "─".repeat(W - 2));
-  out(`  ${col("TOTAL", 18)} ${rcol(num(totLignes), 10)} ${rcol(num(totUniques), 10)}`);
+    return [r.table, num(r.total), num(r.uniques), fmtDate(r.last)];
+  });
+  renderTable(
+    `VOLUMÉTRIE RAW — saison ${saison} (lignes capturées, append-only)`,
+    cols,
+    body,
+    ["TOTAL", num(totLignes), num(totUniques), ""],
+  );
 }
 
 function renderCoreVolume(saison: string, rows: CoreVolume[]): void {
-  out();
-  out("─".repeat(W));
-  out("VOLUMÉTRIE CORE (données normalisées)");
-  out("─".repeat(W));
-  out(`  ${col("table", 22)} ${rcol("lignes", 12)}  ${col("filtre", 8)}`);
-  out("  " + "─".repeat(W - 2));
-  for (const r of rows) {
-    out(
-      `  ${col(r.table, 22)} ${rcol(num(r.count), 12)}  ${col(r.saisonFiltered ? "saison" : "global", 8)}`,
-    );
-  }
+  const cols: Column[] = [
+    { header: "table", align: "l" },
+    { header: "lignes", align: "r" },
+    { header: "filtre", align: "l" },
+  ];
+  const body = rows.map((r) => [
+    r.table,
+    num(r.count),
+    r.saisonFiltered ? "saison" : "global",
+  ]);
+  renderTable("VOLUMÉTRIE CORE (données normalisées)", cols, body);
   out(`  (filtre « saison » = compté pour ${saison} ; « global » = table référentielle non filtrable par saison)`);
 }
 
