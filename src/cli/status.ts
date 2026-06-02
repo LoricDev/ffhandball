@@ -151,6 +151,13 @@ function col(s: string, width: number): string {
   return s.length >= width ? s.slice(0, width) : s + " ".repeat(width - s.length);
 }
 
+// Le CLI/scrape nomment les entités avec des tirets (stats-joueurs, feuilles-match),
+// mais certains ETL persistent leur `entity` avec des underscores (stats_joueurs,
+// feuilles_match). On normalise pour rapprocher les deux conventions.
+function normEntity(s: string): string {
+  return s.replace(/-/g, "_");
+}
+
 function durationSec(start: Date | null, end: Date | null): number | null {
   if (!start || !end) return null;
   return Math.round((end.getTime() - start.getTime()) / 1000);
@@ -362,11 +369,10 @@ function renderEtl(latestEtl: Map<string, EtlRow>): void {
     { header: "rej", align: "r" },
     { header: "warn", align: "r" },
   ];
-  const rows = ETL_ENTITIES.map((entity) => {
-    const row = latestEtl.get(entity);
-    if (!row) return [entity, "—", "", "", "", "", "", "", ""];
+  const toRow = (label: string, row: EtlRow | undefined): string[] => {
+    if (!row) return [label, "—", "", "", "", "", "", "", ""];
     return [
-      entity,
+      label,
       `${statusIcon(row.status)} ${row.status}`,
       fmtDate(row.started_at),
       fmtDuration(row.started_at, row.finished_at, row.status),
@@ -376,7 +382,19 @@ function renderEtl(latestEtl: Map<string, EtlRow>): void {
       num(row.rows_rejected),
       num(row.warnings_count),
     ];
-  });
+  };
+
+  // latestEtl est indexée par nom d'entité normalisé : on retrouve donc
+  // stats-joueurs ↔ stats_joueurs et feuilles-match ↔ feuilles_match.
+  const known = new Set(ETL_ENTITIES.map(normEntity));
+  const rows = ETL_ENTITIES.map((entity) => toRow(entity, latestEtl.get(normEntity(entity))));
+
+  // Garde-fou : tout run présent en base mais absent de la liste connue est affiché
+  // (avec son nom réel) plutôt que masqué — évite qu'un renommage cache des données.
+  for (const [key, row] of latestEtl) {
+    if (!known.has(key)) rows.push(toRow(row.entity, row));
+  }
+
   renderTable("ETL", cols, rows);
 }
 
@@ -480,9 +498,11 @@ async function main(): Promise<void> {
       ORDER BY entity, started_at DESC`,
     [saison],
   );
+  // Indexée par nom normalisé pour tolérer tiret/underscore (stats-joueurs ↔ stats_joueurs).
   const latestEtl = new Map<string, EtlRow>();
   for (const row of etlRes.rows) {
-    if (!latestEtl.has(row.entity)) latestEtl.set(row.entity, row);
+    const key = normEntity(row.entity);
+    if (!latestEtl.has(key)) latestEtl.set(key, row);
   }
 
   // --- Volumétrie (requêtes concurrentes) ---
@@ -527,7 +547,7 @@ async function main(): Promise<void> {
               : { entity, status: null };
           }),
           etl: ETL_ENTITIES.map((entity) => {
-            const r = latestEtl.get(entity);
+            const r = latestEtl.get(normEntity(entity));
             return r
               ? {
                   entity,
