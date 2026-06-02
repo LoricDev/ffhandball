@@ -163,12 +163,15 @@ exécution par entité (durée, lignes ins/upd/rej, warnings), la volumétrie `r
 Rafraîchir seulement les poules qui jouent, en quasi temps réel :
 
 ```bash
-pnpm poules:actives --saison=2025-2026                      # combien de poules jouent ce w-e + faisabilité
-pnpm scrape --entity=matchs --saison=2025-2026 --weekend --level=national   # scrape ciblé par date
+pnpm poules:actives --saison=2025-2026 --live               # combien de poules jouent là, maintenant
+pnpm scrape --entity=matchs --saison=2025-2026 --live       # ne scrape que les matchs en cours
 pnpm etl    --entity=matchs --saison=2025-2026 --incremental                # ETL du seul delta (~secondes)
 ```
 
-Scoping `--weekend`/`--from`/`--to` (matchs & classements) + ETL matchs `--incremental`/`--since`.
+Scoping `--live` (matchs en cours, `now−2h…now+30min`) / `--weekend` / `--from` / `--to`
+(matchs & classements) + ETL matchs `--incremental` / `--since`. On ne peut pas savoir « ce qui
+a changé » sans fetch (pas de feed/ETag côté source), mais `--live` ne scrape que ce qui *peut*
+changer, et la dédup `payload_hash` rend gratuit un re-scrape sans nouveauté.
 Détails et boucle live : [docs/runbook.md#mise-à-jour-live-dun-week-end-scores-quasi-temps-réel](docs/runbook.md).
 
 Détails complets, options, suivi de couverture SQL : voir `docs/runbook.md`.

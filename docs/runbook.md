@@ -81,18 +81,27 @@ match dans la fenêtre sont scrapées (via `core.matchs.date_heure`, donc l'ETL 
 déjà être passé au moins une fois pour peupler les dates).
 
 ```bash
+# Matchs EN COURS ou imminents (le plus efficace pour un live 5 min)
+pnpm scrape --entity=matchs --saison=2025-2026 --live
+
 # Week-end courant, tous niveaux confondus
 pnpm scrape --entity=matchs --saison=2025-2026 --weekend
 
-# Ciblé National (le plus rapide — tient largement dans 5 min)
+# Ciblé National
 pnpm scrape --entity=matchs --saison=2025-2026 --weekend --level=national
 
-# Fenêtre explicite
+# Fenêtre explicite (dates ou datetimes ISO)
 pnpm scrape --entity=matchs --saison=2025-2026 --from=2026-06-06 --to=2026-06-08
 ```
 
-`--weekend` = samedi 00:00 → lundi 00:00 de la semaine ISO en cours (heure locale).
-`--journees=courante` (défaut) suffit : la journée en cours contient les matchs du week-end.
+- `--live` = `now−2h … now+30min` sur `date_heure` : ne scrape que les poules dont un match
+  est en train de se jouer (un match dure ~1h15, score final saisi peu après). C'est la
+  réponse à « ne scraper que ce qui peut changer » : hors heures de match, l'ensemble est
+  quasi vide ; couplé à la dédup par `payload_hash`, une poule sans nouveau score n'écrit rien.
+  Les matchs à heure estimée (minuit) n'y tombent pas → utiliser `--weekend` pour eux.
+- `--weekend` = samedi 00:00 → lundi 00:00 de la semaine ISO en cours (heure locale).
+- Priorité : `--from`/`--to` > `--live` > `--weekend`.
+- `--journees=courante` (défaut) suffit : la journée en cours contient les matchs visés.
 
 ### 3. ETL incrémental (ne retraiter que le delta)
 
@@ -110,15 +119,17 @@ pnpm etl --entity=matchs --saison=2025-2026 --since=2026-06-06T10:00:00Z   # bor
 ### 4. Boucle live (exemple)
 
 ```bash
-# Toutes les 5 min pendant le week-end : National uniquement
+# Toutes les 5 min : uniquement les matchs en cours (--live se vide tout seul hors matchs)
 while true; do
-  pnpm scrape --entity=matchs --saison=2025-2026 --weekend --level=national
+  pnpm scrape --entity=matchs --saison=2025-2026 --live
   pnpm etl    --entity=matchs --saison=2025-2026 --incremental
-  pnpm scrape --entity=classements --saison=2025-2026 --weekend --level=national
+  pnpm scrape --entity=classements --saison=2025-2026 --live
   pnpm etl    --entity=classements --saison=2025-2026
   sleep 300
 done
 ```
+
+Vérifier d'abord le périmètre réel : `pnpm poules:actives --live` (ou `--weekend`).
 
 ### Régler le débit (concurrence + rate-limit)
 
