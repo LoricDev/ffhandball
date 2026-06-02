@@ -170,10 +170,14 @@ async function scrapeClubDetails(
     let inserted_salles = 0;
     let no_salle = 0;
     let parse_failed = 0;
+    let fetch_failed = 0;
     for (const slug of slugs) {
       const url = `https://monclub.ffhandball.fr/clubs/${slug}/`;
-      const res = await fetchHtml(url);
-      await run.incrementPages(1);
+      const res = await tryFetchHtml(run, url);
+      if (res === null) {
+        fetch_failed++;
+        continue;
+      }
 
       const parsed = parseClubDetail(res.body, res.url);
       if (!parsed) {
@@ -209,7 +213,7 @@ async function scrapeClubDetails(
       }
     }
     logger.info(
-      { inserted_clubs, inserted_salles, no_salle, parse_failed },
+      { inserted_clubs, inserted_salles, no_salle, parse_failed, fetch_failed },
       "club-details scrape done",
     );
     await run.finishSuccess();
@@ -472,10 +476,8 @@ async function scrapeMatchs(
       const baseUrl = `${po.detail_url}poule-${po.ext_poule_id}/`;
 
       // First fetch : journée courante (no query param)
-      const res = await fetchHtml(baseUrl);
-      await run.incrementPages(1);
-      if (res.status >= 400) {
-        logger.warn({ url: baseUrl, status: res.status }, "poule page failed");
+      const res = await tryFetchHtml(run, baseUrl);
+      if (res === null) {
         pouleSkipped++;
         continue;
       }
@@ -507,12 +509,8 @@ async function scrapeMatchs(
         );
         for (const j of remaining) {
           const jUrl = `${baseUrl}?numero_journee=${j}`;
-          const jRes = await fetchHtml(jUrl);
-          await run.incrementPages(1);
-          if (jRes.status >= 400) {
-            logger.warn({ url: jUrl, status: jRes.status }, "journée page failed");
-            continue;
-          }
+          const jRes = await tryFetchHtml(run, jUrl);
+          if (jRes === null) continue;
           const jParsed = parseRencontreList(jRes.body, jUrl, po.ext_poule_id);
           if (!jParsed) continue;
           for (const m of jParsed.matchs) {
@@ -588,10 +586,8 @@ async function scrapeClassements(
 
     for (const po of poules) {
       const url = `${po.detail_url}poule-${po.ext_poule_id}/classements/`;
-      const res = await fetchHtml(url);
-      await run.incrementPages(1);
-      if (res.status >= 400) {
-        logger.warn({ url, status: res.status }, "classement page failed");
+      const res = await tryFetchHtml(run, url);
+      if (res === null) {
         pouleSkipped++;
         continue;
       }
@@ -665,13 +661,13 @@ async function scrapeStatsJoueurs(
 
     let totalInserted = 0;
     let pouleSansStats = 0;
+    let pouleSkipped = 0;
 
     for (const po of poules) {
       const url = `${po.detail_url}poule-${po.ext_poule_id}/statistiques/`;
-      const res = await fetchHtml(url);
-      await run.incrementPages(1);
-      if (res.status >= 400) {
-        logger.warn({ url, status: res.status }, "stats page failed");
+      const res = await tryFetchHtml(run, url);
+      if (res === null) {
+        pouleSkipped++;
         continue;
       }
       const parsed = parseStatsJoueurs(res.body, url, po.ext_poule_id);
@@ -693,7 +689,7 @@ async function scrapeStatsJoueurs(
       }
     }
     logger.info(
-      { totalInserted, pouleSansStats, totalPoules: poules.length },
+      { totalInserted, pouleSansStats, pouleSkipped, totalPoules: poules.length },
       "stats-joueurs scrape done",
     );
     await run.finishSuccess();
