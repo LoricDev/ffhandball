@@ -17,6 +17,7 @@ import {
 import { parseCompetitionDetail } from "@/scrapers/ffhandball/competition-detail.scraper.js";
 import { parseRencontreList } from "@/scrapers/ffhandball/rencontre-list.scraper.js";
 import { parseClassement } from "@/scrapers/ffhandball/classement.scraper.js";
+import { resolveDateWindow, type DateWindow } from "@/scrapers/shared/date-window.js";
 import { parseStatsJoueurs } from "@/scrapers/ffhandball/stats-joueurs.scraper.js";
 import { parseFdmPdf } from "@/scrapers/ffhandball/fdm-pdf.parser.js";
 
@@ -28,6 +29,7 @@ interface CliArgs {
   slug?: string;
   level?: "national" | "regional" | "departemental";
   journees?: "all" | "courante";
+  window: DateWindow | null;
 }
 
 function parseCliArgs(): CliArgs {
@@ -40,6 +42,10 @@ function parseCliArgs(): CliArgs {
       slug: { type: "string" },
       level: { type: "string" },
       journees: { type: "string" },
+      // Scoping temporel (matchs/classements) : ne scraper que les poules qui jouent.
+      weekend: { type: "boolean" },
+      from: { type: "string" },
+      to: { type: "string" },
     },
   });
   if (!values.entity) throw new Error("--entity required");
@@ -71,6 +77,11 @@ function parseCliArgs(): CliArgs {
     journees = values.journees as "all" | "courante";
   }
 
+  const window = resolveDateWindow(
+    { from: values.from, to: values.to, weekend: values.weekend === true },
+    new Date(),
+  );
+
   return {
     entity: values.entity,
     saison: canonicalizeSaison(values.saison),
@@ -79,6 +90,7 @@ function parseCliArgs(): CliArgs {
     slug: values.slug,
     level,
     journees,
+    window,
   };
 }
 
@@ -427,12 +439,57 @@ async function scrapeCompetitions(
   }
 }
 
+interface ScrapablePoule {
+  ext_poule_id: string;
+  ext_competition_id: string;
+  niveau: string;
+  detail_url: string;
+}
+
+/**
+ * Poules scrapables d'une saison (filtrables par niveau). Si `window` est fourni, ne
+ * retient que les poules ayant au moins un match dans la fenêtre [from, to[ — base du
+ * scraping ciblé « week-end » (réduit 12k poules à celles qui jouent réellement).
+ */
+async function selectScrapablePoules(
+  saison: string,
+  level: string | undefined,
+  window: DateWindow | null,
+): Promise<ScrapablePoule[]> {
+  const windowFilter = window
+    ? ` AND EXISTS (
+           SELECT 1 FROM core.matchs m
+            WHERE m.poule_id = po.id
+              AND m.date_heure >= $3 AND m.date_heure < $4
+         )`
+    : "";
+  const params: unknown[] = [saison, level ?? null];
+  if (window) params.push(window.from, window.to);
+
+  const res = await query<ScrapablePoule>(
+    `SELECT po.id_ffhb AS ext_poule_id,
+            c.id_ffhb  AS ext_competition_id,
+            c.niveau,
+            c.detail_url
+       FROM core.poules po
+       JOIN core.phases ph       ON ph.id = po.phase_id
+       JOIN core.competitions c  ON c.id = ph.competition_id
+      WHERE po.saison_code = $1
+        AND ($2::text IS NULL OR c.niveau = $2)
+        AND c.detail_url IS NOT NULL${windowFilter}
+      ORDER BY c.niveau, c.id_ffhb, po.id_ffhb`,
+    params,
+  );
+  return res.rows;
+}
+
 async function scrapeMatchs(
   saison: string,
   opts: {
     level?: "national" | "regional" | "departemental";
     journees?: "all" | "courante";
     limit?: number;
+    window?: DateWindow | null;
   },
 ): Promise<void> {
   const run = await startScrapeRun({
@@ -444,29 +501,9 @@ async function scrapeMatchs(
 
   try {
     // 1. SELECT poules from core (with their competition's detail_url + niveau)
-    const poulesRes = await query<{
-      ext_poule_id: string;
-      ext_competition_id: string;
-      niveau: string;
-      detail_url: string;
-    }>(
-      `SELECT po.id_ffhb AS ext_poule_id,
-              c.id_ffhb  AS ext_competition_id,
-              c.niveau,
-              c.detail_url
-         FROM core.poules po
-         JOIN core.phases ph       ON ph.id = po.phase_id
-         JOIN core.competitions c  ON c.id = ph.competition_id
-        WHERE po.saison_code = $1
-          AND ($2::text IS NULL OR c.niveau = $2)
-          AND c.detail_url IS NOT NULL
-        ORDER BY c.niveau, c.id_ffhb, po.id_ffhb`,
-      [saison, opts.level ?? null],
-    );
-
-    let poules = poulesRes.rows;
+    let poules = await selectScrapablePoules(saison, opts.level, opts.window ?? null);
     if (opts.limit !== undefined) poules = poules.slice(0, opts.limit);
-    logger.info({ count: poules.length }, "poules to process");
+    logger.info({ count: poules.length, windowed: Boolean(opts.window) }, "poules to process");
 
     let totalInserted = 0;
     let pouleSkipped = 0;
@@ -546,6 +583,7 @@ async function scrapeClassements(
   opts: {
     level?: "national" | "regional" | "departemental";
     limit?: number;
+    window?: DateWindow | null;
   },
 ): Promise<void> {
   const run = await startScrapeRun({
@@ -556,29 +594,9 @@ async function scrapeClassements(
   logger.info({ run_id: run.id, ...opts }, "starting classements scrape");
 
   try {
-    const poulesRes = await query<{
-      ext_poule_id: string;
-      ext_competition_id: string;
-      niveau: string;
-      detail_url: string;
-    }>(
-      `SELECT po.id_ffhb AS ext_poule_id,
-              c.id_ffhb  AS ext_competition_id,
-              c.niveau,
-              c.detail_url
-         FROM core.poules po
-         JOIN core.phases ph       ON ph.id = po.phase_id
-         JOIN core.competitions c  ON c.id = ph.competition_id
-        WHERE po.saison_code = $1
-          AND ($2::text IS NULL OR c.niveau = $2)
-          AND c.detail_url IS NOT NULL
-        ORDER BY c.niveau, c.id_ffhb, po.id_ffhb`,
-      [saison, opts.level ?? null],
-    );
-
-    let poules = poulesRes.rows;
+    let poules = await selectScrapablePoules(saison, opts.level, opts.window ?? null);
     if (opts.limit !== undefined) poules = poules.slice(0, opts.limit);
-    logger.info({ count: poules.length }, "poules to process");
+    logger.info({ count: poules.length, windowed: Boolean(opts.window) }, "poules to process");
 
     let totalInserted = 0;
     let pouleSkipped = 0;
@@ -797,11 +815,13 @@ async function main(): Promise<void> {
       level: args.level as "national" | "regional" | "departemental" | undefined,
       journees: args.journees as "all" | "courante" | undefined,
       limit: args.limit,
+      window: args.window,
     });
   } else if (args.entity === "classements") {
     await scrapeClassements(args.saison, {
       level: args.level as "national" | "regional" | "departemental" | undefined,
       limit: args.limit,
+      window: args.window,
     });
   } else if (args.entity === "stats-joueurs") {
     await scrapeStatsJoueurs(args.saison, { limit: args.limit });

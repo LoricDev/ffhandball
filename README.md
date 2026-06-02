@@ -158,6 +158,19 @@ Affiche, pour la saison : le bilan scrape/ETL (✓ ~ ✗ … + dernier run), la 
 exécution par entité (durée, lignes ins/upd/rej, warnings), la volumétrie `raw` et
 `core`, et les incidents. Détails : [docs/runbook.md#suivre-létat-du-pipeline](docs/runbook.md).
 
+### Mise à jour live d'un week-end
+
+Rafraîchir seulement les poules qui jouent, en quasi temps réel :
+
+```bash
+pnpm poules:actives --saison=2025-2026                      # combien de poules jouent ce w-e + faisabilité
+pnpm scrape --entity=matchs --saison=2025-2026 --weekend --level=national   # scrape ciblé par date
+pnpm etl    --entity=matchs --saison=2025-2026 --incremental                # ETL du seul delta (~secondes)
+```
+
+Scoping `--weekend`/`--from`/`--to` (matchs & classements) + ETL matchs `--incremental`/`--since`.
+Détails et boucle live : [docs/runbook.md#mise-à-jour-live-dun-week-end-scores-quasi-temps-réel](docs/runbook.md).
+
 Détails complets, options, suivi de couverture SQL : voir `docs/runbook.md`.
 
 ## Politique de scraping
