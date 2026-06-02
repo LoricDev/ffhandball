@@ -15,6 +15,7 @@
     "etl": "node --env-file=.env --import tsx src/cli/etl.ts",
     "apikey": "node --env-file=.env --import tsx src/cli/apikey.ts",
     "status": "node --env-file=.env --import tsx src/cli/status.ts",
+    "poules:actives": "node --env-file=.env --import tsx src/cli/poules-actives.ts",
     "pipeline": "node --env-file=.env --import tsx src/cli/pipeline.ts",
     "mail:test": "node --env-file=.env --import tsx src/cli/mail-test.ts",
     "db:up": "docker compose up -d",

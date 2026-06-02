@@ -37,24 +37,41 @@ const DEFAULT_BATCH_SIZE = 200;
  * clé. Le curseur natural_key est strictement croissant → ni doublon, ni saut, ni boucle
  * infinie. Chaque lot est libéré (GC) avant le suivant → mémoire bornée quel que soit le total.
  */
+/**
+ * Options de filtrage. `since` ne retient que les clés dont la dernière capture est
+ * postérieure ou égale au timestamp donné (mode ETL incrémental : ne retraiter que le
+ * delta du dernier scrape). La sémantique DISTINCT ON reste correcte — pour chaque
+ * natural_key, on ne considère que ses versions >= since, donc la plus récente d'entre
+ * elles, c.-à-d. la version courante de la clé.
+ */
+export interface IterateOptions {
+  batchSize?: number;
+  since?: Date;
+}
+
 export async function* iterateRawBatched(
   table: RawTable,
   saison: string,
-  batchSize: number = DEFAULT_BATCH_SIZE,
+  opts: IterateOptions = {},
 ): AsyncGenerator<RawRow> {
   if (!ALLOWED_TABLES.includes(table)) {
     throw new Error(`iterateRawBatched: table non autorisée: ${String(table)}`);
   }
 
+  const batchSize = opts.batchSize ?? DEFAULT_BATCH_SIZE;
+  const sinceFilter = opts.since ? " AND scraped_at >= $4" : "";
+
   let lastNaturalKey = "";
   for (;;) {
+    const params: unknown[] = [saison, lastNaturalKey, batchSize];
+    if (opts.since) params.push(opts.since);
     const res = await query<RawRow>(
       `SELECT DISTINCT ON (natural_key) id, natural_key, payload
          FROM ${table}
-        WHERE saison = $1 AND natural_key > $2
+        WHERE saison = $1 AND natural_key > $2${sinceFilter}
         ORDER BY natural_key, scraped_at DESC
         LIMIT $3`,
-      [saison, lastNaturalKey, batchSize],
+      params,
     );
     if (res.rows.length === 0) return;
 

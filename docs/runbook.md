@@ -57,6 +57,73 @@ En cas de base injoignable, la commande affiche un message explicite (`ECONNREFU
 Le mode `--json` expose les mêmes données (`resume`, `scrape`, `etl`,
 `volumetrieRaw`, `volumetrieCore`, `saisonsDisponibles`) pour l'automatisation.
 
+## Mise à jour live d'un week-end (scores quasi temps réel)
+
+Un refresh complet d'une saison ≈ 10 h (dominé par le nombre de poules, scrapées une
+par une au rate-limit). Pour rafraîchir **seulement les matchs qui se jouent**, on combine
+trois leviers : scrape ciblé par date, ETL incrémental, et mesure de faisabilité.
+
+### 1. Mesurer combien de poules jouent
+
+```bash
+pnpm poules:actives --saison=2025-2026            # week-end courant (défaut)
+pnpm poules:actives --from=2026-06-06 --to=2026-06-08
+```
+
+Affiche, par niveau, le nombre de poules/matchs dans la fenêtre et le temps de scrape
+estimé (au débit `SCRAPE_RATE_LIMIT_MS`), avec le nombre de cycles de 5 min nécessaires.
+Sert à décider quels niveaux tiennent dans un cycle (National oui, tous niveaux non).
+
+### 2. Scraper uniquement les poules qui jouent
+
+`matchs` et `classements` acceptent un **scoping temporel** : seules les poules ayant un
+match dans la fenêtre sont scrapées (via `core.matchs.date_heure`, donc l'ETL matchs doit
+déjà être passé au moins une fois pour peupler les dates).
+
+```bash
+# Week-end courant, tous niveaux confondus
+pnpm scrape --entity=matchs --saison=2025-2026 --weekend
+
+# Ciblé National (le plus rapide — tient largement dans 5 min)
+pnpm scrape --entity=matchs --saison=2025-2026 --weekend --level=national
+
+# Fenêtre explicite
+pnpm scrape --entity=matchs --saison=2025-2026 --from=2026-06-06 --to=2026-06-08
+```
+
+`--weekend` = samedi 00:00 → lundi 00:00 de la semaine ISO en cours (heure locale).
+`--journees=courante` (défaut) suffit : la journée en cours contient les matchs du week-end.
+
+### 3. ETL incrémental (ne retraiter que le delta)
+
+L'ETL matchs complet relit ~194k lignes (~6 min). En mode incrémental, il ne traite que
+les lignes capturées depuis le dernier ETL réussi → quelques secondes.
+
+```bash
+pnpm etl --entity=matchs --saison=2025-2026 --incremental    # depuis le dernier ETL matchs OK
+pnpm etl --entity=matchs --saison=2025-2026 --since=2026-06-06T10:00:00Z   # borne explicite
+```
+
+`--incremental` lit `core.etl_runs` pour trouver le `finished_at` du dernier ETL matchs
+`success`. S'il n'en existe aucun, bascule en run complet (avec un warning).
+
+### 4. Boucle live (exemple)
+
+```bash
+# Toutes les 5 min pendant le week-end : National uniquement
+while true; do
+  pnpm scrape --entity=matchs --saison=2025-2026 --weekend --level=national
+  pnpm etl    --entity=matchs --saison=2025-2026 --incremental
+  pnpm scrape --entity=classements --saison=2025-2026 --weekend --level=national
+  pnpm etl    --entity=classements --saison=2025-2026
+  sleep 300
+done
+```
+
+**Limites actuelles** : le scrape reste séquentiel (`SCRAPE_CONCURRENCY` est défini mais
+pas encore utilisé) → ~`(rate-limit + ~0,13s)` par poule ; viser un sous-ensemble
+(`--level`, fenêtre) pour tenir dans 5 min. L'ETL classements n'est pas encore incrémental.
+
 ## Inspecter les rejets / warnings
 
 ```sql

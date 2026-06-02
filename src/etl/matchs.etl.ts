@@ -42,12 +42,22 @@ function deduceHeureEstimee(dateHeure: string): boolean {
   return /T00:00:00/.test(dateHeure);
 }
 
-export async function runMatchsEtl(saison: string): Promise<EtlReport> {
+export interface MatchsEtlOptions {
+  /**
+   * Mode incrémental : ne retraiter que les lignes raw capturées depuis ce timestamp.
+   * Réduit l'ETL de ~6 min (re-scan complet ~194k lignes) à quelques secondes sur le delta
+   * d'un scrape ciblé — condition nécessaire pour une mise à jour live (< 5 min).
+   */
+  since?: Date;
+}
+
+export async function runMatchsEtl(saison: string, opts: MatchsEtlOptions = {}): Promise<EtlReport> {
   const runRes = await query<{ id: number }>(
     `INSERT INTO core.etl_runs (entity, saison) VALUES ('matchs', $1) RETURNING id`,
     [saison],
   );
   const etl_run_id = runRes.rows[0]!.id;
+  if (opts.since) logger.info({ since: opts.since.toISOString() }, "matchs ETL incrémental");
 
   const report: EtlReport = {
     etl_run_id,
@@ -61,7 +71,7 @@ export async function runMatchsEtl(saison: string): Promise<EtlReport> {
   };
 
   try {
-    for await (const row of iterateRawBatched("raw.matchs", saison)) {
+    for await (const row of iterateRawBatched("raw.matchs", saison, { since: opts.since })) {
       report.rows_read++;
       const parsed = rawMatchPayloadSchema.safeParse(row.payload);
       if (!parsed.success) {
