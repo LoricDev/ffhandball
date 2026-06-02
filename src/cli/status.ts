@@ -1,3 +1,8 @@
+// src/cli/status.ts — état du pipeline (scrape + ETL) et volumétrie pour une saison.
+// Usage : pnpm status [--saison=2025-2026] [--json]
+//
+// --saison  : saison à inspecter. Si omis, prend la saison la plus récente présente en base.
+// --json    : sortie JSON brute (pour monitoring / automatisation).
 import { parseArgs } from "node:util";
 import { closePool, query } from "@/db/client.js";
 import { canonicalizeSaison } from "@/etl/shared/parse-saison.js";
@@ -28,6 +33,32 @@ const ETL_ENTITIES = [
   "feuilles-match",
 ] as const;
 
+// Tables de capture raw (toutes possèdent les colonnes saison + natural_key).
+const RAW_TABLES = [
+  "clubs",
+  "equipes",
+  "joueurs",
+  "competitions",
+  "matchs",
+  "feuilles_match",
+  "classements",
+  "arbitres",
+  "salles",
+] as const;
+
+// Ordre d'affichage préféré des tables core (volumétrie). Les tables inconnues finissent à la fin.
+const CORE_ORDER = [
+  "saisons", "ligues", "departements", "salles", "clubs", "joueurs",
+  "competitions", "phases", "poules", "equipes", "engagements",
+  "matchs", "arbitres", "match_officiels", "classements",
+  "match_actions", "match_compositions", "stats_joueurs", "licences",
+];
+
+// Tables core techniques/admin exclues de la volumétrie métier.
+const CORE_EXCLUDE = new Set([
+  "etl_runs", "etl_rejets", "etl_warnings", "alias_clubs", "api_keys", "api_logs",
+]);
+
 interface ScrapeRow {
   scraper_name: string;
   status: string;
@@ -42,36 +73,348 @@ interface EtlRow {
   status: string;
   started_at: Date;
   finished_at: Date | null;
+  rows_read: number | null;
   rows_inserted: number | null;
   rows_updated: number | null;
   rows_rejected: number | null;
+  warnings_count: number | null;
   error_message: string | null;
 }
 
-function fmt(d: Date | null): string {
+interface RawVolume {
+  table: string;
+  total: number;
+  uniques: number;
+  last: Date | null;
+}
+
+interface CoreVolume {
+  table: string;
+  count: number;
+  saisonFiltered: boolean;
+}
+
+interface Tally {
+  success: number;
+  partial: number;
+  failed: number;
+  running: number;
+  other: number;
+}
+
+// ── Formatage ────────────────────────────────────────────────────────────────
+
+function fmtDate(d: Date | null): string {
   if (!d) return "-";
-  return d.toISOString().replace("T", " ").slice(0, 19);
+  return d.toISOString().replace("T", " ").slice(0, 16);
+}
+
+function fmtDuration(start: Date | null, end: Date | null, status: string): string {
+  if (!start) return "-";
+  if (!end) return status === "running" ? "en cours" : "-";
+  const ms = end.getTime() - start.getTime();
+  if (ms < 0) return "-";
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m${String(s % 60).padStart(2, "0")}`;
+  const h = Math.floor(m / 60);
+  return `${h}h${String(m % 60).padStart(2, "0")}`;
+}
+
+function fmtAge(d: Date | null): string {
+  if (!d) return "-";
+  const s = Math.round((Date.now() - d.getTime()) / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}min`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h`;
+  const j = Math.floor(h / 24);
+  return `${j}j`;
+}
+
+function num(n: number | null | undefined): string {
+  if (n === null || n === undefined) return "-";
+  return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
 }
 
 function statusIcon(status: string): string {
   if (status === "success") return "✓";
   if (status === "failed") return "✗";
   if (status === "partial") return "~";
-  return "…";
+  if (status === "running") return "…";
+  return "·";
 }
 
 function col(s: string, width: number): string {
   return s.length >= width ? s.slice(0, width) : s + " ".repeat(width - s.length);
 }
 
+function rcol(s: string, width: number): string {
+  return s.length >= width ? s.slice(0, width) : " ".repeat(width - s.length) + s;
+}
+
+function durationSec(start: Date | null, end: Date | null): number | null {
+  if (!start || !end) return null;
+  return Math.round((end.getTime() - start.getTime()) / 1000);
+}
+
+function tally(rows: { status: string }[]): Tally {
+  const t: Tally = { success: 0, partial: 0, failed: 0, running: 0, other: 0 };
+  for (const r of rows) {
+    if (r.status === "success") t.success++;
+    else if (r.status === "partial") t.partial++;
+    else if (r.status === "failed") t.failed++;
+    else if (r.status === "running") t.running++;
+    else t.other++;
+  }
+  return t;
+}
+
+function lastActivity(rows: { finished_at: Date | null; started_at: Date }[]): Date | null {
+  let max: Date | null = null;
+  for (const r of rows) {
+    const d = r.finished_at ?? r.started_at;
+    if (!max || d.getTime() > max.getTime()) max = d;
+  }
+  return max;
+}
+
+const W = 80;
+function out(s = ""): void {
+  process.stdout.write(s + "\n");
+}
+
+// ── Collecte ─────────────────────────────────────────────────────────────────
+
+async function listSaisons(): Promise<{ saison: string; last: Date; runs: number }[]> {
+  const res = await query<{ saison: string; last: Date; runs: string }>(
+    `SELECT saison, max(ts) AS last, count(*)::bigint AS runs
+       FROM (
+         SELECT saison, started_at AS ts FROM raw.scrape_runs
+         UNION ALL
+         SELECT saison, started_at FROM core.etl_runs WHERE saison IS NOT NULL
+       ) u
+      GROUP BY saison
+      ORDER BY max(ts) DESC`,
+  );
+  return res.rows.map((r) => ({ saison: r.saison, last: r.last, runs: Number(r.runs) }));
+}
+
+async function rawVolume(table: string, saison: string): Promise<RawVolume | null> {
+  if (!/^[a-z_]+$/.test(table)) return null;
+  try {
+    const r = await query<{ total: string; uniq: string; last: Date | null }>(
+      `SELECT count(*)::bigint AS total,
+              count(DISTINCT natural_key)::bigint AS uniq,
+              max(scraped_at) AS last
+         FROM raw.${table}
+        WHERE saison = $1`,
+      [saison],
+    );
+    const row = r.rows[0]!;
+    return { table, total: Number(row.total), uniques: Number(row.uniq), last: row.last };
+  } catch {
+    return null;
+  }
+}
+
+async function coreVolume(table: string, saison: string, filtered: boolean): Promise<CoreVolume | null> {
+  if (!/^[a-z_]+$/.test(table)) return null;
+  try {
+    const where = filtered ? " WHERE saison_code = $1" : "";
+    const params = filtered ? [saison] : [];
+    const r = await query<{ n: string }>(
+      `SELECT count(*)::bigint AS n FROM core.${table}${where}`,
+      params,
+    );
+    return { table, count: Number(r.rows[0]!.n), saisonFiltered: filtered };
+  } catch {
+    return null;
+  }
+}
+
+async function coreTables(): Promise<{ table: string; hasSaison: boolean }[]> {
+  const tblRes = await query<{ table_name: string }>(
+    `SELECT table_name FROM information_schema.tables
+      WHERE table_schema = 'core' AND table_type = 'BASE TABLE'`,
+  );
+  const colRes = await query<{ table_name: string }>(
+    `SELECT table_name FROM information_schema.columns
+      WHERE table_schema = 'core' AND column_name = 'saison_code'`,
+  );
+  const hasSaison = new Set(colRes.rows.map((r) => r.table_name));
+  const tables = tblRes.rows
+    .map((r) => r.table_name)
+    .filter((t) => !CORE_EXCLUDE.has(t))
+    .sort((a, b) => {
+      const ia = CORE_ORDER.indexOf(a);
+      const ib = CORE_ORDER.indexOf(b);
+      return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib) || a.localeCompare(b);
+    });
+  return tables.map((t) => ({ table: t, hasSaison: hasSaison.has(t) }));
+}
+
+// ── Rendu texte ──────────────────────────────────────────────────────────────
+
+function renderHeader(
+  saison: string,
+  saisons: { saison: string; last: Date; runs: number }[],
+  scrapeRows: ScrapeRow[],
+  etlRows: EtlRow[],
+  latestScrape: ScrapeRow[],
+  latestEtl: EtlRow[],
+): void {
+  const ts = tally(latestScrape);
+  const te = tally(latestEtl);
+  out();
+  out("═".repeat(W));
+  out(` STATUS — saison ${saison}${col("", Math.max(0, W - 18 - saison.length - 17))}${fmtDate(new Date())}`);
+  out("═".repeat(W));
+  out(
+    ` Scrape   ✓${ts.success}  ~${ts.partial}  ✗${ts.failed}` +
+      `   · ${ts.running} en cours · ${scrapeRows.length} runs · dernier ${fmtAge(lastActivity(latestScrape))}`,
+  );
+  out(
+    ` ETL      ✓${te.success}  ~${te.partial}  ✗${te.failed}` +
+      `   · ${te.running} en cours · ${etlRows.length} runs · dernier ${fmtAge(lastActivity(latestEtl))}`,
+  );
+  if (saisons.length > 0) {
+    const dispo = saisons
+      .map((s) => (s.saison === saison ? `${s.saison} (active)` : s.saison))
+      .join(", ");
+    out(` Saisons  ${dispo}`);
+  }
+}
+
+function renderScrape(latestScrape: Map<string, ScrapeRow>): void {
+  out();
+  out("─".repeat(W));
+  out("SCRAPE");
+  out("─".repeat(W));
+  out(
+    `  ${col("entity", 15)} ${col("état", 11)} ${col("démarré", 17)} ${col("durée", 9)} ${rcol("pages", 6)} ${rcol("âge", 5)}`,
+  );
+  out("  " + "─".repeat(W - 2));
+  for (const entity of SCRAPE_ENTITIES) {
+    const row = latestScrape.get(entity);
+    if (!row) {
+      out(`  ${col(entity, 15)} ${col("—", 11)}`);
+      continue;
+    }
+    const etat = `${statusIcon(row.status)} ${row.status}`;
+    out(
+      `  ${col(entity, 15)} ${col(etat, 11)} ${col(fmtDate(row.started_at), 17)} ` +
+        `${col(fmtDuration(row.started_at, row.finished_at, row.status), 9)} ` +
+        `${rcol(num(row.pages_scraped), 6)} ${rcol(fmtAge(row.finished_at ?? row.started_at), 5)}`,
+    );
+  }
+}
+
+function renderEtl(latestEtl: Map<string, EtlRow>): void {
+  out();
+  out("─".repeat(W));
+  out("ETL");
+  out("─".repeat(W));
+  out(
+    `  ${col("entity", 15)} ${col("état", 11)} ${col("démarré", 17)} ${col("durée", 8)} ` +
+      `${rcol("read", 6)} ${rcol("ins", 6)} ${rcol("upd", 6)} ${rcol("rej", 5)} ${rcol("warn", 5)}`,
+  );
+  out("  " + "─".repeat(W - 2));
+  for (const entity of ETL_ENTITIES) {
+    const row = latestEtl.get(entity);
+    if (!row) {
+      out(`  ${col(entity, 15)} ${col("—", 11)}`);
+      continue;
+    }
+    const etat = `${statusIcon(row.status)} ${row.status}`;
+    out(
+      `  ${col(entity, 15)} ${col(etat, 11)} ${col(fmtDate(row.started_at), 17)} ` +
+        `${col(fmtDuration(row.started_at, row.finished_at, row.status), 8)} ` +
+        `${rcol(num(row.rows_read), 6)} ${rcol(num(row.rows_inserted), 6)} ` +
+        `${rcol(num(row.rows_updated), 6)} ${rcol(num(row.rows_rejected), 5)} ${rcol(num(row.warnings_count), 5)}`,
+    );
+  }
+}
+
+function renderRawVolume(saison: string, rows: RawVolume[]): void {
+  out();
+  out("─".repeat(W));
+  out(`VOLUMÉTRIE RAW — saison ${saison} (lignes capturées, append-only)`);
+  out("─".repeat(W));
+  out(`  ${col("table", 18)} ${rcol("lignes", 10)} ${rcol("uniques", 10)}  ${col("dernière capture", 16)}`);
+  out("  " + "─".repeat(W - 2));
+  let totLignes = 0;
+  let totUniques = 0;
+  for (const r of rows) {
+    totLignes += r.total;
+    totUniques += r.uniques;
+    out(
+      `  ${col(r.table, 18)} ${rcol(num(r.total), 10)} ${rcol(num(r.uniques), 10)}  ${col(fmtDate(r.last), 16)}`,
+    );
+  }
+  out("  " + "─".repeat(W - 2));
+  out(`  ${col("TOTAL", 18)} ${rcol(num(totLignes), 10)} ${rcol(num(totUniques), 10)}`);
+}
+
+function renderCoreVolume(saison: string, rows: CoreVolume[]): void {
+  out();
+  out("─".repeat(W));
+  out("VOLUMÉTRIE CORE (données normalisées)");
+  out("─".repeat(W));
+  out(`  ${col("table", 22)} ${rcol("lignes", 12)}  ${col("filtre", 8)}`);
+  out("  " + "─".repeat(W - 2));
+  for (const r of rows) {
+    out(
+      `  ${col(r.table, 22)} ${rcol(num(r.count), 12)}  ${col(r.saisonFiltered ? "saison" : "global", 8)}`,
+    );
+  }
+  out(`  (filtre « saison » = compté pour ${saison} ; « global » = table référentielle non filtrable par saison)`);
+}
+
+function renderIncidents(latestScrape: ScrapeRow[], latestEtl: EtlRow[]): void {
+  const incidents: string[] = [];
+  for (const r of latestScrape) {
+    if ((r.status === "failed" || r.status === "partial") && r.error_message) {
+      incidents.push(`  ${statusIcon(r.status)} scrape ${r.scraper_name} — ${r.error_message.slice(0, 100)}`);
+    }
+  }
+  for (const r of latestEtl) {
+    if ((r.status === "failed" || r.status === "partial") && r.error_message) {
+      incidents.push(`  ${statusIcon(r.status)} etl ${r.entity} — ${r.error_message.slice(0, 100)}`);
+    }
+  }
+  if (incidents.length === 0) return;
+  out();
+  out("─".repeat(W));
+  out(`INCIDENTS (${incidents.length})`);
+  out("─".repeat(W));
+  for (const line of incidents) out(line);
+}
+
+// ── Main ─────────────────────────────────────────────────────────────────────
+
 async function main(): Promise<void> {
   const { values } = parseArgs({
-    options: { saison: { type: "string" } },
+    options: {
+      saison: { type: "string" },
+      json: { type: "boolean" },
+    },
   });
-  if (!values.saison) throw new Error("--saison requis");
-  const saison = canonicalizeSaison(values.saison);
 
-  // --- Scrapes ---
+  const saisons = await listSaisons();
+
+  let saison: string;
+  if (values.saison) {
+    saison = canonicalizeSaison(values.saison);
+  } else if (saisons.length > 0) {
+    saison = saisons[0]!.saison;
+  } else {
+    throw new Error("Aucune donnée en base. Précisez --saison ou lancez un scrape.");
+  }
+
+  // --- Scrapes : dernière exécution par scraper ---
   const scrapeRes = await query<ScrapeRow>(
     `SELECT scraper_name, status, started_at, finished_at, pages_scraped, error_message
        FROM raw.scrape_runs
@@ -79,91 +422,132 @@ async function main(): Promise<void> {
       ORDER BY scraper_name, started_at DESC`,
     [saison],
   );
-
-  // Keep only the last run per scraper
   const latestScrape = new Map<string, ScrapeRow>();
   for (const row of scrapeRes.rows) {
     if (!latestScrape.has(row.scraper_name)) latestScrape.set(row.scraper_name, row);
   }
 
-  process.stdout.write(`\nSaison : ${saison}\n`);
-  process.stdout.write("─".repeat(72) + "\n");
-  process.stdout.write("SCRAPE\n");
-  process.stdout.write("─".repeat(72) + "\n");
-  process.stdout.write(
-    `  ${col("entity", 16)} ${col("status", 9)} ${col("démarré", 20)} ${col("pages", 6)}\n`,
-  );
-  process.stdout.write("  " + "─".repeat(68) + "\n");
-
-  for (const entity of SCRAPE_ENTITIES) {
-    const scraperName = entity === "clubs" ? "clubs"
-      : entity === "club-details" ? "club-details"
-      : entity === "competitions" ? "competitions"
-      : entity === "matchs" ? "matchs"
-      : entity === "classements" ? "classements"
-      : entity === "stats-joueurs" ? "stats-joueurs"
-      : "feuilles-match";
-
-    const row = latestScrape.get(scraperName);
-    if (!row) {
-      process.stdout.write(`  ${col(entity, 16)} ${col("—", 9)} ${"—"}\n`);
-    } else {
-      const icon = statusIcon(row.status);
-      const pages = String(row.pages_scraped);
-      process.stdout.write(
-        `  ${col(entity, 16)} ${icon} ${col(row.status, 8)} ${col(fmt(row.started_at), 20)} ${col(pages, 6)}`,
-      );
-      if (row.error_message) {
-        process.stdout.write(`  ⚠ ${row.error_message.slice(0, 40)}`);
-      }
-      process.stdout.write("\n");
-    }
-  }
-
-  // --- ETL ---
+  // --- ETL : dernière exécution par entité ---
   const etlRes = await query<EtlRow>(
-    `SELECT entity, status, started_at, finished_at, rows_inserted, rows_updated, rows_rejected, error_message
+    `SELECT entity, status, started_at, finished_at,
+            rows_read, rows_inserted, rows_updated, rows_rejected, warnings_count, error_message
        FROM core.etl_runs
       WHERE saison = $1
       ORDER BY entity, started_at DESC`,
     [saison],
   );
-
   const latestEtl = new Map<string, EtlRow>();
   for (const row of etlRes.rows) {
     if (!latestEtl.has(row.entity)) latestEtl.set(row.entity, row);
   }
 
-  process.stdout.write("\n");
-  process.stdout.write("ETL\n");
-  process.stdout.write("─".repeat(72) + "\n");
-  process.stdout.write(
-    `  ${col("entity", 16)} ${col("status", 9)} ${col("démarré", 20)} ${col("ins", 6)} ${col("upd", 6)} ${col("rej", 6)}\n`,
+  // --- Volumétrie (requêtes concurrentes) ---
+  const rawVol = (await Promise.all(RAW_TABLES.map((t) => rawVolume(t, saison)))).filter(
+    (r): r is RawVolume => r !== null,
   );
-  process.stdout.write("  " + "─".repeat(68) + "\n");
+  const coreDefs = await coreTables();
+  const coreVol = (
+    await Promise.all(coreDefs.map((d) => coreVolume(d.table, saison, d.hasSaison)))
+  ).filter((r): r is CoreVolume => r !== null);
 
-  for (const entity of ETL_ENTITIES) {
-    const row = latestEtl.get(entity);
-    if (!row) {
-      process.stdout.write(`  ${col(entity, 16)} ${col("—", 9)} ${"—"}\n`);
-    } else {
-      const icon = statusIcon(row.status);
-      process.stdout.write(
-        `  ${col(entity, 16)} ${icon} ${col(row.status, 8)} ${col(fmt(row.started_at), 20)} ${col(String(row.rows_inserted ?? "-"), 6)} ${col(String(row.rows_updated ?? "-"), 6)} ${col(String(row.rows_rejected ?? "-"), 6)}`,
-      );
-      if (row.error_message) {
-        process.stdout.write(`  ⚠ ${row.error_message.slice(0, 40)}`);
-      }
-      process.stdout.write("\n");
-    }
+  const latestScrapeArr = [...latestScrape.values()];
+  const latestEtlArr = [...latestEtl.values()];
+
+  if (values.json) {
+    out(
+      JSON.stringify(
+        {
+          saison,
+          generatedAt: new Date().toISOString(),
+          saisonsDisponibles: saisons.map((s) => ({
+            saison: s.saison,
+            dernierRun: s.last.toISOString(),
+            runs: s.runs,
+          })),
+          resume: {
+            scrape: { ...tally(latestScrapeArr), runsTotal: scrapeRes.rows.length },
+            etl: { ...tally(latestEtlArr), runsTotal: etlRes.rows.length },
+          },
+          scrape: SCRAPE_ENTITIES.map((entity) => {
+            const r = latestScrape.get(entity);
+            return r
+              ? {
+                  entity,
+                  status: r.status,
+                  startedAt: r.started_at.toISOString(),
+                  finishedAt: r.finished_at?.toISOString() ?? null,
+                  durationSec: durationSec(r.started_at, r.finished_at),
+                  pages: r.pages_scraped,
+                  error: r.error_message,
+                }
+              : { entity, status: null };
+          }),
+          etl: ETL_ENTITIES.map((entity) => {
+            const r = latestEtl.get(entity);
+            return r
+              ? {
+                  entity,
+                  status: r.status,
+                  startedAt: r.started_at.toISOString(),
+                  finishedAt: r.finished_at?.toISOString() ?? null,
+                  durationSec: durationSec(r.started_at, r.finished_at),
+                  rowsRead: r.rows_read,
+                  rowsInserted: r.rows_inserted,
+                  rowsUpdated: r.rows_updated,
+                  rowsRejected: r.rows_rejected,
+                  warnings: r.warnings_count,
+                  error: r.error_message,
+                }
+              : { entity, status: null };
+          }),
+          volumetrieRaw: rawVol.map((r) => ({
+            table: r.table,
+            total: r.total,
+            uniques: r.uniques,
+            lastCapture: r.last?.toISOString() ?? null,
+          })),
+          volumetrieCore: coreVol,
+        },
+        null,
+        2,
+      ),
+    );
+    return;
   }
 
-  process.stdout.write("\n");
+  renderHeader(saison, saisons, scrapeRes.rows, etlRes.rows, latestScrapeArr, latestEtlArr);
+  renderScrape(latestScrape);
+  renderEtl(latestEtl);
+  renderRawVolume(saison, rawVol);
+  renderCoreVolume(saison, coreVol);
+  renderIncidents(latestScrapeArr, latestEtlArr);
+  out();
+}
+
+function describeError(err: unknown): string {
+  // pg lève une AggregateError (message vide) quand aucun host n'est joignable.
+  if (err instanceof AggregateError) {
+    const codes = err.errors.map((e) => (e as { code?: string }).code).filter(Boolean);
+    const msgs = err.errors.map((e) => (e instanceof Error ? e.message : String(e)));
+    const detail = msgs[0] ?? "connexion impossible";
+    if (codes.includes("ECONNREFUSED")) {
+      return `base de données injoignable (${detail}). Vérifiez que Postgres tourne et DATABASE_URL.`;
+    }
+    return detail;
+  }
+  if (err instanceof Error) {
+    const code = (err as { code?: string }).code;
+    if (code === "ECONNREFUSED") {
+      return `base de données injoignable (${err.message}). Vérifiez que Postgres tourne et DATABASE_URL.`;
+    }
+    return err.message || code || String(err);
+  }
+  return String(err);
 }
 
 main()
   .catch((err) => {
-    process.stderr.write(`Erreur : ${err instanceof Error ? err.message : String(err)}\n`);
+    process.stderr.write(`Erreur : ${describeError(err)}\n`);
     process.exitCode = 1;
   })
   .finally(() => closePool());

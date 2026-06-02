@@ -25,6 +25,38 @@ L'ETL :
 4. UPSERT idempotent vers `core.<entity>`
 5. Rapport dans `core.etl_runs`
 
+## Suivre l'état du pipeline
+
+```bash
+pnpm status                       # saison la plus récente présente en base
+pnpm status --saison=2025-2026    # saison explicite
+pnpm status --json                # sortie JSON (monitoring / cron / alerting)
+```
+
+`--saison` est **optionnel** : sans argument, la commande sélectionne la saison la
+plus récente trouvée dans `raw.scrape_runs` / `core.etl_runs`.
+
+La sortie texte regroupe :
+
+- **En-tête** — bilan par section (`✓` succès / `~` partiel / `✗` échec / `…` en
+  cours), nombre de runs historiques, âge du dernier run, et liste des saisons
+  disponibles (la saison inspectée est marquée `(active)`).
+- **SCRAPE** — dernière exécution par scraper : état, date de démarrage, **durée**
+  (ou `en cours`), pages scrapées, **âge** relatif.
+- **ETL** — dernière exécution par entité : état, démarrage, durée, **read**
+  (`rows_read`), **ins/upd/rej** et **warn** (`warnings_count`).
+- **VOLUMÉTRIE RAW** — par table de capture, lignes totales + clés naturelles
+  uniques + date de dernière capture, filtré sur la saison (avec ligne TOTAL).
+- **VOLUMÉTRIE CORE** — comptage par table normalisée (découvertes via
+  `information_schema`). Filtre `saison` quand la table porte `saison_code`,
+  sinon `global` (référentiel non filtrable par saison).
+- **INCIDENTS** — liste des runs `failed` / `partial` avec leur message d'erreur.
+
+En cas de base injoignable, la commande affiche un message explicite (`ECONNREFUSED`
+→ « base de données injoignable… vérifiez que Postgres tourne et `DATABASE_URL` »).
+Le mode `--json` expose les mêmes données (`resume`, `scrape`, `etl`,
+`volumetrieRaw`, `volumetrieCore`, `saisonsDisponibles`) pour l'automatisation.
+
 ## Inspecter les rejets / warnings
 
 ```sql
