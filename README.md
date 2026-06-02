@@ -146,6 +146,18 @@ pnpm api                                                  # http://localhost:300
 open http://localhost:3000/docs                              # Swagger UI
 ```
 
+### Suivre l'état du pipeline
+
+```bash
+pnpm status                       # saison la plus récente (--saison optionnel)
+pnpm status --saison=2025-2026    # saison explicite
+pnpm status --json                # sortie JSON (monitoring / cron)
+```
+
+Affiche, pour la saison : le bilan scrape/ETL (✓ ~ ✗ … + dernier run), la dernière
+exécution par entité (durée, lignes ins/upd/rej, warnings), la volumétrie `raw` et
+`core`, et les incidents. Détails : [docs/runbook.md#suivre-létat-du-pipeline](docs/runbook.md).
+
 Détails complets, options, suivi de couverture SQL : voir `docs/runbook.md`.
 
 ## Politique de scraping
