@@ -120,9 +120,29 @@ while true; do
 done
 ```
 
-**Limites actuelles** : le scrape reste séquentiel (`SCRAPE_CONCURRENCY` est défini mais
-pas encore utilisé) → ~`(rate-limit + ~0,13s)` par poule ; viser un sous-ensemble
-(`--level`, fenêtre) pour tenir dans 5 min. L'ETL classements n'est pas encore incrémental.
+### Régler le débit (concurrence + rate-limit)
+
+`matchs` et `classements` traitent les poules en parallèle (`SCRAPE_CONCURRENCY` workers).
+**Important** : `SCRAPE_RATE_LIMIT_MS` reste un **plancher global par domaine** — au plus une
+requête démarrée par intervalle, même sous concurrence (politesse). La concurrence ne
+*dépasse* pas ce plancher : elle masque la latence de traitement (~0,13 s/poule d'insertion)
+pour l'atteindre réellement, et permet de soutenir un intervalle plus court.
+
+Débit ≈ `min(SCRAPE_CONCURRENCY / latence, 1000 / SCRAPE_RATE_LIMIT_MS)` req/s.
+
+| Réglage | Débit | ~temps/poule |
+|---|---|---|
+| 500 ms, concurrence 1 (séquentiel) | ~1,6/s | 0,63 s |
+| 500 ms, concurrence 4 | ~2/s (plancher) | 0,50 s |
+| **150 ms, concurrence 4** | **~6,6/s** | **0,15 s** |
+| 100 ms, concurrence 4 | ~10/s | 0,10 s |
+
+→ Pour aller ~×4, **baisse `SCRAPE_RATE_LIMIT_MS`** (ex. 150 ms) ; la concurrence=4 permet de
+soutenir ce rythme malgré la latence. Garder un intervalle généreux = plus poli mais plus lent.
+La concurrence seule, à 500 ms, ne gagne que ~20 %.
+
+**Limites restantes** : l'ETL classements n'est pas encore incrémental (mais rapide, ~1m26) ;
+les scrapers structurels (clubs, compétitions…) restent séquentiels.
 
 ## Inspecter les rejets / warnings
 

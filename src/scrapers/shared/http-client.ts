@@ -4,16 +4,29 @@ import { HttpError } from "@/lib/errors.js";
 import { logger } from "@/lib/logger.js";
 
 type Domain = string;
-const lastRequestAt = new Map<Domain, number>();
+
+// Prochain instant de départ autorisé par domaine. `SCRAPE_RATE_LIMIT_MS` reste un PLANCHER
+// GLOBAL : au plus une requête démarrée par intervalle et par domaine, même sous concurrence
+// (politesse vis-à-vis de la source). La concurrence (pool, ailleurs) ne sert qu'à masquer la
+// latence de traitement pour atteindre réellement ce plancher — pas à le dépasser.
+const nextStartAt = new Map<Domain, number>();
+
+// Réserve un créneau de façon ATOMIQUE : toutes les lectures/écritures de la Map se font
+// de façon synchrone (avant tout await), donc deux appels concurrents obtiennent des
+// créneaux distincts et croissants — contrairement à l'ancienne version qui lisait `last`
+// puis l'écrivait après l'attente (course → rate-limit contourné).
+function reserveSlot(domain: Domain): number {
+  const now = Date.now();
+  const start = Math.max(now, nextStartAt.get(domain) ?? 0);
+  nextStartAt.set(domain, start + env.SCRAPE_RATE_LIMIT_MS);
+  return start;
+}
 
 async function respectRateLimit(domain: Domain): Promise<void> {
-  const last = lastRequestAt.get(domain) ?? 0;
-  const elapsed = Date.now() - last;
-  const wait = env.SCRAPE_RATE_LIMIT_MS - elapsed;
+  const wait = reserveSlot(domain) - Date.now();
   if (wait > 0) {
     await new Promise((r) => setTimeout(r, wait));
   }
-  lastRequestAt.set(domain, Date.now());
 }
 
 export interface FetchResult {
