@@ -57,11 +57,18 @@ En cas de base injoignable, la commande affiche un message explicite (`ECONNREFU
 Le mode `--json` expose les mêmes données (`resume`, `scrape`, `etl`,
 `volumetrieRaw`, `volumetrieCore`, `saisonsDisponibles`) pour l'automatisation.
 
-## Mise à jour live d'un week-end (scores quasi temps réel)
+## Mise à jour post-match (scores + feuilles de match)
 
-Un refresh complet d'une saison ≈ 10 h (dominé par le nombre de poules, scrapées une
-par une au rate-limit). Pour rafraîchir **seulement les matchs qui se jouent**, on combine
-trois leviers : scrape ciblé par date, ETL incrémental, et mesure de faisabilité.
+> **ffhandball.fr n'est pas une source temps réel.** Le score d'un match n'est quasi jamais
+> saisi *avant* sa feuille de match : il arrive **avec la FdM**, et le serveur ffhandball ne le
+> publie en général que **le lendemain** (voire plus tard pour les FdM). Seule exception : un
+> problème sur la FdM peut faire saisir un score à part. **Conséquence : inutile de poller
+> souvent** — un **run par jour** (le matin, pour récupérer les matchs de la veille) suffit, sur
+> une fenêtre des derniers jours pour absorber le décalage et les retardataires.
+
+Un refresh complet d'une saison ≈ 10 h (dominé par le nombre de poules, scrapées une par une
+au rate-limit). Pour ne rafraîchir **que les matchs récents**, on combine : scrape ciblé par
+date (`--days`), ETL incrémental, et mesure de faisabilité.
 
 ### 1. Mesurer combien de poules jouent
 
@@ -70,9 +77,9 @@ pnpm poules:actives --saison=2025-2026            # week-end courant (défaut)
 pnpm poules:actives --from=2026-06-06 --to=2026-06-08
 ```
 
-Affiche, par niveau, le nombre de poules/matchs dans la fenêtre et le temps de scrape
-estimé (au débit `SCRAPE_RATE_LIMIT_MS`), avec le nombre de cycles de 5 min nécessaires.
-Sert à décider quels niveaux tiennent dans un cycle (National oui, tous niveaux non).
+Affiche, par niveau, le nombre de poules/matchs dans la fenêtre et le **temps de scrape estimé**
+(au débit `SCRAPE_RATE_LIMIT_MS`). Sert à dimensionner le périmètre d'un passage de rafraîchissement
+(combien de temps prend le scrape des matchs récents, par niveau).
 
 ### 2. Scraper uniquement les poules qui jouent
 
@@ -81,27 +88,25 @@ match dans la fenêtre sont scrapées (via `core.matchs.date_heure`, donc l'ETL 
 déjà être passé au moins une fois pour peupler les dates).
 
 ```bash
-# Matchs EN COURS ou imminents (le plus efficace pour un live 5 min)
-pnpm scrape --entity=matchs --saison=2025-2026 --live
+# Recommandé : matchs des 2 derniers jours (les résultats y atterrissent en différé)
+pnpm scrape --entity=matchs --saison=2025-2026 --days=2
 
 # Week-end courant, tous niveaux confondus
 pnpm scrape --entity=matchs --saison=2025-2026 --weekend
-
-# Ciblé National
-pnpm scrape --entity=matchs --saison=2025-2026 --weekend --level=national
 
 # Fenêtre explicite (dates ou datetimes ISO)
 pnpm scrape --entity=matchs --saison=2025-2026 --from=2026-06-06 --to=2026-06-08
 ```
 
-- `--live` = `now−2h … now+30min` sur `date_heure` : ne scrape que les poules dont un match
-  est en train de se jouer (un match dure ~1h15, score final saisi peu après). C'est la
-  réponse à « ne scraper que ce qui peut changer » : hors heures de match, l'ensemble est
-  quasi vide ; couplé à la dédup par `payload_hash`, une poule sans nouveau score n'écrit rien.
-  Les matchs à heure estimée (minuit) n'y tombent pas → utiliser `--weekend` pour eux.
+- `--days=N` = `now−N jours … now` : la bonne fenêtre pour **rattraper les résultats** qui
+  arrivent en différé. On re-scrape les matchs récents jusqu'à ce que leur score (= la FdM) soit
+  saisi. Couplé à la dédup `payload_hash`, une poule sans nouveauté n'écrit rien.
 - `--weekend` = samedi 00:00 → lundi 00:00 de la semaine ISO en cours (heure locale).
-- Priorité : `--from`/`--to` > `--live` > `--weekend`.
-- `--journees=courante` (défaut) suffit : la journée en cours contient les matchs visés.
+- `--live` (`now−2h … now+30min`) existe mais a **peu d'intérêt ici** : les scores n'étant pas
+  temps réel, la fenêtre est presque toujours vide de nouveautés. Utile seulement pour le cas
+  rare « score saisi avant la FdM » (problème de FdM), ou pour voir qui joue à l'instant T.
+- Priorité : `--from`/`--to` > `--days` > `--live` > `--weekend`.
+- Les matchs à heure estimée (minuit) ne tombent pas dans `--live` → `--days`/`--weekend` les couvrent.
 
 ### 3. ETL incrémental (ne retraiter que le delta)
 
@@ -116,20 +121,36 @@ pnpm etl --entity=matchs --saison=2025-2026 --since=2026-06-06T10:00:00Z   # bor
 `--incremental` lit `core.etl_runs` pour trouver le `finished_at` du dernier ETL matchs
 `success`. S'il n'en existe aucun, bascule en run complet (avec un warning).
 
-### 4. Boucle live (exemple)
+### 4. Rafraîchissement post-match (cron quotidien)
 
+Les scores n'étant publiés que **le lendemain** (et les FdM encore plus tard), **un seul passage
+par jour** suffit. On le scope sur les derniers jours (fenêtre large pour absorber le décalage et
+les retardataires) et on le met en cron — pas de boucle `while`. Hors jours de match, les
+fenêtres sont vides → coût quasi nul.
+
+Script `refresh-recent.sh` :
 ```bash
-# Toutes les 5 min : uniquement les matchs en cours (--live se vide tout seul hors matchs)
-while true; do
-  pnpm scrape --entity=matchs --saison=2025-2026 --live
-  pnpm etl    --entity=matchs --saison=2025-2026 --incremental
-  pnpm scrape --entity=classements --saison=2025-2026 --live
-  pnpm etl    --entity=classements --saison=2025-2026
-  sleep 300
-done
+#!/usr/bin/env bash
+set -euo pipefail
+S=2025-2026
+# Scores + classements : matchs des 3 derniers jours (couvre le décalage du lendemain)
+pnpm scrape --entity=matchs         --saison=$S --days=3
+pnpm etl    --entity=matchs         --saison=$S --incremental
+pnpm scrape --entity=classements    --saison=$S --days=3
+pnpm etl    --entity=classements    --saison=$S
+# Feuilles de match : publiées plus tardivement → fenêtre plus large
+pnpm scrape --entity=feuilles-match --saison=$S --played --days=10
+pnpm etl    --entity=feuilles-match --saison=$S
 ```
 
-Vérifier d'abord le périmètre réel : `pnpm poules:actives --live` (ou `--weekend`).
+```cron
+# tous les matins à 7h
+0 7 * * *  cd /opt/ffhandball && ./refresh-recent.sh >> /var/log/ffhb-refresh.log 2>&1
+```
+
+Vérifier le périmètre d'un passage : `pnpm poules:actives --days=3` (ou `--weekend`).
+Un 2ᵉ passage en soirée (ex. 19h) peut rattraper plus vite les matchs du jour si besoin, mais
+ce n'est pas nécessaire — la quasi-totalité des résultats arrive le lendemain.
 
 ### Régler le débit (concurrence + rate-limit)
 
@@ -861,9 +882,10 @@ pnpm etl    --entity=feuilles-match --saison=2025-2026
 pnpm scrape --entity=feuilles-match --saison=2025-2026 --played
 ```
 
-Cadence conseillée : **quelques fois par jour** (pas toutes les 5 min — les FdM arrivent lentement),
-en complément de la boucle live des scores. Un code FdM qui reste en 404 après ~1 semaine ne sera
-probablement jamais publié → `--days=7` borne le rattrapage et évite de retenter indéfiniment.
+Cadence conseillée : **1×/jour** (cron du matin) — les FdM arrivent lentement, et comme le score
+arrive avec la FdM, le même passage quotidien rafraîchit matchs + FdM (cf. « Mise à jour
+post-match »). Un code FdM toujours en 404 après ~1-2 semaines ne sera probablement jamais publié
+→ `--days=10` borne le rattrapage et évite de retenter indéfiniment.
 `pnpm poules:actives` ne couvre pas les FdM, mais le log du scrape donne `total404` / `totalSuccess`.
 
 ### ETL
