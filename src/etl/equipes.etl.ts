@@ -63,28 +63,39 @@ export async function runEquipesEtl(saison: string): Promise<EtlReport> {
 
       const p: RawEquipePayload = parsed.data;
 
-      // club_id reste NULL pour cette feature (résolution différée)
-      await query(
-        `INSERT INTO core.etl_warnings (etl_run_id, entity, natural_key, message)
-         VALUES ($1, 'equipes', $2, $3)`,
-        [
-          etl_run_id,
-          p.ext_equipe_id,
-          `club_id non résolu (ext_structure_id=${p.ext_structure_id ?? "absent"})`,
-        ],
-      );
-      report.warnings_count++;
+      // Résolution club_id : ext_structure_id == clubs.id_ffhb (pont autoritatif, déjà utilisé
+      // par la couche API). On ne loggue un warning que si club_id reste NULL (structure absente,
+      // ou club pas encore en core) — au lieu d'un warning systématique sur chaque équipe.
+      let club_id: number | null = null;
+      if (p.ext_structure_id) {
+        const c = await query<{ id: number }>(
+          `SELECT id FROM core.clubs WHERE id_ffhb = $1 LIMIT 1`,
+          [p.ext_structure_id],
+        );
+        club_id = c.rows[0]?.id ?? null;
+      }
+      if (club_id === null) {
+        await query(
+          `INSERT INTO core.etl_warnings (etl_run_id, entity, natural_key, message)
+           VALUES ($1, 'equipes', $2, $3)`,
+          [etl_run_id, p.ext_equipe_id, `club_id non résolu (ext_structure_id=${p.ext_structure_id ?? "absent"})`],
+        );
+        report.warnings_count++;
+      }
 
       const upsert = await query<{ inserted: boolean; updated: boolean }>(
-        `INSERT INTO core.equipes (id_ffhb, nom, ext_structure_id, logo, saison_code, last_seen_at)
-         VALUES ($1,$2,$3,$4,$5, now())
+        `INSERT INTO core.equipes (id_ffhb, nom, club_id, ext_structure_id, logo, saison_code, last_seen_at)
+         VALUES ($1,$2,$3,$4,$5,$6, now())
          ON CONFLICT (id_ffhb, saison_code) DO UPDATE
          SET nom = EXCLUDED.nom,
+             club_id = COALESCE(EXCLUDED.club_id, core.equipes.club_id),
              ext_structure_id = COALESCE(EXCLUDED.ext_structure_id, core.equipes.ext_structure_id),
              logo = COALESCE(EXCLUDED.logo, core.equipes.logo),
              last_seen_at = now(),
              updated_at = CASE
                WHEN core.equipes.nom IS DISTINCT FROM EXCLUDED.nom
+                 OR (EXCLUDED.club_id IS NOT NULL
+                     AND core.equipes.club_id IS DISTINCT FROM EXCLUDED.club_id)
                  OR (EXCLUDED.ext_structure_id IS NOT NULL
                      AND core.equipes.ext_structure_id IS DISTINCT FROM EXCLUDED.ext_structure_id)
                  OR (EXCLUDED.logo IS NOT NULL
@@ -94,7 +105,7 @@ export async function runEquipesEtl(saison: string): Promise<EtlReport> {
              END
          RETURNING (xmax = 0) AS inserted,
                    (xmax <> 0 AND updated_at = now()) AS updated`,
-        [p.ext_equipe_id, p.nom, p.ext_structure_id ?? null, p.logo ?? null, saison],
+        [p.ext_equipe_id, p.nom, club_id, p.ext_structure_id ?? null, p.logo ?? null, saison],
       );
 
       const result = upsert.rows[0]!;
