@@ -3,6 +3,8 @@ import { query } from "@/db/client.js";
 import { iterateRawBatched } from "@/etl/shared/iterate-raw-batched.js";
 import { rawStatsJoueurPayloadSchema, type RawStatsJoueurPayload } from "@/schemas/stats-joueur.schema.js";
 import { logger } from "@/lib/logger.js";
+import { insertWarnings, type EtlWarning } from "@/etl/shared/etl-warnings.js";
+import { loadIdIndex, loadEquipeNameIndex } from "@/etl/shared/lookups.js";
 
 export interface EtlReport {
   etl_run_id: number;
@@ -13,22 +15,6 @@ export interface EtlReport {
   rows_updated: number;
   rows_noop: number;
   warnings_count: number;
-}
-
-async function resolvePouleId(idFfhb: string, saison: string): Promise<number | null> {
-  const r = await query<{ id: number }>(
-    `SELECT id FROM core.poules WHERE id_ffhb = $1 AND saison_code = $2`,
-    [idFfhb, saison],
-  );
-  return r.rows[0]?.id ?? null;
-}
-
-async function resolveEquipeIdByLibelle(libelle: string, saison: string): Promise<number | null> {
-  const r = await query<{ id: number }>(
-    `SELECT id FROM core.equipes WHERE nom = $1 AND saison_code = $2 LIMIT 1`,
-    [libelle, saison],
-  );
-  return r.rows[0]?.id ?? null;
 }
 
 export async function runStatsJoueursEtl(saison: string): Promise<EtlReport> {
@@ -50,6 +36,11 @@ export async function runStatsJoueursEtl(saison: string): Promise<EtlReport> {
   };
 
   try {
+    // Préchargement des index FK (poule par id, équipe par nom) + warnings en lot.
+    const poules = await loadIdIndex("poules", saison);
+    const equipesByName = await loadEquipeNameIndex(saison);
+    const warnings: EtlWarning[] = [];
+
     for await (const row of iterateRawBatched("raw.stats_joueurs", saison)) {
       report.rows_read++;
       const parsed = rawStatsJoueurPayloadSchema.safeParse(row.payload);
@@ -67,27 +58,19 @@ export async function runStatsJoueursEtl(saison: string): Promise<EtlReport> {
       const p: RawStatsJoueurPayload = parsed.data;
 
       // FK poule strict
-      const poule_id = await resolvePouleId(p.ext_poule_id, saison);
+      const poule_id = poules.get(p.ext_poule_id) ?? null;
       if (poule_id === null) {
-        await query(
-          `INSERT INTO core.etl_warnings (etl_run_id, entity, natural_key, message)
-           VALUES ($1,'stats_joueurs',$2,$3)`,
-          [etl_run_id, row.natural_key, `poule ${p.ext_poule_id} introuvable`],
-        );
+        warnings.push({ natural_key: row.natural_key, message: `poule ${p.ext_poule_id} introuvable` });
         report.warnings_count++;
         continue;
       }
 
       // FK equipe best-effort (match exact sur nom saison-scopé)
-      const equipe_id = await resolveEquipeIdByLibelle(p.equipe_libelle, saison);
+      const equipe_id = equipesByName.get(p.equipe_libelle) ?? null;
       if (equipe_id === null) {
-        await query(
-          `INSERT INTO core.etl_warnings (etl_run_id, entity, natural_key, message)
-           VALUES ($1,'stats_joueurs',$2,$3)`,
-          [etl_run_id, row.natural_key, `équipe "${p.equipe_libelle}" non résolue`],
-        );
+        warnings.push({ natural_key: row.natural_key, message: `équipe "${p.equipe_libelle}" non résolue` });
         report.warnings_count++;
-        // continue : on insère quand même avec equipe_id = NULL
+        // on insère quand même avec equipe_id = NULL
       }
 
       const upsert = await query<{ inserted: boolean }>(
@@ -117,6 +100,8 @@ export async function runStatsJoueursEtl(saison: string): Promise<EtlReport> {
       if (upsert.rows[0]!.inserted) report.rows_inserted++;
       else report.rows_updated++;
     }
+
+    await insertWarnings(etl_run_id, "stats_joueurs", warnings);
 
     await query(
       `UPDATE core.etl_runs
