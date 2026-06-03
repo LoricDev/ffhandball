@@ -62,10 +62,10 @@ run_step "etl classements" \
   pnpm etl --entity=classements --saison="$SAISON"
 
 # 3. Feuilles de match récentes : l'ETL en dérive le SCORE sans attendre la publication
-#    serveur (le lendemain). --played --days : seuls les matchs joués des 10 derniers jours,
-#    et le scraper saute les FdM déjà capturées → après le 1er run, coût minime.
+#    serveur (le lendemain). Le scrape FdM ne cible que les matchs joués (date < auj.) ;
+#    --days=10 le borne aux 10 derniers jours, et il saute les FdM déjà capturées → coût minime.
 run_step "scrape feuilles-match (joués, 10 derniers jours)" \
-  pnpm scrape --entity=feuilles-match --saison="$SAISON" --played --days=10
+  pnpm scrape --entity=feuilles-match --saison="$SAISON" --days=10
 
 run_step "etl feuilles-match" \
   pnpm etl --entity=feuilles-match --saison="$SAISON"
