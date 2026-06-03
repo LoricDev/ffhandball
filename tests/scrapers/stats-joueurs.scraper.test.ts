@@ -26,6 +26,10 @@ describe("parseStatsJoueurs", () => {
     expect(top!.match_count).toBe(25);
     expect(top!.equipe_libelle).toBe("HANDBALL PLAN DE CUQUES");
     expect(top!.ext_poule_id).toBe(EXT_POULE_ID);
+    // ext_equipe_id résolu depuis equipe_options de la poule (résolution par id côté ETL)
+    expect(top!.ext_equipe_id).toMatch(/^\d+$/);
+    // toutes les lignes ont un ext_equipe_id (les 14 équipes sont dans equipe_options)
+    expect(r.every((s) => typeof s.ext_equipe_id === "string" && /^\d+$/.test(s.ext_equipe_id))).toBe(true);
 
     // Tous les ext_poule_id pointent vers la bonne poule
     expect(r.every((s) => s.ext_poule_id === EXT_POULE_ID)).toBe(true);

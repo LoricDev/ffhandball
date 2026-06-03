@@ -40,6 +40,7 @@ export async function runStatsJoueursEtl(saison: string): Promise<EtlReport> {
   try {
     // Préchargement des index FK (poule par id, équipe par nom) + warnings en lot.
     const poules = await loadIdIndex("poules", saison);
+    const equipesById = await loadIdIndex("equipes", saison);
     const equipesByName = await loadEquipeNameIndex(saison);
     const warnings: EtlWarning[] = [];
     const prog = new Progress("etl stats-joueurs", await countRawDistinct("raw.stats_joueurs", saison));
@@ -71,12 +72,18 @@ export async function runStatsJoueursEtl(saison: string): Promise<EtlReport> {
         continue;
       }
 
-      // FK equipe best-effort (match exact sur nom saison-scopé)
-      const equipe_id = equipesByName.get(p.equipe_libelle) ?? null;
+      // FK equipe : par ID (fiable, via equipe_options de la poule) ; fallback par nom pour les
+      // anciennes lignes raw scrapées sans ext_equipe_id. On insère même si non résolu (NULL).
+      const equipe_id =
+        (p.ext_equipe_id ? equipesById.get(p.ext_equipe_id) : undefined) ??
+        equipesByName.get(p.equipe_libelle) ??
+        null;
       if (equipe_id === null) {
-        warnings.push({ natural_key: row.natural_key, message: `équipe "${p.equipe_libelle}" non résolue` });
+        warnings.push({
+          natural_key: row.natural_key,
+          message: `équipe "${p.equipe_libelle}" (id=${p.ext_equipe_id ?? "?"}) non résolue`,
+        });
         report.warnings_count++;
-        // on insère quand même avec equipe_id = NULL
       }
 
       const upsert = await query<{ inserted: boolean }>(
