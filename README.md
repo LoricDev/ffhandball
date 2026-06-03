@@ -158,21 +158,24 @@ Affiche, pour la saison : le bilan scrape/ETL (✓ ~ ✗ … + dernier run), la 
 exécution par entité (durée, lignes ins/upd/rej, warnings), la volumétrie `raw` et
 `core`, et les incidents. Détails : [docs/runbook.md#suivre-létat-du-pipeline](docs/runbook.md).
 
-### Mise à jour live d'un week-end
+### Mise à jour post-match (scores + feuilles de match)
 
-Rafraîchir seulement les poules qui jouent, en quasi temps réel :
+ffhandball.fr **n'est pas temps réel** : le score arrive avec la feuille de match et n'est
+publié par le serveur ffhandball qu'**à partir du lendemain** (FdM encore plus tard). Un **cron
+quotidien** (le matin) sur les derniers jours suffit — inutile de poller souvent :
 
 ```bash
-pnpm poules:actives --saison=2025-2026 --live               # combien de poules jouent là, maintenant
-pnpm scrape --entity=matchs --saison=2025-2026 --live       # ne scrape que les matchs en cours
-pnpm etl    --entity=matchs --saison=2025-2026 --incremental                # ETL du seul delta (~secondes)
+pnpm scrape --entity=matchs         --saison=2025-2026 --days=3           # scores des 3 derniers jours
+pnpm etl    --entity=matchs         --saison=2025-2026 --incremental      # ETL du seul delta (~secondes)
+pnpm scrape --entity=feuilles-match --saison=2025-2026 --played --days=10 # FdM (publiées plus tard)
+pnpm etl    --entity=feuilles-match --saison=2025-2026
 ```
 
-Scoping `--live` (matchs en cours, `now−2h…now+30min`) / `--weekend` / `--from` / `--to`
-(matchs & classements) + ETL matchs `--incremental` / `--since`. On ne peut pas savoir « ce qui
-a changé » sans fetch (pas de feed/ETag côté source), mais `--live` ne scrape que ce qui *peut*
-changer, et la dédup `payload_hash` rend gratuit un re-scrape sans nouveauté.
-Détails et boucle live : [docs/runbook.md#mise-à-jour-live-dun-week-end-scores-quasi-temps-réel](docs/runbook.md).
+Scoping temporel `--days=N` / `--weekend` / `--from`/`--to` (+ `--played` pour les FdM), ETL
+`--incremental`. On ne peut pas savoir « ce qui a changé » sans fetch (pas de feed/ETag côté
+source), mais `--days` ne re-scrape que ce qui *peut* avoir changé, et la dédup `payload_hash`
+rend gratuit un re-scrape sans nouveauté.
+Détails et boucle : [docs/runbook.md#mise-à-jour-post-match-scores--feuilles-de-match](docs/runbook.md).
 
 Détails complets, options, suivi de couverture SQL : voir `docs/runbook.md`.
 
