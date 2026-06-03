@@ -81,8 +81,7 @@ pnpm notify "sujet" "corps"        # envoie un mail (primitive pour scripts bash
 - `cron-maintenance.sh` (**dimanche 06:00**) lance `pnpm maintenance` + supprime les logs cron >30 j.
 
 Crons existants alignés : `cron-daily.sh` (02:00) inclut désormais matchs `--incremental`,
-classements `--days=3` et FdM `--played --days=10` ; `cron-weekly-fdm-recent.sh` utilise
-`--played --days=30`.
+classements `--days=3` et FdM `--days=10` ; `cron-weekly-fdm-recent.sh` utilise `--days=30`.
 
 ## Mise à jour post-match (scores + feuilles de match)
 
@@ -156,13 +155,13 @@ pnpm etl --entity=matchs --saison=2025-2026 --since=2026-06-06T10:00:00Z   # bor
 
 Les scores n'étant publiés que **le lendemain** (et les FdM encore plus tard), **un passage par
 jour** suffit. C'est déjà câblé dans les crons versionnés ([`deploy/cron/`](../deploy/cron/),
-installés par `install-crontab.sh`), désormais alignés sur le scoping `--days`/`--played` :
+installés par `install-crontab.sh`), désormais alignés sur le scoping `--days` :
 
 - [`cron-daily.sh`](../deploy/cron/cron-daily.sh) (02:00) — matchs (journée courante) + ETL
-  **incrémental**, classements `--days=3`, **FdM `--played --days=10`** (l'ETL en dérive le score
+  **incrémental**, classements `--days=3`, **FdM `--days=10`** (l'ETL en dérive le score
   sans attendre la publication serveur), stats-joueurs.
 - [`cron-weekly-fdm-recent.sh`](../deploy/cron/cron-weekly-fdm-recent.sh) (lundi 03:00) — filet
-  FdM `--played --days=30` pour les feuilles publiées tardivement.
+  FdM `--days=30` pour les feuilles publiées tardivement.
 - [`cron-monthly-fdm-full.sh`](../deploy/cron/cron-monthly-fdm-full.sh) (1er du mois) — rattrapage
   FdM complet.
 
@@ -887,20 +886,20 @@ Skip silencieux sur HTTP 404 (FdM pas encore publiée).
 
 Les FdM ne sont **pas toujours publiées tout de suite** après le match (parfois plusieurs
 heures/jours). Le filtre « déjà en `raw.feuilles_match` » + la dédup `payload_hash` font qu'un
-**re-run rattrape les FdM tardives** sans re-télécharger les acquises. Mais en mode par défaut,
-la liste vient de `raw.matchs` **sans filtre de date** → on retente aussi tous les matchs
-**à venir** (forcément 404), ce qui gaspille des requêtes.
+**re-run rattrape les FdM tardives** sans re-télécharger les acquises.
 
-`--played` (+ `--days=N` / `--from`/`--to`) cible les **matchs déjà joués** uniquement
-(source `core.matchs`, `date_heure < now`), donc seulement les FdM qui *peuvent* exister :
+Le scrape FdM ne cible **que les matchs déjà joués** (`date_heure < now`, source `core.matchs`) :
+les matchs **à venir** n'ont pas de FdM, ils sont donc toujours exclus (zéro 404 inutile).
+`--days=N` (ou `--from`/`--to`) borne en plus aux N derniers jours.
 
 ```bash
-# Backfill des FdM des matchs joués ces 7 derniers jours, pas encore capturées
-pnpm scrape --entity=feuilles-match --saison=2025-2026 --played --days=7
+# Rattrapage complet : toutes les FdM des matchs joués de la saison, jusqu'à aujourd'hui
+pnpm scrape --entity=feuilles-match --saison=2025-2026
 pnpm etl    --entity=feuilles-match --saison=2025-2026
 
-# Tous les matchs passés sans FdM (rattrapage complet de fin de saison)
-pnpm scrape --entity=feuilles-match --saison=2025-2026 --played
+# Borné aux 7 derniers jours (passage quotidien)
+pnpm scrape --entity=feuilles-match --saison=2025-2026 --days=7
+pnpm etl    --entity=feuilles-match --saison=2025-2026
 ```
 
 Cadence conseillée : **1×/jour** (cron du matin) — les FdM arrivent lentement, et comme le score

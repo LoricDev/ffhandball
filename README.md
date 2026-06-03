@@ -167,14 +167,14 @@ quotidien** (le matin) sur les derniers jours suffit — inutile de poller souve
 ```bash
 pnpm scrape --entity=matchs         --saison=2025-2026 --days=3           # scores des 3 derniers jours
 pnpm etl    --entity=matchs         --saison=2025-2026 --incremental      # ETL du seul delta (~secondes)
-pnpm scrape --entity=feuilles-match --saison=2025-2026 --played --days=10 # FdM (publiées plus tard)
+pnpm scrape --entity=feuilles-match --saison=2025-2026 --days=10          # FdM (publiées plus tard)
 pnpm etl    --entity=feuilles-match --saison=2025-2026
 ```
 
-Scoping temporel `--days=N` / `--weekend` / `--from`/`--to` (+ `--played` pour les FdM), ETL
-`--incremental`. On ne peut pas savoir « ce qui a changé » sans fetch (pas de feed/ETag côté
-source), mais `--days` ne re-scrape que ce qui *peut* avoir changé, et la dédup `payload_hash`
-rend gratuit un re-scrape sans nouveauté.
+Scoping temporel `--days=N` / `--weekend` / `--from`/`--to`, ETL `--incremental`. Le scrape FdM
+ne cible que les matchs joués (jusqu'à aujourd'hui). On ne peut pas savoir « ce qui a changé »
+sans fetch (pas de feed/ETag côté source), mais `--days` ne re-scrape que ce qui *peut* avoir
+changé, et la dédup `payload_hash` rend gratuit un re-scrape sans nouveauté.
 Détails et boucle : [docs/runbook.md#mise-à-jour-post-match-scores--feuilles-de-match](docs/runbook.md).
 
 Détails complets, options, suivi de couverture SQL : voir `docs/runbook.md`.
