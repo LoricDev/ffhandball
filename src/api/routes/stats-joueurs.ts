@@ -47,7 +47,7 @@ statsJoueurs.openapi(listRoute, async (c) => {
       404,
     );
   }
-  return c.json({ data, meta: { total, limit: q.limit, offset: q.offset } });
+  return c.json({ data, meta: { total, limit: q.limit, offset: q.offset } }, 200);
 });
 
 export default statsJoueurs;

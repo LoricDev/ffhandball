@@ -32,7 +32,7 @@ joueurs.openapi(detailRoute, async (c) => {
       404,
     );
   }
-  return c.json({ data: joueur });
+  return c.json({ data: joueur }, 200);
 });
 
 const matchsRoute = createRoute({
@@ -67,7 +67,7 @@ joueurs.openapi(matchsRoute, async (c) => {
       404,
     );
   }
-  return c.json({ data: result.data, meta: { total: result.total, limit: q.limit, offset: q.offset } });
+  return c.json({ data: result.data, meta: { total: result.total, limit: q.limit, offset: q.offset } }, 200);
 });
 
 export default joueurs;

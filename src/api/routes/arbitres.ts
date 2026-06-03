@@ -58,7 +58,7 @@ arbitres.openapi(detailRoute, async (c) => {
   if (!data) {
     return c.json({ error: { code: "NOT_FOUND" as const, message: `Arbitre id_ffhb=${id_ffhb} introuvable` } }, 404);
   }
-  return c.json({ data });
+  return c.json({ data }, 200);
 });
 
 const matchsRoute = createRoute({
@@ -90,7 +90,7 @@ arbitres.openapi(matchsRoute, async (c) => {
   if (!result) {
     return c.json({ error: { code: "NOT_FOUND" as const, message: `Arbitre id_ffhb=${id_ffhb} introuvable` } }, 404);
   }
-  return c.json({ data: result.data, meta: { total: result.total, limit: q.limit, offset: q.offset } });
+  return c.json({ data: result.data, meta: { total: result.total, limit: q.limit, offset: q.offset } }, 200);
 });
 
 export default arbitres;
