@@ -59,12 +59,16 @@ Le mode `--json` expose les mêmes données (`resume`, `scrape`, `etl`,
 
 ## Mise à jour post-match (scores + feuilles de match)
 
-> **ffhandball.fr n'est pas une source temps réel.** Le score d'un match n'est quasi jamais
-> saisi *avant* sa feuille de match : il arrive **avec la FdM**, et le serveur ffhandball ne le
-> publie en général que **le lendemain** (voire plus tard pour les FdM). Seule exception : un
-> problème sur la FdM peut faire saisir un score à part. **Conséquence : inutile de poller
-> souvent** — un **run par jour** (le matin, pour récupérer les matchs de la veille) suffit, sur
-> une fenêtre des derniers jours pour absorber le décalage et les retardataires.
+> **ffhandball.fr n'est pas une source temps réel.** Sur les pages matchs, le score n'est publié
+> par le serveur ffhandball qu'**à partir du lendemain**. **Mais la feuille de match (PDF) contient
+> le score**, et elle est disponible avant cette publication : l'ETL `feuilles-match` **dérive donc
+> le score** (`score_recevant`→domicile, `score_visiteur`→extérieur) dès qu'on a récupéré et parsé
+> le PDF — on n'attend plus le serveur. Le score n'est rempli que s'il est encore absent, donc un
+> score déjà publié/corrigé par ffhandball n'est jamais écrasé.
+>
+> **Conséquence : inutile de poller souvent** — un **run par jour** (le matin, matchs de la veille)
+> suffit, sur une fenêtre des derniers jours pour absorber les retardataires. La FdM étant le chemin
+> le plus rapide vers le score, le passage `feuilles-match` est le plus utile.
 
 Un refresh complet d'une saison ≈ 10 h (dominé par le nombre de poules, scrapées une par une
 au rate-limit). Pour ne rafraîchir **que les matchs récents**, on combine : scrape ciblé par
@@ -896,9 +900,13 @@ pnpm etl --entity=feuilles-match --saison=2025-2026
 
 Cascade transactionnelle par FdM :
 1. UPDATE `core.matchs.fdm_url`
-2. UPSERT `core.joueurs` (par numero_licence)
-3. UPSERT `core.match_compositions` (par match × joueur)
-4. UPSERT `core.match_actions` (par match × ordre)
+2. **Dérive le score** : `core.matchs.score_dom/score_ext` (+ mi-temps, `statut='joue'`) depuis
+   `score_recevant`/`score_visiteur` de la FdM — **uniquement si le score est encore NULL** (ne
+   clobbere jamais un score déjà publié par ffhandball). C'est ce qui donne le score sans attendre
+   la publication serveur du lendemain.
+3. UPSERT `core.joueurs` (par numero_licence)
+4. UPSERT `core.match_compositions` (par match × joueur)
+5. UPSERT `core.match_actions` (par match × ordre)
 
 ROLLBACK si erreur dans la cascade. Idempotent.
 
@@ -912,6 +920,7 @@ SELECT count(*) FROM raw.feuilles_match WHERE saison = '2025-2026';
 SELECT
   count(*) FILTER (WHERE fdm_code IS NOT NULL) AS matchs_avec_fdm_code,
   count(*) FILTER (WHERE fdm_url IS NOT NULL) AS matchs_avec_fdm_parse,
+  count(*) FILTER (WHERE score_dom IS NOT NULL) AS matchs_avec_score,
   count(*) AS total_matchs
 FROM core.matchs;
 
