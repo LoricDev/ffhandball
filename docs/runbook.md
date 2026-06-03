@@ -841,6 +841,31 @@ Le scraper :
 
 Skip silencieux sur HTTP 404 (FdM pas encore publiée).
 
+### Rattraper les FdM publiées en retard (backfill)
+
+Les FdM ne sont **pas toujours publiées tout de suite** après le match (parfois plusieurs
+heures/jours). Le filtre « déjà en `raw.feuilles_match` » + la dédup `payload_hash` font qu'un
+**re-run rattrape les FdM tardives** sans re-télécharger les acquises. Mais en mode par défaut,
+la liste vient de `raw.matchs` **sans filtre de date** → on retente aussi tous les matchs
+**à venir** (forcément 404), ce qui gaspille des requêtes.
+
+`--played` (+ `--days=N` / `--from`/`--to`) cible les **matchs déjà joués** uniquement
+(source `core.matchs`, `date_heure < now`), donc seulement les FdM qui *peuvent* exister :
+
+```bash
+# Backfill des FdM des matchs joués ces 7 derniers jours, pas encore capturées
+pnpm scrape --entity=feuilles-match --saison=2025-2026 --played --days=7
+pnpm etl    --entity=feuilles-match --saison=2025-2026
+
+# Tous les matchs passés sans FdM (rattrapage complet de fin de saison)
+pnpm scrape --entity=feuilles-match --saison=2025-2026 --played
+```
+
+Cadence conseillée : **quelques fois par jour** (pas toutes les 5 min — les FdM arrivent lentement),
+en complément de la boucle live des scores. Un code FdM qui reste en 404 après ~1 semaine ne sera
+probablement jamais publié → `--days=7` borne le rattrapage et évite de retenter indéfiniment.
+`pnpm poules:actives` ne couvre pas les FdM, mais le log du scrape donne `total404` / `totalSuccess`.
+
 ### ETL
 
 ```bash
