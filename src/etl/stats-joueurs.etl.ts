@@ -6,6 +6,7 @@ import { logger } from "@/lib/logger.js";
 import { insertWarnings, type EtlWarning } from "@/etl/shared/etl-warnings.js";
 import { loadIdIndex, loadEquipeNameIndex } from "@/etl/shared/lookups.js";
 import { Progress } from "@/lib/progress.js";
+import { EtlCheckpoint } from "@/etl/shared/checkpoint.js";
 
 export interface EtlReport {
   etl_run_id: number;
@@ -42,10 +43,12 @@ export async function runStatsJoueursEtl(saison: string): Promise<EtlReport> {
     const equipesByName = await loadEquipeNameIndex(saison);
     const warnings: EtlWarning[] = [];
     const prog = new Progress("etl stats-joueurs", await countRawDistinct("raw.stats_joueurs", saison));
+    const checkpoint = new EtlCheckpoint(etl_run_id);
 
     for await (const row of iterateRawBatched("raw.stats_joueurs", saison)) {
       report.rows_read++;
       prog.tick(report.rows_read);
+      await checkpoint.maybe(report.rows_read);
       const parsed = rawStatsJoueurPayloadSchema.safeParse(row.payload);
       if (!parsed.success) {
         await query(

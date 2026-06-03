@@ -6,6 +6,7 @@ import { logger } from "@/lib/logger.js";
 import { insertWarnings, type EtlWarning } from "@/etl/shared/etl-warnings.js";
 import { loadIdIndex } from "@/etl/shared/lookups.js";
 import { Progress } from "@/lib/progress.js";
+import { EtlCheckpoint } from "@/etl/shared/checkpoint.js";
 
 export interface EtlReport {
   etl_run_id: number;
@@ -42,10 +43,12 @@ export async function runClassementsEtl(saison: string): Promise<EtlReport> {
     const equipes = await loadIdIndex("equipes", saison);
     const warnings: EtlWarning[] = [];
     const prog = new Progress("etl classements", await countRawDistinct("raw.classements", saison));
+    const checkpoint = new EtlCheckpoint(etl_run_id);
 
     for await (const row of iterateRawBatched("raw.classements", saison)) {
       report.rows_read++;
       prog.tick(report.rows_read);
+      await checkpoint.maybe(report.rows_read);
       const parsed = rawClassementPayloadSchema.safeParse(row.payload);
       if (!parsed.success) {
         await query(
