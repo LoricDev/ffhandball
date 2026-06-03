@@ -1,10 +1,11 @@
 // src/etl/matchs.etl.ts
 import { query } from "@/db/client.js";
-import { iterateRawBatched } from "@/etl/shared/iterate-raw-batched.js";
+import { iterateRawBatched, countRawDistinct } from "@/etl/shared/iterate-raw-batched.js";
 import { rawMatchPayloadSchema, type RawMatchPayload } from "@/schemas/match.schema.js";
 import { logger } from "@/lib/logger.js";
 import { insertWarnings, type EtlWarning } from "@/etl/shared/etl-warnings.js";
 import { loadIdIndex } from "@/etl/shared/lookups.js";
+import { Progress } from "@/lib/progress.js";
 
 export interface EtlReport {
   etl_run_id: number;
@@ -134,9 +135,11 @@ export async function runMatchsEtl(saison: string, opts: MatchsEtlOptions = {}):
       report.warnings_count++;
     };
     const buffer: unknown[][] = [];
+    const prog = new Progress("etl matchs", await countRawDistinct("raw.matchs", saison, opts.since));
 
     for await (const row of iterateRawBatched("raw.matchs", saison, { since: opts.since })) {
       report.rows_read++;
+      prog.tick(report.rows_read);
       const parsed = rawMatchPayloadSchema.safeParse(row.payload);
       if (!parsed.success) {
         await query(
@@ -201,6 +204,7 @@ export async function runMatchsEtl(saison: string, opts: MatchsEtlOptions = {}):
 
     await flushMatchs(buffer, report);
     buffer.length = 0;
+    prog.done(report.rows_read);
 
     await insertWarnings(etl_run_id, "matchs", warnings);
 

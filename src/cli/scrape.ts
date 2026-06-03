@@ -5,6 +5,7 @@ import { env } from "@/config/env.js";
 import { closePool, query } from "@/db/client.js";
 import { fetchHtml, fetchBinary } from "@/scrapers/shared/http-client.js";
 import { forEachConcurrent } from "@/scrapers/shared/concurrency.js";
+import { Progress } from "@/lib/progress.js";
 import { startScrapeRun, type ScrapeRunHandle } from "@/scrapers/shared/scrape-run.js";
 import { insertRaw } from "@/scrapers/shared/raw-insert.js";
 import { parseClubsListing } from "@/scrapers/ffhandball/clubs.scraper.js";
@@ -202,7 +203,10 @@ async function scrapeClubDetails(
     let no_salle = 0;
     let parse_failed = 0;
     let fetch_failed = 0;
+    let cdProcessed = 0;
+    const cdProg = new Progress("scrape club-details", slugs.length);
     for (const slug of slugs) {
+      cdProg.tick(++cdProcessed);
       const url = `https://monclub.ffhandball.fr/clubs/${slug}/`;
       const res = await tryFetchHtml(run, url);
       if (res === null) {
@@ -243,6 +247,7 @@ async function scrapeClubDetails(
         no_salle++;
       }
     }
+    cdProg.done(slugs.length);
     logger.info(
       { inserted_clubs, inserted_salles, no_salle, parse_failed, fetch_failed },
       "club-details scrape done",
@@ -384,7 +389,10 @@ async function scrapeCompetitions(
     let insertedEngagements = 0;
     let parseFailed = 0;
     let detailSkipped = 0;
+    let compProcessed = 0;
+    const compProg = new Progress("scrape competitions", competitions.length);
     for (const { ext_competition_id, detail_url } of competitions) {
+      compProg.tick(++compProcessed);
       const res = await tryFetchHtml(run, detail_url);
       if (!res) {
         detailSkipped++;
@@ -445,6 +453,7 @@ async function scrapeCompetitions(
         insertedEngagements++;
       }
     }
+    compProg.done(competitions.length);
 
     logger.info(
       { totalCompetitions, insertedPhases, insertedPoules, insertedEquipes, insertedEngagements, parseFailed, listSkipped, detailSkipped },
@@ -526,12 +535,15 @@ async function scrapeMatchs(
 
     let totalInserted = 0;
     let pouleSkipped = 0;
+    let processed = 0;
     const mode = opts.journees ?? "courante";
+    const prog = new Progress("scrape matchs", poules.length);
 
     // Poules traitées en parallèle (au plus SCRAPE_CONCURRENCY en vol). Le rate-limit reste
     // un plancher global par domaine — la concurrence masque la latence d'insertion sans
     // dépasser le plancher. Les compteurs sont incrémentés de façon synchrone (sûr).
     await forEachConcurrent(poules, env.SCRAPE_CONCURRENCY, async (po) => {
+      prog.tick(++processed);
       const baseUrl = `${po.detail_url}poule-${po.ext_poule_id}/`;
 
       // First fetch : journée courante (no query param)
@@ -612,6 +624,7 @@ async function scrapeMatchs(
         }
       }
     });
+    prog.done(poules.length);
 
     logger.info(
       { totalInserted, pouleSkipped, mode, concurrency: env.SCRAPE_CONCURRENCY },
@@ -648,8 +661,11 @@ async function scrapeClassements(
     let totalInserted = 0;
     let pouleSkipped = 0;
     let pouleVide = 0;
+    let processed = 0;
+    const prog = new Progress("scrape classements", poules.length);
 
     await forEachConcurrent(poules, env.SCRAPE_CONCURRENCY, async (po) => {
+      prog.tick(++processed);
       const url = `${po.detail_url}poule-${po.ext_poule_id}/classements/`;
       const res = await tryFetchHtml(run, url);
       if (res === null) {
@@ -679,6 +695,7 @@ async function scrapeClassements(
         totalInserted++;
       }
     });
+    prog.done(poules.length);
 
     logger.info(
       { totalInserted, pouleSkipped, pouleVide, totalPoules: poules.length, concurrency: env.SCRAPE_CONCURRENCY },
@@ -727,8 +744,11 @@ async function scrapeStatsJoueurs(
     let totalInserted = 0;
     let pouleSansStats = 0;
     let pouleSkipped = 0;
+    let sjProcessed = 0;
+    const sjProg = new Progress("scrape stats-joueurs", poules.length);
 
     for (const po of poules) {
+      sjProg.tick(++sjProcessed);
       const url = `${po.detail_url}poule-${po.ext_poule_id}/statistiques/`;
       const res = await tryFetchHtml(run, url);
       if (res === null) {
@@ -753,6 +773,7 @@ async function scrapeStatsJoueurs(
         totalInserted++;
       }
     }
+    sjProg.done(poules.length);
     logger.info(
       { totalInserted, pouleSansStats, pouleSkipped, totalPoules: poules.length },
       "stats-joueurs scrape done",
@@ -810,8 +831,11 @@ async function scrapeFeuillesMatch(
     let totalSuccess = 0;
     let total404 = 0;
     let parseFail = 0;
+    let processed = 0;
+    const prog = new Progress("scrape feuilles-match", toProcess.length);
 
     for (const { fdm_code } of toProcess) {
+      prog.tick(++processed);
       if (fdm_code.length < 4) {
         logger.warn({ fdm_code }, "fdm_code too short, skip");
         continue;
@@ -846,6 +870,7 @@ async function scrapeFeuillesMatch(
       });
       totalSuccess++;
     }
+    prog.done(toProcess.length);
 
     logger.info({ totalSuccess, total404, parseFail, totalProcessed: toProcess.length }, "feuilles-match scrape done");
     await run.finishSuccess();

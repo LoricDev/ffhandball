@@ -49,6 +49,24 @@ export interface IterateOptions {
   since?: Date;
 }
 
+/** Nombre de clés distinctes qu'`iterateRawBatched` va produire (pour une barre de progression). */
+export async function countRawDistinct(
+  table: RawTable,
+  saison: string,
+  since?: Date,
+): Promise<number> {
+  if (!ALLOWED_TABLES.includes(table)) {
+    throw new Error(`countRawDistinct: table non autorisée: ${String(table)}`);
+  }
+  const sinceFilter = since ? " AND scraped_at >= $2" : "";
+  const params: unknown[] = since ? [saison, since] : [saison];
+  const r = await query<{ n: string }>(
+    `SELECT count(DISTINCT natural_key)::bigint AS n FROM ${table} WHERE saison = $1${sinceFilter}`,
+    params,
+  );
+  return Number(r.rows[0]?.n ?? 0);
+}
+
 export async function* iterateRawBatched(
   table: RawTable,
   saison: string,
