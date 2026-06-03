@@ -65,6 +65,7 @@ interface ScrapeRow {
   started_at: Date;
   finished_at: Date | null;
   pages_scraped: number;
+  pages_total: number | null;
   error_message: string | null;
 }
 
@@ -345,11 +346,16 @@ function renderScrape(latestScrape: Map<string, ScrapeRow>): void {
   const rows = SCRAPE_ENTITIES.map((entity) => {
     const row = latestScrape.get(entity);
     if (!row) return [entity, "—", "", "", "", ""];
+    let duree = fmtDuration(row.started_at, row.finished_at, row.status);
+    if (row.status === "running" && row.pages_total && row.pages_total > 0) {
+      const pct = Math.min(99, Math.floor((row.pages_scraped / row.pages_total) * 100));
+      duree = `${pct}% en cours`;
+    }
     return [
       entity,
       `${statusIcon(row.status)} ${row.status}`,
       fmtDate(row.started_at),
-      fmtDuration(row.started_at, row.finished_at, row.status),
+      duree,
       num(row.pages_scraped),
       fmtAge(row.finished_at ?? row.started_at),
     ];
@@ -483,7 +489,7 @@ async function main(): Promise<void> {
 
   // --- Scrapes : dernière exécution par scraper ---
   const scrapeRes = await query<ScrapeRow>(
-    `SELECT scraper_name, status, started_at, finished_at, pages_scraped, error_message
+    `SELECT scraper_name, status, started_at, finished_at, pages_scraped, pages_total, error_message
        FROM raw.scrape_runs
       WHERE saison = $1
       ORDER BY scraper_name, started_at DESC`,
@@ -567,6 +573,7 @@ async function main(): Promise<void> {
                   finishedAt: r.finished_at?.toISOString() ?? null,
                   durationSec: durationSec(r.started_at, r.finished_at),
                   pages: r.pages_scraped,
+                  pagesTotal: r.pages_total,
                   error: r.error_message,
                 }
               : { entity, status: null };
