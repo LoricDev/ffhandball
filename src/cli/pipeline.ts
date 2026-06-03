@@ -74,6 +74,15 @@ function run(cmd: "scrape" | "etl", entity: string, saison: string, extraArgs: s
   }
 }
 
+function fmtDur(seconds: number): string {
+  const s = Math.round(seconds);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m${String(s % 60).padStart(2, "0")}`;
+  const h = Math.floor(m / 60);
+  return `${h}h${String(m % 60).padStart(2, "0")}`;
+}
+
 async function main(): Promise<void> {
   const { saison, from, dryRun } = parseCliArgs();
 
@@ -95,11 +104,16 @@ async function main(): Promise<void> {
   const total = steps.length;
   let current = 0;
   const completed: { label: string; duration: string }[] = [];
+  const pipelineStart = Date.now();
 
   for (const step of steps) {
     current++;
     const prefix = `[${String(current).padStart(2, "0")}/${total}]`;
-    process.stdout.write(`\n${prefix} ${step.label}...\n`);
+    const pct = Math.floor((current / total) * 100);
+    const elapsed = fmtDur((Date.now() - pipelineStart) / 1000);
+    // Avancement global (étape courante + % + temps cumulé) ; la barre de chaque
+    // sous-commande (scrape/etl) s'affiche en dessous via stdio "inherit".
+    process.stdout.write(`\n${prefix} ${pct}% · cumul ${elapsed}  ${step.label}...\n`);
 
     if (dryRun) {
       process.stdout.write(`  → pnpm ${step.cmd} --entity=${step.entity} --saison=${saison}${step.extraArgs ? " " + step.extraArgs.join(" ") : ""}\n`);
@@ -124,7 +138,7 @@ async function main(): Promise<void> {
   if (dryRun) {
     process.stdout.write("Dry run terminé.\n");
   } else {
-    process.stdout.write(`✓ Pipeline ${saison} terminé.\n`);
+    process.stdout.write(`✓ Pipeline ${saison} terminé en ${fmtDur((Date.now() - pipelineStart) / 1000)} (${total} étapes).\n`);
     await sendPipelineSuccess(saison, completed);
   }
 }
