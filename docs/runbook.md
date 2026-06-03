@@ -57,6 +57,33 @@ En cas de base injoignable, la commande affiche un message explicite (`ECONNREFU
 Le mode `--json` expose les mêmes données (`resume`, `scrape`, `etl`,
 `volumetrieRaw`, `volumetrieCore`, `saisonsDisponibles`) pour l'automatisation.
 
+## Monitoring & maintenance (crons)
+
+Trois commandes + des crons dédiés ([`deploy/cron/`](../deploy/cron/), installés par
+`install-crontab.sh`). Les alertes passent par le mailer (no-op si `MAIL_*` non configuré).
+
+```bash
+pnpm monitor                       # santé runs + fraîcheur + qualité ; mail si problème
+pnpm monitor --digest              # force l'envoi d'un récap même si tout est OK
+pnpm maintenance                   # purge core.api_logs (>90j) + VACUUM ANALYZE
+pnpm maintenance --dry-run         # compte sans supprimer/vacuumer
+pnpm notify "sujet" "corps"        # envoie un mail (primitive pour scripts bash)
+```
+
+- `monitor` ([cron-monitor.sh](../deploy/cron/cron-monitor.sh), **07:00**) détecte : runs scrape/ETL
+  `failed`/`partial` (dernière exécution), absence d'activité depuis `--max-age-hours` (défaut 36 h),
+  et matchs joués il y a >`--stale-score-days` (défaut 10 j) toujours sans score. Saison = la plus
+  récente par défaut.
+- `cron-healthcheck.sh` (**toutes les 5 min**) sonde `/ready` et alerte **une seule fois par
+  incident** (flag), puis notifie le rétablissement.
+- `cron-weekly-structure.sh` (**dimanche 05:00**) re-scrape les référentiels (clubs, compétitions,
+  poules, équipes…) qui dérivent en cours de saison.
+- `cron-maintenance.sh` (**dimanche 06:00**) lance `pnpm maintenance` + supprime les logs cron >30 j.
+
+Crons existants alignés : `cron-daily.sh` (02:00) inclut désormais matchs `--incremental`,
+classements `--days=3` et FdM `--played --days=10` ; `cron-weekly-fdm-recent.sh` utilise
+`--played --days=30`.
+
 ## Mise à jour post-match (scores + feuilles de match)
 
 > **ffhandball.fr n'est pas une source temps réel.** Sur les pages matchs, le score n'est publié
