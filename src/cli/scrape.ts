@@ -7,7 +7,7 @@ import { fetchHtml, fetchBinary } from "@/scrapers/shared/http-client.js";
 import { forEachConcurrent } from "@/scrapers/shared/concurrency.js";
 import { Progress } from "@/lib/progress.js";
 import { startScrapeRun, type ScrapeRunHandle } from "@/scrapers/shared/scrape-run.js";
-import { insertRaw } from "@/scrapers/shared/raw-insert.js";
+import { insertRaw, insertRawBatch, type RawRow } from "@/scrapers/shared/raw-insert.js";
 import { parseClubsListing } from "@/scrapers/ffhandball/clubs.scraper.js";
 import { parseClubDetail } from "@/scrapers/ffhandball/club-details.scraper.js";
 import { parseClubSlugs } from "@/scrapers/ffhandball/club-slugs.scraper.js";
@@ -562,46 +562,27 @@ async function scrapeMatchs(
         return;
       }
 
-      const journeeAlreadyFetched = parsed.matchs[0]?.journee;
-      for (const m of parsed.matchs) {
-        await insertRaw("matchs", {
-          scrape_run_id: run.id,
-          source_url: m.source_url,
-          source_site: "ffhandball.fr",
-          natural_key: m.ext_rencontre_id,
-          payload: m,
-          saison,
-          http_status: res.status,
-        });
-        totalInserted++;
-      }
+      // On accumule toutes les lignes de la poule puis on insère en lot (1 SELECT + 1 INSERT
+      // par table/poule au lieu de 2 allers-retours/ligne) : la base n'empêche plus les
+      // workers de saturer le plancher de rate-limit.
+      const matchRows: RawRow[] = parsed.matchs.map((m) => ({
+        scrape_run_id: run.id, source_url: m.source_url, source_site: "ffhandball.fr",
+        natural_key: m.ext_rencontre_id, payload: m, saison, http_status: res.status,
+      }));
 
       // Équipes + engagements de la poule (source complète depuis equipe_options) : garantit
       // que toute équipe référencée par un match est en base. Capturé une fois par poule.
-      for (const eq of parsed.equipes) {
-        await insertRaw("equipes", {
-          scrape_run_id: run.id,
-          source_url: eq.source_url,
-          source_site: "ffhandball.fr",
-          natural_key: eq.ext_equipe_id,
-          payload: eq,
-          saison,
-          http_status: res.status,
-        });
-      }
-      for (const en of parsed.engagements) {
-        await insertRaw("engagements", {
-          scrape_run_id: run.id,
-          source_url: en.source_url,
-          source_site: "ffhandball.fr",
-          natural_key: `${en.ext_equipe_id}-${en.ext_poule_id}`,
-          payload: en,
-          saison,
-          http_status: res.status,
-        });
-      }
+      const equipeRows: RawRow[] = parsed.equipes.map((eq) => ({
+        scrape_run_id: run.id, source_url: eq.source_url, source_site: "ffhandball.fr",
+        natural_key: eq.ext_equipe_id, payload: eq, saison, http_status: res.status,
+      }));
+      const engagementRows: RawRow[] = parsed.engagements.map((en) => ({
+        scrape_run_id: run.id, source_url: en.source_url, source_site: "ffhandball.fr",
+        natural_key: `${en.ext_equipe_id}-${en.ext_poule_id}`, payload: en, saison, http_status: res.status,
+      }));
 
       // If --journees=all, iterate over remaining journées
+      const journeeAlreadyFetched = parsed.matchs[0]?.journee;
       if (mode === "all" && parsed.journees_disponibles.length > 0) {
         const remaining = parsed.journees_disponibles.filter(
           (j) => j !== journeeAlreadyFetched,
@@ -613,19 +594,18 @@ async function scrapeMatchs(
           const jParsed = parseRencontreList(jRes.body, jUrl, po.ext_poule_id);
           if (!jParsed) continue;
           for (const m of jParsed.matchs) {
-            await insertRaw("matchs", {
-              scrape_run_id: run.id,
-              source_url: m.source_url,
-              source_site: "ffhandball.fr",
-              natural_key: m.ext_rencontre_id,
-              payload: m,
-              saison,
-              http_status: jRes.status,
+            matchRows.push({
+              scrape_run_id: run.id, source_url: m.source_url, source_site: "ffhandball.fr",
+              natural_key: m.ext_rencontre_id, payload: m, saison, http_status: jRes.status,
             });
-            totalInserted++;
           }
         }
       }
+
+      const mres = await insertRawBatch("matchs", matchRows);
+      await insertRawBatch("equipes", equipeRows);
+      await insertRawBatch("engagements", engagementRows);
+      totalInserted += mres.inserted;
     });
     prog.done(poules.length);
 
@@ -686,18 +666,12 @@ async function scrapeClassements(
         pouleVide++;
         return;
       }
-      for (const c of parsed) {
-        await insertRaw("classements", {
-          scrape_run_id: run.id,
-          source_url: c.source_url,
-          source_site: "ffhandball.fr",
-          natural_key: c.ext_classement_id,
-          payload: c,
-          saison,
-          http_status: res.status,
-        });
-        totalInserted++;
-      }
+      const rows: RawRow[] = parsed.map((c) => ({
+        scrape_run_id: run.id, source_url: c.source_url, source_site: "ffhandball.fr",
+        natural_key: c.ext_classement_id, payload: c, saison, http_status: res.status,
+      }));
+      const { inserted } = await insertRawBatch("classements", rows);
+      totalInserted += inserted;
     });
     prog.done(poules.length);
 
@@ -765,18 +739,12 @@ async function scrapeStatsJoueurs(
         pouleSansStats++;
         continue;
       }
-      for (const s of parsed) {
-        await insertRaw("stats_joueurs", {
-          scrape_run_id: run.id,
-          source_url: s.source_url,
-          source_site: "ffhandball.fr",
-          natural_key: `${s.ext_poule_id}-${s.individu_id}`,
-          payload: s,
-          saison,
-          http_status: res.status,
-        });
-        totalInserted++;
-      }
+      const rows: RawRow[] = parsed.map((s) => ({
+        scrape_run_id: run.id, source_url: s.source_url, source_site: "ffhandball.fr",
+        natural_key: `${s.ext_poule_id}-${s.individu_id}`, payload: s, saison, http_status: res.status,
+      }));
+      const { inserted } = await insertRawBatch("stats_joueurs", rows);
+      totalInserted += inserted;
     }
     sjProg.done(poules.length);
     logger.info(
