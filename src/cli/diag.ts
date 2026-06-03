@@ -1,5 +1,6 @@
-// src/cli/doctor.ts — diagnostic préflight du pipeline (à lancer avant un run, en cron ou en CI).
-// Usage : pnpm doctor [--strict] [--no-color]
+// src/cli/diag.ts — diagnostic préflight du pipeline (à lancer avant un run, en cron ou en CI).
+// Usage : pnpm diag [--strict] [--no-color]
+// NB : pas nommé « doctor » — c'est une commande intégrée à npm ET pnpm (elle masquerait le script).
 //
 // Vérifie : base joignable, migrations à jour, variables d'environnement, source ffhandball.fr
 // joignable, espace disque. Sort en 1 si une vérification CRITIQUE échoue (ou, avec --strict,
@@ -144,7 +145,7 @@ async function main(): Promise<void> {
     ...(dbOk ? [await checkDbSize()] : []),
   ];
 
-  process.stdout.write("\n" + col.bold("ffhandball — doctor") + "\n");
+  process.stdout.write("\n" + col.bold("ffhandball — diagnostic") + "\n");
   const labelW = Math.max(...checks.map((c) => c.label.length));
   for (const c of checks) {
     process.stdout.write(`  ${icon(c.level)} ${c.label.padEnd(labelW)}  ${col.dim(c.detail)}\n`);
