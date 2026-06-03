@@ -30,8 +30,10 @@ const PIPELINE: Step[] = [
   { label: "etl equipes",          cmd: "etl",    entity: "equipes" },
   { label: "etl engagements",      cmd: "etl",    entity: "engagements" },
 
-  // Matchs
-  { label: "scrape matchs",        cmd: "scrape", entity: "matchs", extraArgs: ["--journees=all"] },
+  // Matchs — run régulier = incrémental (journées récemment jouées seulement, ~×20 moins de
+  // requêtes que `all` → on ne fait plus basculer le WAF CloudFront/origine). Le backfill
+  // complet d'une saison se fait UNE fois à la main : `scrape --entity=matchs --journees=all`.
+  { label: "scrape matchs",        cmd: "scrape", entity: "matchs", extraArgs: ["--journees=recent"] },
   { label: "etl matchs",           cmd: "etl",    entity: "matchs" },
   { label: "etl arbitres",         cmd: "etl",    entity: "arbitres" },
   { label: "etl match_officiels",  cmd: "etl",    entity: "match_officiels" },
