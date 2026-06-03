@@ -28,6 +28,24 @@ describe("parseRencontreList", () => {
     expect(r!.matchs.every((m) => m.ext_poule_id === EXT_POULE_ID)).toBe(true);
   });
 
+  it("capture les équipes + engagements de la poule (couverture complète)", () => {
+    const html = fixture("ffhandball-poule-rencontres-journee-1.html");
+    const r = parseRencontreList(html, SOURCE_URL, EXT_POULE_ID);
+    expect(r).not.toBeNull();
+    // equipe_options de la poule = 14 équipes (LBE)
+    expect(r!.equipes.length).toBe(14);
+    expect(r!.equipes.every((e) => /^\d+$/.test(e.ext_equipe_id) && e.nom.length > 0)).toBe(true);
+    // toute équipe référencée par un match est présente dans les équipes capturées
+    const eqIds = new Set(r!.equipes.map((e) => e.ext_equipe_id));
+    for (const m of r!.matchs) {
+      expect(eqIds.has(m.ext_equipe_dom_id)).toBe(true);
+      expect(eqIds.has(m.ext_equipe_ext_id)).toBe(true);
+    }
+    // engagements liés à la poule scrapée
+    expect(r!.engagements.length).toBe(14);
+    expect(r!.engagements.every((en) => en.ext_poule_id === EXT_POULE_ID)).toBe(true);
+  });
+
   it("extracts matchs from journée en cours fixture", () => {
     const html = fixture("ffhandball-poule-rencontres-journee-en-cours.html");
     const r = parseRencontreList(html, SOURCE_URL, EXT_POULE_ID);
