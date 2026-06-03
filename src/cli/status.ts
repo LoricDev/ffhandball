@@ -488,8 +488,18 @@ async function main(): Promise<void> {
   }
 
   // --- Scrapes : dernière exécution par scraper ---
+  // pages_total (migration 0020) peut ne pas exister si la migration n'est pas encore passée :
+  // un outil de monitoring ne doit pas crasher pour autant → on l'inclut seulement si présente.
+  const hasPagesTotal =
+    (
+      await query(
+        `SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'raw' AND table_name = 'scrape_runs' AND column_name = 'pages_total'`,
+      )
+    ).rows.length > 0;
   const scrapeRes = await query<ScrapeRow>(
-    `SELECT scraper_name, status, started_at, finished_at, pages_scraped, pages_total, error_message
+    `SELECT scraper_name, status, started_at, finished_at, pages_scraped,
+            ${hasPagesTotal ? "pages_total" : "NULL::int AS pages_total"}, error_message
        FROM raw.scrape_runs
       WHERE saison = $1
       ORDER BY scraper_name, started_at DESC`,
