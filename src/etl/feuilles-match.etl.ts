@@ -5,6 +5,7 @@ import { rawFeuilleMatchPayloadSchema, type RawFeuilleMatchPayload } from "@/sch
 import { logger } from "@/lib/logger.js";
 import { loadMatchByFdmIndex, type MatchRef } from "@/etl/shared/lookups.js";
 import { Progress } from "@/lib/progress.js";
+import { EtlCheckpoint } from "@/etl/shared/checkpoint.js";
 
 interface RawFdmRow {
   id: number;
@@ -40,10 +41,12 @@ export async function runFeuillesMatchEtl(saison: string): Promise<EtlReport> {
     // Préchargement de l'index fdm_code → match (1 requête) au lieu d'un SELECT par FdM.
     const matchIndex = await loadMatchByFdmIndex();
     const prog = new Progress("etl feuilles-match", await countRawDistinct("raw.feuilles_match", saison));
+    const checkpoint = new EtlCheckpoint(etl_run_id);
 
     for await (const row of iterateRawBatched("raw.feuilles_match", saison)) {
       report.rows_read++;
       prog.tick(report.rows_read);
+      await checkpoint.maybe(report.rows_read);
       await processOneFdm(row, etl_run_id, report, matchIndex);
     }
     prog.done(report.rows_read);

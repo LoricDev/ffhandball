@@ -6,6 +6,7 @@ import { logger } from "@/lib/logger.js";
 import { insertWarnings, type EtlWarning } from "@/etl/shared/etl-warnings.js";
 import { loadIdIndex } from "@/etl/shared/lookups.js";
 import { Progress } from "@/lib/progress.js";
+import { EtlCheckpoint } from "@/etl/shared/checkpoint.js";
 
 export interface EtlReport {
   etl_run_id: number;
@@ -136,10 +137,12 @@ export async function runMatchsEtl(saison: string, opts: MatchsEtlOptions = {}):
     };
     const buffer: unknown[][] = [];
     const prog = new Progress("etl matchs", await countRawDistinct("raw.matchs", saison, opts.since));
+    const checkpoint = new EtlCheckpoint(etl_run_id);
 
     for await (const row of iterateRawBatched("raw.matchs", saison, { since: opts.since })) {
       report.rows_read++;
       prog.tick(report.rows_read);
+      await checkpoint.maybe(report.rows_read);
       const parsed = rawMatchPayloadSchema.safeParse(row.payload);
       if (!parsed.success) {
         await query(
