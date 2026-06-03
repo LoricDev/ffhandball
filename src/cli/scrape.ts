@@ -32,7 +32,6 @@ interface CliArgs {
   level?: "national" | "regional" | "departemental";
   journees?: "all" | "courante";
   window: DateWindow | null;
-  played: boolean;
 }
 
 function parseCliArgs(): CliArgs {
@@ -51,7 +50,7 @@ function parseCliArgs(): CliArgs {
       from: { type: "string" },
       to: { type: "string" },
       days: { type: "string" },      // fenêtre [now−N jours, now] (ex. backfill FdM récentes)
-      // feuilles-match : ne tenter que les FdM des matchs déjà joués (évite les 404 sur le futur)
+      // feuilles-match : accepté mais sans effet — les matchs joués (< aujourd'hui) sont le défaut.
       played: { type: "boolean" },
     },
   });
@@ -111,7 +110,6 @@ function parseCliArgs(): CliArgs {
     level,
     journees,
     window,
-    played: values.played === true,
   };
 }
 
@@ -744,7 +742,7 @@ async function scrapeStatsJoueurs(
 
 async function scrapeFeuillesMatch(
   saison: string,
-  opts: { limit?: number; window?: DateWindow | null; played?: boolean },
+  opts: { limit?: number; window?: DateWindow | null },
 ): Promise<void> {
   const run = await startScrapeRun({
     source_site: "media-ffhb-fdm.ffhandball.fr",
@@ -754,49 +752,31 @@ async function scrapeFeuillesMatch(
   logger.info({ run_id: run.id, ...opts }, "starting feuilles-match scrape");
 
   try {
-    // 1. Codes FdM à scraper (toujours en excluant ceux déjà capturés dans raw.feuilles_match).
-    //    Les FdM étant publiées avec retard, ce filtre + la dédup par payload_hash font qu'un
-    //    re-run rattrape naturellement les FdM tardives sans re-télécharger les acquises.
-    let codesRes: { rows: { fdm_code: string }[] };
-    if (opts.played || opts.window) {
-      // Mode backfill : ne tenter que les matchs DÉJÀ JOUÉS (date passée) — évite les 404 inutiles
-      // sur tous les matchs futurs. Source core.matchs (date_heure + fdm_code), fenêtre optionnelle.
-      const params: unknown[] = [saison];
-      let windowFilter = "";
-      if (opts.window) {
-        params.push(opts.window.from, opts.window.to);
-        windowFilter = ` AND m.date_heure >= $2 AND m.date_heure < $3`;
-      }
-      codesRes = await query<{ fdm_code: string }>(
-        `SELECT DISTINCT m.fdm_code
-           FROM core.matchs m
-           JOIN core.poules po ON po.id = m.poule_id
-          WHERE po.saison_code = $1
-            AND m.fdm_code IS NOT NULL AND m.fdm_code <> ''
-            AND m.date_heure < now()${windowFilter}
-            AND NOT EXISTS (
-              SELECT 1 FROM raw.feuilles_match fm
-              WHERE fm.natural_key = m.fdm_code AND fm.saison = $1
-            )
-          ORDER BY m.fdm_code`,
-        params,
-      );
-    } else {
-      // Défaut : tous les fdm_code connus (depuis raw.matchs) pas encore capturés.
-      codesRes = await query<{ fdm_code: string }>(
-        `SELECT DISTINCT m.payload->>'fdm_code' AS fdm_code
-           FROM raw.matchs m
-          WHERE m.saison = $1
-            AND m.payload->>'fdm_code' IS NOT NULL
-            AND m.payload->>'fdm_code' != ''
-            AND NOT EXISTS (
-              SELECT 1 FROM raw.feuilles_match fm
-              WHERE fm.natural_key = m.payload->>'fdm_code' AND fm.saison = $1
-            )
-          ORDER BY fdm_code`,
-        [saison],
-      );
+    // 1. Codes FdM à scraper : matchs DÉJÀ JOUÉS uniquement (date_heure < now), non encore
+    //    capturés. Les matchs À VENIR n'ont jamais de FdM → toujours exclus (zéro 404 inutile).
+    //    Sans fenêtre : toute la saison jusqu'à aujourd'hui (rattrapage complet). --days borne
+    //    en plus aux N derniers jours (passages quotidiens). Le filtre NOT EXISTS + la dédup
+    //    payload_hash font qu'un re-run rattrape les FdM publiées en retard sans re-télécharger.
+    const params: unknown[] = [saison];
+    let windowFilter = "";
+    if (opts.window) {
+      params.push(opts.window.from, opts.window.to);
+      windowFilter = ` AND m.date_heure >= $2 AND m.date_heure < $3`;
     }
+    const codesRes = await query<{ fdm_code: string }>(
+      `SELECT DISTINCT m.fdm_code
+         FROM core.matchs m
+         JOIN core.poules po ON po.id = m.poule_id
+        WHERE po.saison_code = $1
+          AND m.fdm_code IS NOT NULL AND m.fdm_code <> ''
+          AND m.date_heure < now()${windowFilter}
+          AND NOT EXISTS (
+            SELECT 1 FROM raw.feuilles_match fm
+            WHERE fm.natural_key = m.fdm_code AND fm.saison = $1
+          )
+        ORDER BY m.fdm_code`,
+      params,
+    );
 
     let toProcess = codesRes.rows;
     if (opts.limit !== undefined) toProcess = toProcess.slice(0, opts.limit);
@@ -879,7 +859,7 @@ async function main(): Promise<void> {
   } else if (args.entity === "stats-joueurs") {
     await scrapeStatsJoueurs(args.saison, { limit: args.limit });
   } else if (args.entity === "feuilles-match") {
-    await scrapeFeuillesMatch(args.saison, { limit: args.limit, window: args.window, played: args.played });
+    await scrapeFeuillesMatch(args.saison, { limit: args.limit, window: args.window });
   } else {
     throw new Error(`unknown entity: ${args.entity}`);
   }
