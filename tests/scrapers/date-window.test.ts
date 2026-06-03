@@ -102,6 +102,18 @@ describe("resolveDateWindow", () => {
     expect(iso(w!.from)).toBe("2026-06-06 sam");
   });
 
+  it("recentDays = fenêtre [now−N jours, now]", () => {
+    const w = resolveDateWindow({ recentDays: 7 }, now);
+    expect(w).not.toBeNull();
+    expect(w!.to.getTime()).toBe(now.getTime());
+    expect(w!.from.getTime()).toBe(now.getTime() - 7 * 86_400_000);
+  });
+
+  it("--from/--to priment sur recentDays", () => {
+    const w = resolveDateWindow({ from: "2026-01-10", to: "2026-01-12", recentDays: 7 }, now);
+    expect(iso(w!.from)).toBe("2026-01-10 sam");
+  });
+
   it("--live délègue à liveWindow (prioritaire sur --weekend)", () => {
     const w = resolveDateWindow({ live: true, weekend: true }, now);
     expect(w).not.toBeNull();
