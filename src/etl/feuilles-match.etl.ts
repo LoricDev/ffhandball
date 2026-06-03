@@ -133,35 +133,67 @@ async function processOneFdm(
       }
     }
 
-    // Étape 3 : UPSERT joueurs (par numero_licence) + build index cote-maillot → joueur_id
-    const numeroMailletToJoueurId = new Map<string, number>(); // ${cote}-${numero_maillot} → joueur_id
-
+    // Étape 3 : joueurs et compositions en BATCH (1 requête chacun au lieu d'1 par joueur).
     const allJoueurs: Array<{ joueur: (typeof fdm.composition_recevant)[0]; cote: "recevant" | "visiteur" }> = [
       ...fdm.composition_recevant.map((j) => ({ joueur: j, cote: "recevant" as const })),
       ...fdm.composition_visiteur.map((j) => ({ joueur: j, cote: "visiteur" as const })),
     ];
 
-    for (const { joueur: j, cote } of allJoueurs) {
-      const r = await query<{ id: number }>(
+    // 3a. UPSERT joueurs (dédup par numero_licence pour éviter un conflit intra-lot ; dernier gagne).
+    const joueurByLicence = new Map<string, (typeof allJoueurs)[number]["joueur"]>();
+    for (const { joueur: j } of allJoueurs) joueurByLicence.set(j.numero_licence, j);
+
+    const licenceToId = new Map<string, number>();
+    const jrows = [...joueurByLicence.values()];
+    if (jrows.length > 0) {
+      const tuples = jrows.map((_, i) => `($${i * 3 + 1},$${i * 3 + 2},$${i * 3 + 3}, now())`).join(",");
+      const r = await query<{ id: number; numero_licence: string }>(
         `INSERT INTO core.joueurs (numero_licence, nom, prenom, last_seen_at)
-         VALUES ($1, $2, $3, now())
+         VALUES ${tuples}
          ON CONFLICT (numero_licence) DO UPDATE
          SET nom = EXCLUDED.nom, prenom = EXCLUDED.prenom, last_seen_at = now(),
              updated_at = CASE WHEN core.joueurs.nom IS DISTINCT FROM EXCLUDED.nom
                                OR core.joueurs.prenom IS DISTINCT FROM EXCLUDED.prenom
                           THEN now() ELSE core.joueurs.updated_at END
-         RETURNING id`,
-        [j.numero_licence, j.nom, j.prenom],
+         RETURNING id, numero_licence`,
+        jrows.flatMap((j) => [j.numero_licence, j.nom, j.prenom]),
       );
-      const joueur_id = r.rows[0]!.id;
+      for (const row of r.rows) licenceToId.set(row.numero_licence, row.id);
+    }
 
-      // Index par côté+maillot pour résoudre les actions
-      if (j.numero_maillot !== null) {
-        numeroMailletToJoueurId.set(`${cote}-${j.numero_maillot}`, joueur_id);
+    // Index côté+maillot → joueur_id (pour résoudre les actions ; dernier gagne).
+    const numeroMailletToJoueurId = new Map<string, number>();
+    for (const { joueur: j, cote } of allJoueurs) {
+      const jid = licenceToId.get(j.numero_licence);
+      if (jid !== undefined && j.numero_maillot !== null) {
+        numeroMailletToJoueurId.set(`${cote}-${j.numero_maillot}`, jid);
       }
+    }
 
-      // Étape 4 : UPSERT match_compositions
+    // 3b. UPSERT compositions en batch (dédup par joueur_id ; dernier gagne).
+    const compByJoueur = new Map<number, unknown[]>();
+    for (const { joueur: j, cote } of allJoueurs) {
+      const jid = licenceToId.get(j.numero_licence);
+      if (jid === undefined) continue;
       const equipe_id = cote === "recevant" ? equipe_dom_id : equipe_ext_id;
+      compByJoueur.set(jid, [
+        match_id, jid, equipe_id, j.numero_maillot,
+        j.capitaine, j.gardien,
+        j.buts ?? 0, j.exclusions_2min ?? 0, j.avertissement, j.disqualifie,
+        j.type_licence, j.tirs ?? 0, j.arrets ?? 0,
+        j.sept_metres_tentes ?? 0, j.sept_metres_reussis ?? 0,
+        j.avertissement, j.disqualifie,
+      ]);
+    }
+    const crows = [...compByJoueur.values()];
+    if (crows.length > 0) {
+      const C = 17;
+      const tuples = crows
+        .map((_, i) => {
+          const b = i * C;
+          return `($${b + 1},$${b + 2},$${b + 3},$${b + 4}, true, $${b + 5},$${b + 6},$${b + 7},$${b + 8},$${b + 9},$${b + 10},$${b + 11},$${b + 12},$${b + 13},$${b + 14},$${b + 15},$${b + 16},$${b + 17})`;
+        })
+        .join(",");
       await query(
         `INSERT INTO core.match_compositions (
            match_id, joueur_id, equipe_id, numero_maillot,
@@ -170,8 +202,7 @@ async function processOneFdm(
            type_licence, tirs_count, arrets_count,
            sept_metres_tentes, sept_metres_reussis,
            avertissement, disqualifie
-         )
-         VALUES ($1,$2,$3,$4, true, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+         ) VALUES ${tuples}
          ON CONFLICT (match_id, joueur_id) DO UPDATE
          SET equipe_id = EXCLUDED.equipe_id,
              numero_maillot = EXCLUDED.numero_maillot,
@@ -188,33 +219,40 @@ async function processOneFdm(
              avertissement = EXCLUDED.avertissement,
              disqualifie = EXCLUDED.disqualifie,
              updated_at = now()`,
-        [
-          match_id, joueur_id, equipe_id, j.numero_maillot,
-          j.capitaine, j.gardien,
-          j.buts ?? 0, j.exclusions_2min ?? 0, j.avertissement, j.disqualifie,
-          j.type_licence,
-          j.tirs ?? 0, j.arrets ?? 0,
-          j.sept_metres_tentes ?? 0, j.sept_metres_reussis ?? 0,
-          j.avertissement, j.disqualifie,
-        ],
+        crows.flat(),
       );
     }
 
-    // Étape 5 : UPSERT match_actions
+    // Étape 5 : UPSERT match_actions en batch (dédup par ordre).
+    const actByOrdre = new Map<number, unknown[]>();
     for (const a of fdm.actions) {
       const key = a.cote && a.numero_maillot !== null && a.numero_maillot !== undefined
         ? `${a.cote}-${a.numero_maillot}`
         : null;
       const joueur_id = key ? (numeroMailletToJoueurId.get(key) ?? null) : null;
-
+      actByOrdre.set(a.ordre, [
+        match_id, a.ordre, a.periode, a.temps_seconds,
+        a.score_recevant, a.score_visiteur,
+        a.type_action, a.cote ?? null, joueur_id, a.numero_maillot ?? null,
+        a.acteur_role ?? null, a.description_brute,
+      ]);
+    }
+    const arows = [...actByOrdre.values()];
+    if (arows.length > 0) {
+      const A = 12;
+      const tuples = arows
+        .map((_, i) => {
+          const b = i * A;
+          return `($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5},$${b + 6},$${b + 7},$${b + 8},$${b + 9},$${b + 10},$${b + 11},$${b + 12})`;
+        })
+        .join(",");
       await query(
         `INSERT INTO core.match_actions (
            match_id, ordre, periode, temps_seconds,
            score_recevant, score_visiteur,
            type_action, cote, joueur_id, numero_maillot,
            acteur_role, description_brute
-         )
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+         ) VALUES ${tuples}
          ON CONFLICT (match_id, ordre) DO UPDATE
          SET periode = EXCLUDED.periode,
              temps_seconds = EXCLUDED.temps_seconds,
@@ -226,12 +264,7 @@ async function processOneFdm(
              numero_maillot = EXCLUDED.numero_maillot,
              acteur_role = EXCLUDED.acteur_role,
              description_brute = EXCLUDED.description_brute`,
-        [
-          match_id, a.ordre, a.periode, a.temps_seconds,
-          a.score_recevant, a.score_visiteur,
-          a.type_action, a.cote ?? null, joueur_id, a.numero_maillot ?? null,
-          a.acteur_role ?? null, a.description_brute,
-        ],
+        arows.flat(),
       );
     }
 
