@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # deploy/cron/cron-daily.sh
-# Scrape quotidien : journée courante matchs + ETL cascade + classements + stats-joueurs
+# Scrape quotidien : matchs (journée courante) + classements & FdM des matchs joués récents
+# (l'ETL FdM dérive le score sans attendre la publication serveur) + stats-joueurs.
 # Lancé chaque nuit à 02:00 par le crontab utilisateur.
 
 set -euo pipefail
@@ -44,8 +45,8 @@ run_step() {
 run_step "scrape matchs (journée courante)" \
   pnpm scrape --entity=matchs --saison="$SAISON"
 
-run_step "etl matchs" \
-  pnpm etl --entity=matchs --saison="$SAISON"
+run_step "etl matchs (incrémental)" \
+  pnpm etl --entity=matchs --saison="$SAISON" --incremental
 
 run_step "etl arbitres" \
   pnpm etl --entity=arbitres --saison="$SAISON"
@@ -53,14 +54,23 @@ run_step "etl arbitres" \
 run_step "etl match_officiels" \
   pnpm etl --entity=match_officiels --saison="$SAISON"
 
-# 2. Classements
-run_step "scrape classements" \
-  pnpm scrape --entity=classements --saison="$SAISON"
+# 2. Classements (seulement les poules ayant joué récemment)
+run_step "scrape classements (3 derniers jours)" \
+  pnpm scrape --entity=classements --saison="$SAISON" --days=3
 
 run_step "etl classements" \
   pnpm etl --entity=classements --saison="$SAISON"
 
-# 3. Stats joueurs (national + régional séniors)
+# 3. Feuilles de match récentes : l'ETL en dérive le SCORE sans attendre la publication
+#    serveur (le lendemain). --played --days : seuls les matchs joués des 10 derniers jours,
+#    et le scraper saute les FdM déjà capturées → après le 1er run, coût minime.
+run_step "scrape feuilles-match (joués, 10 derniers jours)" \
+  pnpm scrape --entity=feuilles-match --saison="$SAISON" --played --days=10
+
+run_step "etl feuilles-match" \
+  pnpm etl --entity=feuilles-match --saison="$SAISON"
+
+# 4. Stats joueurs (national + régional séniors)
 run_step "scrape stats-joueurs" \
   pnpm scrape --entity=stats-joueurs --saison="$SAISON"
 
