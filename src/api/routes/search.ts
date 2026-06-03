@@ -38,7 +38,7 @@ searchRouter.openapi(searchRoute, async (c) => {
     );
   }
   const data = await search({ q, type, saison, limit });
-  return c.json({ data });
+  return c.json({ data }, 200);
 });
 
 export default searchRouter;

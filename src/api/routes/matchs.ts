@@ -68,7 +68,7 @@ matchs.openapi(detailRoute, async (c) => {
       404,
     );
   }
-  return c.json({ data: match });
+  return c.json({ data: match }, 200);
 });
 
 export default matchs;
