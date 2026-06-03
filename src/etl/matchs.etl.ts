@@ -28,6 +28,72 @@ function deduceHeureEstimee(dateHeure: string): boolean {
   return /T00:00:00/.test(dateHeure);
 }
 
+// 14 valeurs par match ; lots de 500 → 7000 paramètres (< limite Postgres 65535).
+const MATCH_COLS = 14;
+const MATCH_BATCH = 500;
+
+const MATCH_UPSERT_TAIL = `
+  ON CONFLICT (id_ffhb_match) DO UPDATE
+  SET poule_id      = EXCLUDED.poule_id,
+      equipe_dom_id = EXCLUDED.equipe_dom_id,
+      equipe_ext_id = EXCLUDED.equipe_ext_id,
+      date_heure    = EXCLUDED.date_heure,
+      heure_estimee = EXCLUDED.heure_estimee,
+      score_dom     = COALESCE(EXCLUDED.score_dom, core.matchs.score_dom),
+      score_ext     = COALESCE(EXCLUDED.score_ext, core.matchs.score_ext),
+      score_mt_dom  = COALESCE(EXCLUDED.score_mt_dom, core.matchs.score_mt_dom),
+      score_mt_ext  = COALESCE(EXCLUDED.score_mt_ext, core.matchs.score_mt_ext),
+      statut        = EXCLUDED.statut,
+      journee       = EXCLUDED.journee,
+      equipement_id = COALESCE(EXCLUDED.equipement_id, core.matchs.equipement_id),
+      fdm_code      = COALESCE(EXCLUDED.fdm_code, core.matchs.fdm_code),
+      last_seen_at  = now(),
+      updated_at    = CASE
+        WHEN core.matchs.poule_id      IS DISTINCT FROM EXCLUDED.poule_id
+          OR core.matchs.equipe_dom_id IS DISTINCT FROM EXCLUDED.equipe_dom_id
+          OR core.matchs.equipe_ext_id IS DISTINCT FROM EXCLUDED.equipe_ext_id
+          OR core.matchs.date_heure    IS DISTINCT FROM EXCLUDED.date_heure
+          OR core.matchs.heure_estimee IS DISTINCT FROM EXCLUDED.heure_estimee
+          OR (EXCLUDED.score_dom IS NOT NULL AND core.matchs.score_dom IS DISTINCT FROM EXCLUDED.score_dom)
+          OR (EXCLUDED.score_ext IS NOT NULL AND core.matchs.score_ext IS DISTINCT FROM EXCLUDED.score_ext)
+          OR (EXCLUDED.score_mt_dom IS NOT NULL AND core.matchs.score_mt_dom IS DISTINCT FROM EXCLUDED.score_mt_dom)
+          OR (EXCLUDED.score_mt_ext IS NOT NULL AND core.matchs.score_mt_ext IS DISTINCT FROM EXCLUDED.score_mt_ext)
+          OR core.matchs.statut        IS DISTINCT FROM EXCLUDED.statut
+          OR core.matchs.journee       IS DISTINCT FROM EXCLUDED.journee
+          OR (EXCLUDED.equipement_id IS NOT NULL AND core.matchs.equipement_id IS DISTINCT FROM EXCLUDED.equipement_id)
+          OR (EXCLUDED.fdm_code IS NOT NULL AND core.matchs.fdm_code IS DISTINCT FROM EXCLUDED.fdm_code)
+        THEN now()
+        ELSE core.matchs.updated_at
+      END
+  RETURNING (xmax = 0) AS inserted,
+            (xmax <> 0 AND updated_at = now()) AS updated`;
+
+// Upsert d'un lot de matchs en une seule requête multi-lignes. Agrège les compteurs
+// (inserted/updated/noop) depuis le RETURNING — l'ordre des lignes renvoyées importe peu.
+async function flushMatchs(rows: unknown[][], report: EtlReport): Promise<void> {
+  if (rows.length === 0) return;
+  const tuples = rows
+    .map((_, i) => {
+      const b = i * MATCH_COLS;
+      return `($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5}::timestamptz,$${b + 6},$${b + 7},$${b + 8},$${b + 9},$${b + 10},$${b + 11},$${b + 12},$${b + 13},$${b + 14}, now())`;
+    })
+    .join(",");
+  const res = await query<{ inserted: boolean; updated: boolean }>(
+    `INSERT INTO core.matchs (
+       id_ffhb_match, poule_id, equipe_dom_id, equipe_ext_id,
+       date_heure, heure_estimee,
+       score_dom, score_ext, score_mt_dom, score_mt_ext,
+       statut, journee, equipement_id, fdm_code, last_seen_at
+     ) VALUES ${tuples}${MATCH_UPSERT_TAIL}`,
+    rows.flat(),
+  );
+  for (const r of res.rows) {
+    if (r.inserted) report.rows_inserted++;
+    else if (r.updated) report.rows_updated++;
+    else report.rows_noop++;
+  }
+}
+
 export interface MatchsEtlOptions {
   /**
    * Mode incrémental : ne retraiter que les lignes raw capturées depuis ce timestamp.
@@ -67,6 +133,7 @@ export async function runMatchsEtl(saison: string, opts: MatchsEtlOptions = {}):
       warnings.push({ natural_key, message });
       report.warnings_count++;
     };
+    const buffer: unknown[][] = [];
 
     for await (const row of iterateRawBatched("raw.matchs", saison, { since: opts.since })) {
       report.rows_read++;
@@ -110,71 +177,30 @@ export async function runMatchsEtl(saison: string, opts: MatchsEtlOptions = {}):
       const statut = deduceStatut(p.score_dom, p.score_ext);
       const heure_estimee = deduceHeureEstimee(p.date_heure);
 
-      const upsert = await query<{ inserted: boolean; updated: boolean }>(
-        `INSERT INTO core.matchs (
-           id_ffhb_match, poule_id, equipe_dom_id, equipe_ext_id,
-           date_heure, heure_estimee,
-           score_dom, score_ext, score_mt_dom, score_mt_ext,
-           statut, journee, equipement_id, fdm_code, last_seen_at
-         )
-         VALUES ($1, $2, $3, $4, $5::timestamptz, $6, $7, $8, $9, $10, $11, $12, $13, $14, now())
-         ON CONFLICT (id_ffhb_match) DO UPDATE
-         SET poule_id      = EXCLUDED.poule_id,
-             equipe_dom_id = EXCLUDED.equipe_dom_id,
-             equipe_ext_id = EXCLUDED.equipe_ext_id,
-             date_heure    = EXCLUDED.date_heure,
-             heure_estimee = EXCLUDED.heure_estimee,
-             score_dom     = COALESCE(EXCLUDED.score_dom, core.matchs.score_dom),
-             score_ext     = COALESCE(EXCLUDED.score_ext, core.matchs.score_ext),
-             score_mt_dom  = COALESCE(EXCLUDED.score_mt_dom, core.matchs.score_mt_dom),
-             score_mt_ext  = COALESCE(EXCLUDED.score_mt_ext, core.matchs.score_mt_ext),
-             statut        = EXCLUDED.statut,
-             journee       = EXCLUDED.journee,
-             equipement_id = COALESCE(EXCLUDED.equipement_id, core.matchs.equipement_id),
-             fdm_code      = COALESCE(EXCLUDED.fdm_code, core.matchs.fdm_code),
-             last_seen_at  = now(),
-             updated_at    = CASE
-               WHEN core.matchs.poule_id      IS DISTINCT FROM EXCLUDED.poule_id
-                 OR core.matchs.equipe_dom_id IS DISTINCT FROM EXCLUDED.equipe_dom_id
-                 OR core.matchs.equipe_ext_id IS DISTINCT FROM EXCLUDED.equipe_ext_id
-                 OR core.matchs.date_heure    IS DISTINCT FROM EXCLUDED.date_heure
-                 OR core.matchs.heure_estimee IS DISTINCT FROM EXCLUDED.heure_estimee
-                 OR (EXCLUDED.score_dom IS NOT NULL AND core.matchs.score_dom IS DISTINCT FROM EXCLUDED.score_dom)
-                 OR (EXCLUDED.score_ext IS NOT NULL AND core.matchs.score_ext IS DISTINCT FROM EXCLUDED.score_ext)
-                 OR (EXCLUDED.score_mt_dom IS NOT NULL AND core.matchs.score_mt_dom IS DISTINCT FROM EXCLUDED.score_mt_dom)
-                 OR (EXCLUDED.score_mt_ext IS NOT NULL AND core.matchs.score_mt_ext IS DISTINCT FROM EXCLUDED.score_mt_ext)
-                 OR core.matchs.statut        IS DISTINCT FROM EXCLUDED.statut
-                 OR core.matchs.journee       IS DISTINCT FROM EXCLUDED.journee
-                 OR (EXCLUDED.equipement_id IS NOT NULL AND core.matchs.equipement_id IS DISTINCT FROM EXCLUDED.equipement_id)
-                 OR (EXCLUDED.fdm_code IS NOT NULL AND core.matchs.fdm_code IS DISTINCT FROM EXCLUDED.fdm_code)
-               THEN now()
-               ELSE core.matchs.updated_at
-             END
-         RETURNING (xmax = 0) AS inserted,
-                   (xmax <> 0 AND updated_at = now()) AS updated`,
-        [
-          p.ext_rencontre_id,
-          poule_id,
-          equipe_dom_id,
-          equipe_ext_id,
-          p.date_heure,
-          heure_estimee,
-          p.score_dom ?? null,
-          p.score_ext ?? null,
-          p.score_mt_dom ?? null,
-          p.score_mt_ext ?? null,
-          statut,
-          p.journee,
-          p.equipement_id ?? null,
-          p.fdm_code ?? null,
-        ],
-      );
-
-      const result = upsert.rows[0]!;
-      if (result.inserted) report.rows_inserted++;
-      else if (result.updated) report.rows_updated++;
-      else report.rows_noop++;
+      buffer.push([
+        p.ext_rencontre_id,
+        poule_id,
+        equipe_dom_id,
+        equipe_ext_id,
+        p.date_heure,
+        heure_estimee,
+        p.score_dom ?? null,
+        p.score_ext ?? null,
+        p.score_mt_dom ?? null,
+        p.score_mt_ext ?? null,
+        statut,
+        p.journee,
+        p.equipement_id ?? null,
+        p.fdm_code ?? null,
+      ]);
+      if (buffer.length >= MATCH_BATCH) {
+        await flushMatchs(buffer, report);
+        buffer.length = 0;
+      }
     }
+
+    await flushMatchs(buffer, report);
+    buffer.length = 0;
 
     await insertWarnings(etl_run_id, "matchs", warnings);
 
