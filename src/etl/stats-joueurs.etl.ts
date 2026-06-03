@@ -1,10 +1,11 @@
 // src/etl/stats-joueurs.etl.ts
 import { query } from "@/db/client.js";
-import { iterateRawBatched } from "@/etl/shared/iterate-raw-batched.js";
+import { iterateRawBatched, countRawDistinct } from "@/etl/shared/iterate-raw-batched.js";
 import { rawStatsJoueurPayloadSchema, type RawStatsJoueurPayload } from "@/schemas/stats-joueur.schema.js";
 import { logger } from "@/lib/logger.js";
 import { insertWarnings, type EtlWarning } from "@/etl/shared/etl-warnings.js";
 import { loadIdIndex, loadEquipeNameIndex } from "@/etl/shared/lookups.js";
+import { Progress } from "@/lib/progress.js";
 
 export interface EtlReport {
   etl_run_id: number;
@@ -40,9 +41,11 @@ export async function runStatsJoueursEtl(saison: string): Promise<EtlReport> {
     const poules = await loadIdIndex("poules", saison);
     const equipesByName = await loadEquipeNameIndex(saison);
     const warnings: EtlWarning[] = [];
+    const prog = new Progress("etl stats-joueurs", await countRawDistinct("raw.stats_joueurs", saison));
 
     for await (const row of iterateRawBatched("raw.stats_joueurs", saison)) {
       report.rows_read++;
+      prog.tick(report.rows_read);
       const parsed = rawStatsJoueurPayloadSchema.safeParse(row.payload);
       if (!parsed.success) {
         await query(
@@ -101,6 +104,7 @@ export async function runStatsJoueursEtl(saison: string): Promise<EtlReport> {
       else report.rows_updated++;
     }
 
+    prog.done(report.rows_read);
     await insertWarnings(etl_run_id, "stats_joueurs", warnings);
 
     await query(
