@@ -3,6 +3,7 @@ import { query } from "@/db/client.js";
 import { iterateRawBatched } from "@/etl/shared/iterate-raw-batched.js";
 import { rawFeuilleMatchPayloadSchema, type RawFeuilleMatchPayload } from "@/schemas/feuille-match.schema.js";
 import { logger } from "@/lib/logger.js";
+import { loadMatchByFdmIndex, type MatchRef } from "@/etl/shared/lookups.js";
 
 interface RawFdmRow {
   id: number;
@@ -35,9 +36,12 @@ export async function runFeuillesMatchEtl(saison: string): Promise<EtlReport> {
   };
 
   try {
+    // Préchargement de l'index fdm_code → match (1 requête) au lieu d'un SELECT par FdM.
+    const matchIndex = await loadMatchByFdmIndex();
+
     for await (const row of iterateRawBatched("raw.feuilles_match", saison)) {
       report.rows_read++;
-      await processOneFdm(row, etl_run_id, report);
+      await processOneFdm(row, etl_run_id, report, matchIndex);
     }
 
     await query(
@@ -62,7 +66,12 @@ export async function runFeuillesMatchEtl(saison: string): Promise<EtlReport> {
 
 // Valide puis insère une seule FdM (cascade transactionnelle joueurs + compositions + actions).
 // Mute `report` en place. Ne propage pas les erreurs de cascade : elles sont consignées en warning.
-async function processOneFdm(row: RawFdmRow, etl_run_id: number, report: EtlReport): Promise<void> {
+async function processOneFdm(
+  row: RawFdmRow,
+  etl_run_id: number,
+  report: EtlReport,
+  matchIndex: Map<string, MatchRef>,
+): Promise<void> {
   const parsed = rawFeuilleMatchPayloadSchema.safeParse(row.payload);
   if (!parsed.success) {
     await query(
@@ -77,26 +86,22 @@ async function processOneFdm(row: RawFdmRow, etl_run_id: number, report: EtlRepo
 
   const fdm: RawFeuilleMatchPayload = parsed.data;
 
+  // Étape 1 : résoudre match_id via fdm_code (index préchargé, pas de requête)
+  const m = matchIndex.get(fdm.fdm_code);
+  if (!m) {
+    await query(
+      `INSERT INTO core.etl_warnings (etl_run_id, entity, natural_key, message)
+       VALUES ($1,'feuilles_match',$2,$3)`,
+      [etl_run_id, fdm.fdm_code, `match avec fdm_code='${fdm.fdm_code}' introuvable en core.matchs`],
+    );
+    report.warnings_count++;
+    return;
+  }
+  const { id: match_id, equipe_dom_id, equipe_ext_id } = m;
+
   // Transaction par FdM
   await query("BEGIN");
   try {
-    // Étape 1 : résoudre match_id via fdm_code
-    const matchRes = await query<{ id: number; equipe_dom_id: number; equipe_ext_id: number }>(
-      `SELECT id, equipe_dom_id, equipe_ext_id FROM core.matchs WHERE fdm_code = $1 LIMIT 1`,
-      [fdm.fdm_code],
-    );
-    if (!matchRes.rows[0]) {
-      await query("ROLLBACK");
-      await query(
-        `INSERT INTO core.etl_warnings (etl_run_id, entity, natural_key, message)
-         VALUES ($1,'feuilles_match',$2,$3)`,
-        [etl_run_id, fdm.fdm_code, `match avec fdm_code='${fdm.fdm_code}' introuvable en core.matchs`],
-      );
-      report.warnings_count++;
-      return;
-    }
-    const { id: match_id, equipe_dom_id, equipe_ext_id } = matchRes.rows[0];
-
     // Étape 2 : UPDATE core.matchs.fdm_url
     await query(
       `UPDATE core.matchs SET fdm_url = $1 WHERE id = $2 AND (fdm_url IS NULL OR fdm_url IS DISTINCT FROM $1)`,
