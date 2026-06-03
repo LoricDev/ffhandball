@@ -70,7 +70,7 @@ competitions.openapi(detailRoute, async (c) => {
       404,
     );
   }
-  return c.json({ data });
+  return c.json({ data }, 200);
 });
 
 export default competitions;
