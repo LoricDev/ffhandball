@@ -103,6 +103,31 @@ async function processOneFdm(row: RawFdmRow, etl_run_id: number, report: EtlRepo
       [fdm.source_url, match_id],
     );
 
+    // Étape 2bis : dériver le score depuis la FdM (la FdM est la source du résultat et est
+    // disponible AVANT que le serveur ffhandball ne publie le score, en général le lendemain).
+    // recevant → domicile, visiteur → extérieur (mapping non ambigu). On ne remplit QUE si le
+    // score est encore absent : on ne clobbere jamais un score déjà publié/corrigé par ffhandball
+    // (cas « score saisi à part suite à un problème de FdM »).
+    if (fdm.score_recevant !== null && fdm.score_visiteur !== null) {
+      const scoreRes = await query(
+        `UPDATE core.matchs
+            SET score_dom = $1, score_ext = $2,
+                score_mt_dom = COALESCE($3, score_mt_dom),
+                score_mt_ext = COALESCE($4, score_mt_ext),
+                statut = 'joue',
+                last_seen_at = now(),
+                updated_at = now()
+          WHERE id = $5 AND (score_dom IS NULL OR score_ext IS NULL)`,
+        [fdm.score_recevant, fdm.score_visiteur, fdm.score_mi_temps_recevant, fdm.score_mi_temps_visiteur, match_id],
+      );
+      if (scoreRes.rowCount && scoreRes.rowCount > 0) {
+        logger.debug(
+          { fdm_code: fdm.fdm_code, score: `${fdm.score_recevant}-${fdm.score_visiteur}` },
+          "score dérivé de la FdM (avant publication ffhandball)",
+        );
+      }
+    }
+
     // Étape 3 : UPSERT joueurs (par numero_licence) + build index cote-maillot → joueur_id
     const numeroMailletToJoueurId = new Map<string, number>(); // ${cote}-${numero_maillot} → joueur_id
 

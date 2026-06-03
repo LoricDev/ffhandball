@@ -175,6 +175,39 @@ describe("runFeuillesMatchEtl", () => {
     expect(m.rows[0]!.fdm_url).toContain("VAGPOQJ.pdf");
   });
 
+  it("derives core.matchs score from the FdM when score is absent", async () => {
+    const { match_id } = await seedMatchWithFdmCode("M1", "VAGPOQJ");
+    await insertRawFdm(buildFdmPayload("VAGPOQJ"), "VAGPOQJ");
+    await runFeuillesMatchEtl(SAISON);
+
+    const m = await query<{
+      score_dom: number | null; score_ext: number | null;
+      score_mt_dom: number | null; score_mt_ext: number | null; statut: string;
+    }>(
+      `SELECT score_dom, score_ext, score_mt_dom, score_mt_ext, statut FROM core.matchs WHERE id = $1`,
+      [match_id],
+    );
+    expect(m.rows[0]!.score_dom).toBe(23); // recevant → domicile
+    expect(m.rows[0]!.score_ext).toBe(37); // visiteur → extérieur
+    expect(m.rows[0]!.score_mt_dom).toBe(10);
+    expect(m.rows[0]!.score_mt_ext).toBe(17);
+    expect(m.rows[0]!.statut).toBe("joue");
+  });
+
+  it("does not overwrite an existing core.matchs score (no clobber)", async () => {
+    const { match_id } = await seedMatchWithFdmCode("M1", "VAGPOQJ");
+    await query(`UPDATE core.matchs SET score_dom = 99, score_ext = 88, statut = 'joue' WHERE id = $1`, [match_id]);
+    await insertRawFdm(buildFdmPayload("VAGPOQJ"), "VAGPOQJ");
+    await runFeuillesMatchEtl(SAISON);
+
+    const m = await query<{ score_dom: number; score_ext: number }>(
+      `SELECT score_dom, score_ext FROM core.matchs WHERE id = $1`,
+      [match_id],
+    );
+    expect(m.rows[0]!.score_dom).toBe(99);
+    expect(m.rows[0]!.score_ext).toBe(88);
+  });
+
   it("warns and skips when match (via fdm_code) does not resolve", async () => {
     // Pas de match avec fdm_code VAGPOQJ en core
     await insertRawFdm(buildFdmPayload("VAGPOQJ"), "VAGPOQJ");
