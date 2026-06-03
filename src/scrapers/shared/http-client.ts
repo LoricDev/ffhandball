@@ -10,14 +10,50 @@ type Domain = string;
 // (politesse vis-à-vis de la source). La concurrence (pool, ailleurs) ne sert qu'à masquer la
 // latence de traitement pour atteindre réellement ce plancher — pas à le dépasser.
 const nextStartAt = new Map<Domain, number>();
+// Instant jusqu'auquel le domaine est en pause après un blocage (cooldown), et compteur de
+// blocages consécutifs pour faire croître la pause. Partagés par tous les workers concurrents.
+const cooldownUntil = new Map<Domain, number>();
+const consecutiveBlocks = new Map<Domain, number>();
 
-// Réserve un créneau de façon ATOMIQUE : toutes les lectures/écritures de la Map se font
+// 403/405/429 = signal de bridage côté edge/origine (CloudFront → Apache) déclenché par le
+// volume de requêtes non-cachées venant d'une seule IP. Inutile de matraquer : on note le
+// blocage et on met le domaine en pause.
+const BLOCK_STATUSES = new Set([403, 405, 429]);
+
+// Seuls les statuts transitoires sont retryés. Les 4xx déterministes (404, 410, et 403/405 qui
+// sont ici un bridage instantané) ne le sont PAS : réessayer ne change rien sur le coup et
+// multiplie la charge + le bruit de logs. Le 429 fait exception (retry, mais via le cooldown).
+function isRetryableStatus(status: number): boolean {
+  return status === 408 || status === 429 || status >= 500;
+}
+
+function isRetryableError(err: unknown): boolean {
+  // HttpError → décision par statut ; sinon (erreur réseau/timeout undici) → transitoire, retry.
+  return err instanceof HttpError ? isRetryableStatus(err.status) : true;
+}
+
+// Met le domaine en pause : cooldown croissant (× nb de blocages consécutifs), plafonné.
+function markBlocked(domain: Domain): void {
+  const n = (consecutiveBlocks.get(domain) ?? 0) + 1;
+  consecutiveBlocks.set(domain, n);
+  const ms = Math.min(env.SCRAPE_COOLDOWN_MS * n, env.SCRAPE_COOLDOWN_MAX_MS);
+  const until = Date.now() + ms;
+  if (until > (cooldownUntil.get(domain) ?? 0)) cooldownUntil.set(domain, until);
+  logger.warn({ domain, consecutiveBlocks: n, cooldownMs: ms }, "domaine bridé (HTTP 403/405/429) — mise en pause");
+}
+
+function clearBlocked(domain: Domain): void {
+  if (consecutiveBlocks.get(domain)) consecutiveBlocks.set(domain, 0);
+}
+
+// Réserve un créneau de façon ATOMIQUE : toutes les lectures/écritures des Maps se font
 // de façon synchrone (avant tout await), donc deux appels concurrents obtiennent des
 // créneaux distincts et croissants — contrairement à l'ancienne version qui lisait `last`
-// puis l'écrivait après l'attente (course → rate-limit contourné).
+// puis l'écrivait après l'attente (course → rate-limit contourné). Le créneau respecte à la
+// fois le plancher de débit ET un éventuel cooldown actif (reprise douce, espacée).
 function reserveSlot(domain: Domain): number {
   const now = Date.now();
-  const start = Math.max(now, nextStartAt.get(domain) ?? 0);
+  const start = Math.max(now, nextStartAt.get(domain) ?? 0, cooldownUntil.get(domain) ?? 0);
   nextStartAt.set(domain, start + env.SCRAPE_RATE_LIMIT_MS);
   return start;
 }
@@ -48,18 +84,24 @@ export async function fetchHtml(url: string): Promise<FetchResult> {
         },
       });
       if (!res.ok) {
+        if (BLOCK_STATUSES.has(res.status)) markBlocked(domain);
         throw new HttpError(`HTTP ${res.status} for ${url}`, res.status, url);
       }
+      clearBlocked(domain);
       const body = await res.text();
       return { url, status: res.status, body };
     },
     {
       retries: env.SCRAPE_RETRY_MAX,
+      // N'autorise le retry que sur les statuts transitoires (cf. isRetryableStatus). Un 404/405
+      // est abandonné immédiatement → la page fautive est sautée sans 4 tentatives inutiles.
+      shouldRetry: (err) => isRetryableError(err),
       onFailedAttempt: (err) => {
-        logger.warn(
-          { url, attempt: err.attemptNumber, message: err.message },
-          "fetch failed, retrying",
-        );
+        if (isRetryableError(err) && err.retriesLeft > 0) {
+          logger.warn({ url, attempt: err.attemptNumber, message: err.message }, "fetch failed, retrying");
+        } else {
+          logger.warn({ url, attempt: err.attemptNumber, message: err.message }, "fetch failed (non-retryable), skipping");
+        }
       },
     },
   );
@@ -85,7 +127,10 @@ export async function fetchBinary(url: string): Promise<BinaryResponse> {
         },
       });
       // HTTP 4xx/5xx are returned as data — caller decides how to handle (e.g. skip on 404).
-      // Only network-level exceptions trigger retry.
+      // Only network-level exceptions trigger retry. On alimente quand même le cooldown : un
+      // 403/405/429 ici (PDF FdM) signale le même bridage IP que pour le HTML.
+      if (BLOCK_STATUSES.has(res.status)) markBlocked(domain);
+      else if (res.ok) clearBlocked(domain);
       const contentType = res.headers.get("content-type") ?? "";
       const body = Buffer.from(await res.arrayBuffer());
       return { url, status: res.status, body, contentType };
