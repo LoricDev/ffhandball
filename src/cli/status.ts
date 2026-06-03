@@ -357,7 +357,7 @@ function renderScrape(latestScrape: Map<string, ScrapeRow>): void {
   renderTable("SCRAPE", cols, rows);
 }
 
-function renderEtl(latestEtl: Map<string, EtlRow>): void {
+function renderEtl(latestEtl: Map<string, EtlRow>, progress: Map<string, number>): void {
   const cols: Column[] = [
     { header: "entity", align: "l" },
     { header: "état", align: "l" },
@@ -371,11 +371,16 @@ function renderEtl(latestEtl: Map<string, EtlRow>): void {
   ];
   const toRow = (label: string, row: EtlRow | undefined): string[] => {
     if (!row) return [label, "—", "", "", "", "", "", "", ""];
+    let duree = fmtDuration(row.started_at, row.finished_at, row.status);
+    if (row.status === "running") {
+      const pct = progress.get(normEntity(row.entity));
+      if (pct !== undefined) duree = `${pct}% en cours`;
+    }
     return [
       label,
       `${statusIcon(row.status)} ${row.status}`,
       fmtDate(row.started_at),
-      fmtDuration(row.started_at, row.finished_at, row.status),
+      duree,
       num(row.rows_read),
       num(row.rows_inserted),
       num(row.rows_updated),
@@ -517,6 +522,26 @@ async function main(): Promise<void> {
   const latestScrapeArr = [...latestScrape.values()];
   const latestEtlArr = [...latestEtl.values()];
 
+  // Avancement des ETL EN COURS (% = rows_read checkpointé / total de lignes raw distinctes),
+  // pour les entités traitées en streaming (matchs, classements, stats, feuilles).
+  const STREAMING_RAW: Record<string, string> = {
+    matchs: "raw.matchs",
+    classements: "raw.classements",
+    stats_joueurs: "raw.stats_joueurs",
+    feuilles_match: "raw.feuilles_match",
+  };
+  const etlProgress = new Map<string, number>();
+  for (const [key, row] of latestEtl) {
+    const table = STREAMING_RAW[key];
+    if (row.status !== "running" || !table) continue;
+    const r = await query<{ n: string }>(
+      `SELECT count(DISTINCT natural_key)::bigint AS n FROM ${table} WHERE saison = $1`,
+      [saison],
+    );
+    const total = Number(r.rows[0]?.n ?? 0);
+    if (total > 0) etlProgress.set(key, Math.min(99, Math.floor(((row.rows_read ?? 0) / total) * 100)));
+  }
+
   if (values.json) {
     out(
       JSON.stringify(
@@ -581,7 +606,7 @@ async function main(): Promise<void> {
 
   renderHeader(saison, saisons, scrapeRes.rows, etlRes.rows, latestScrapeArr, latestEtlArr);
   renderScrape(latestScrape);
-  renderEtl(latestEtl);
+  renderEtl(latestEtl, etlProgress);
   renderRawVolume(saison, rawVol);
   renderCoreVolume(saison, coreVol);
   renderIncidents(latestScrapeArr, latestEtlArr);
