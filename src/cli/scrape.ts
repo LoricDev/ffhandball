@@ -205,6 +205,7 @@ async function scrapeClubDetails(
     let fetch_failed = 0;
     let cdProcessed = 0;
     const cdProg = new Progress("scrape club-details", slugs.length);
+    await run.setTotal(slugs.length);
     for (const slug of slugs) {
       cdProg.tick(++cdProcessed);
       const url = `https://monclub.ffhandball.fr/clubs/${slug}/`;
@@ -391,6 +392,7 @@ async function scrapeCompetitions(
     let detailSkipped = 0;
     let compProcessed = 0;
     const compProg = new Progress("scrape competitions", competitions.length);
+    await run.setTotal(competitions.length);
     for (const { ext_competition_id, detail_url } of competitions) {
       compProg.tick(++compProcessed);
       const res = await tryFetchHtml(run, detail_url);
@@ -538,6 +540,7 @@ async function scrapeMatchs(
     let processed = 0;
     const mode = opts.journees ?? "courante";
     const prog = new Progress("scrape matchs", poules.length);
+    await run.setTotal(poules.length);
 
     // Poules traitées en parallèle (au plus SCRAPE_CONCURRENCY en vol). Le rate-limit reste
     // un plancher global par domaine — la concurrence masque la latence d'insertion sans
@@ -663,6 +666,7 @@ async function scrapeClassements(
     let pouleVide = 0;
     let processed = 0;
     const prog = new Progress("scrape classements", poules.length);
+    await run.setTotal(poules.length);
 
     await forEachConcurrent(poules, env.SCRAPE_CONCURRENCY, async (po) => {
       prog.tick(++processed);
@@ -746,6 +750,7 @@ async function scrapeStatsJoueurs(
     let pouleSkipped = 0;
     let sjProcessed = 0;
     const sjProg = new Progress("scrape stats-joueurs", poules.length);
+    await run.setTotal(poules.length);
 
     for (const po of poules) {
       sjProg.tick(++sjProcessed);
@@ -833,6 +838,7 @@ async function scrapeFeuillesMatch(
     let parseFail = 0;
     let processed = 0;
     const prog = new Progress("scrape feuilles-match", toProcess.length);
+    await run.setTotal(toProcess.length);
 
     for (const { fdm_code } of toProcess) {
       prog.tick(++processed);
