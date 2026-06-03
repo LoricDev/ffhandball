@@ -1,10 +1,11 @@
 // src/etl/classements.etl.ts
 import { query } from "@/db/client.js";
-import { iterateRawBatched } from "@/etl/shared/iterate-raw-batched.js";
+import { iterateRawBatched, countRawDistinct } from "@/etl/shared/iterate-raw-batched.js";
 import { rawClassementPayloadSchema, type RawClassementPayload } from "@/schemas/classement.schema.js";
 import { logger } from "@/lib/logger.js";
 import { insertWarnings, type EtlWarning } from "@/etl/shared/etl-warnings.js";
 import { loadIdIndex } from "@/etl/shared/lookups.js";
+import { Progress } from "@/lib/progress.js";
 
 export interface EtlReport {
   etl_run_id: number;
@@ -40,9 +41,11 @@ export async function runClassementsEtl(saison: string): Promise<EtlReport> {
     const poules = await loadIdIndex("poules", saison);
     const equipes = await loadIdIndex("equipes", saison);
     const warnings: EtlWarning[] = [];
+    const prog = new Progress("etl classements", await countRawDistinct("raw.classements", saison));
 
     for await (const row of iterateRawBatched("raw.classements", saison)) {
       report.rows_read++;
+      prog.tick(report.rows_read);
       const parsed = rawClassementPayloadSchema.safeParse(row.payload);
       if (!parsed.success) {
         await query(
@@ -103,6 +106,7 @@ export async function runClassementsEtl(saison: string): Promise<EtlReport> {
       else report.rows_updated++;
     }
 
+    prog.done(report.rows_read);
     await insertWarnings(etl_run_id, "classements", warnings);
 
     await query(
