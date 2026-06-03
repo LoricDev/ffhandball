@@ -11,10 +11,18 @@ MARKER_START="# --- ffhandball pipeline BEGIN ---"
 MARKER_END="# --- ffhandball pipeline END ---"
 
 CRON_BLOCK="$MARKER_START
-# Mise à jour quotidienne : matchs + ETL cascade + classements + stats-joueurs (02:00)
+# Mise à jour quotidienne : matchs + ETL cascade + classements + FdM récentes + stats-joueurs (02:00)
 0 2 * * *   $APP_DIR/deploy/cron/cron-daily.sh
+# Monitoring : santé runs + fraîcheur + qualité, alerte mail (07:00)
+0 7 * * *   $APP_DIR/deploy/cron/cron-monitor.sh
+# Healthcheck API toutes les 5 min (alerte une fois par incident)
+*/5 * * * * $APP_DIR/deploy/cron/cron-healthcheck.sh
 # Feuilles de match récentes (hebdo lundi 03:00)
 0 3 * * 1   $APP_DIR/deploy/cron/cron-weekly-fdm-recent.sh
+# Refresh structurel : clubs/compétitions/poules/équipes (hebdo dimanche 05:00)
+0 5 * * 0   $APP_DIR/deploy/cron/cron-weekly-structure.sh
+# Maintenance : purge api_logs + VACUUM + rotation logs (hebdo dimanche 06:00)
+0 6 * * 0   $APP_DIR/deploy/cron/cron-maintenance.sh
 # Rattrapage FdM complet (mensuel 1er du mois 22:00 — peut durer plusieurs nuits)
 0 22 1 * *  $APP_DIR/deploy/cron/cron-monthly-fdm-full.sh
 # Backup core.* quotidien avec rotation 14j (04:30)
@@ -39,7 +47,11 @@ echo "$NEW_CRONTAB" | crontab -
 
 echo "[install-crontab] Cron jobs ffhandball installés :"
 echo "  0 2 * * *   cron-daily.sh"
+echo "  0 7 * * *   cron-monitor.sh"
+echo "  */5 * * * * cron-healthcheck.sh"
 echo "  0 3 * * 1   cron-weekly-fdm-recent.sh"
+echo "  0 5 * * 0   cron-weekly-structure.sh"
+echo "  0 6 * * 0   cron-maintenance.sh"
 echo "  0 22 1 * *  cron-monthly-fdm-full.sh"
 echo "  30 4 * * *  backup-daily.sh"
 echo ""
