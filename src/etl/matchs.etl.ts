@@ -3,6 +3,8 @@ import { query } from "@/db/client.js";
 import { iterateRawBatched } from "@/etl/shared/iterate-raw-batched.js";
 import { rawMatchPayloadSchema, type RawMatchPayload } from "@/schemas/match.schema.js";
 import { logger } from "@/lib/logger.js";
+import { insertWarnings, type EtlWarning } from "@/etl/shared/etl-warnings.js";
+import { loadIdIndex } from "@/etl/shared/lookups.js";
 
 export interface EtlReport {
   etl_run_id: number;
@@ -13,22 +15,6 @@ export interface EtlReport {
   rows_updated: number;
   rows_noop: number;
   warnings_count: number;
-}
-
-async function resolvePouleId(idFfhb: string, saison: string): Promise<number | null> {
-  const r = await query<{ id: number }>(
-    `SELECT id FROM core.poules WHERE id_ffhb = $1 AND saison_code = $2`,
-    [idFfhb, saison],
-  );
-  return r.rows[0]?.id ?? null;
-}
-
-async function resolveEquipeId(idFfhb: string, saison: string): Promise<number | null> {
-  const r = await query<{ id: number }>(
-    `SELECT id FROM core.equipes WHERE id_ffhb = $1 AND saison_code = $2`,
-    [idFfhb, saison],
-  );
-  return r.rows[0]?.id ?? null;
 }
 
 function deduceStatut(scoreDom: number | null | undefined, scoreExt: number | null | undefined): "a_jouer" | "joue" {
@@ -71,6 +57,17 @@ export async function runMatchsEtl(saison: string, opts: MatchsEtlOptions = {}):
   };
 
   try {
+    // Préchargement des index FK en mémoire (2 requêtes) au lieu d'un SELECT par ligne
+    // (~580k allers-retours évités sur une saison complète). Les warnings sont accumulés et
+    // insérés en lot à la fin (au lieu d'un INSERT par ligne en échec).
+    const poules = await loadIdIndex("poules", saison);
+    const equipes = await loadIdIndex("equipes", saison);
+    const warnings: EtlWarning[] = [];
+    const warn = (natural_key: string, message: string): void => {
+      warnings.push({ natural_key, message });
+      report.warnings_count++;
+    };
+
     for await (const row of iterateRawBatched("raw.matchs", saison, { since: opts.since })) {
       report.rows_read++;
       const parsed = rawMatchPayloadSchema.safeParse(row.payload);
@@ -87,46 +84,26 @@ export async function runMatchsEtl(saison: string, opts: MatchsEtlOptions = {}):
 
       const p: RawMatchPayload = parsed.data;
 
-      const poule_id = await resolvePouleId(p.ext_poule_id, saison);
+      const poule_id = poules.get(p.ext_poule_id) ?? null;
       if (poule_id === null) {
-        await query(
-          `INSERT INTO core.etl_warnings (etl_run_id, entity, natural_key, message)
-           VALUES ($1,'matchs',$2,$3)`,
-          [etl_run_id, p.ext_rencontre_id, `poule ${p.ext_poule_id} introuvable`],
-        );
-        report.warnings_count++;
+        warn(p.ext_rencontre_id, `poule ${p.ext_poule_id} introuvable`);
         continue;
       }
 
-      const equipe_dom_id = await resolveEquipeId(p.ext_equipe_dom_id, saison);
+      const equipe_dom_id = equipes.get(p.ext_equipe_dom_id) ?? null;
       if (equipe_dom_id === null) {
-        await query(
-          `INSERT INTO core.etl_warnings (etl_run_id, entity, natural_key, message)
-           VALUES ($1,'matchs',$2,$3)`,
-          [etl_run_id, p.ext_rencontre_id, `equipe_dom ${p.ext_equipe_dom_id} introuvable`],
-        );
-        report.warnings_count++;
+        warn(p.ext_rencontre_id, `equipe_dom ${p.ext_equipe_dom_id} introuvable`);
         continue;
       }
 
-      const equipe_ext_id = await resolveEquipeId(p.ext_equipe_ext_id, saison);
+      const equipe_ext_id = equipes.get(p.ext_equipe_ext_id) ?? null;
       if (equipe_ext_id === null) {
-        await query(
-          `INSERT INTO core.etl_warnings (etl_run_id, entity, natural_key, message)
-           VALUES ($1,'matchs',$2,$3)`,
-          [etl_run_id, p.ext_rencontre_id, `equipe_ext ${p.ext_equipe_ext_id} introuvable`],
-        );
-        report.warnings_count++;
+        warn(p.ext_rencontre_id, `equipe_ext ${p.ext_equipe_ext_id} introuvable`);
         continue;
       }
 
       if (equipe_dom_id === equipe_ext_id) {
-        await query(
-          `INSERT INTO core.etl_warnings (etl_run_id, entity, natural_key, message)
-           VALUES ($1,'matchs',$2,$3)`,
-          [etl_run_id, p.ext_rencontre_id, `equipes identiques après résolution FK`],
-        );
-        report.warnings_count++;
+        warn(p.ext_rencontre_id, `equipes identiques après résolution FK`);
         continue;
       }
 
@@ -198,6 +175,8 @@ export async function runMatchsEtl(saison: string, opts: MatchsEtlOptions = {}):
       else if (result.updated) report.rows_updated++;
       else report.rows_noop++;
     }
+
+    await insertWarnings(etl_run_id, "matchs", warnings);
 
     await query(
       `UPDATE core.etl_runs
