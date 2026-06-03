@@ -9,6 +9,7 @@ import { parseArgs } from "node:util";
 import { closePool, query } from "@/db/client.js";
 import { canonicalizeSaison } from "@/etl/shared/parse-saison.js";
 import { sendMail } from "@/lib/mailer.js";
+import { renderEmail, emailTable, emailCallout, emailList } from "@/lib/email-template.js";
 
 interface RunRow {
   name: string;
@@ -29,33 +30,29 @@ async function latestSaison(): Promise<string | null> {
   return r.rows[0]?.saison ?? null;
 }
 
-function esc(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
 function buildHtml(saison: string, problems: string[], rejets24h: number, runs: RunRow[]): string {
-  const probList = problems.length
-    ? `<ul>${problems.map((p) => `<li>${esc(p)}</li>`).join("")}</ul>`
-    : `<p style="color:#16a34a">Aucun problème détecté.</p>`;
   const failed = runs.filter((r) => r.status === "failed" || r.status === "partial");
-  const failedTable = failed.length
-    ? `<h3>Runs en échec / partiels</h3>
-       <table border="1" cellspacing="0" style="border-collapse:collapse;font-family:monospace;font-size:13px">
-         <tr style="background:#f1f5f9"><th style="padding:4px 12px">entité</th><th style="padding:4px 12px">statut</th><th style="padding:4px 12px">erreur</th></tr>
-         ${failed
-           .map(
-             (r) =>
-               `<tr><td style="padding:4px 12px">${esc(r.name)}</td><td style="padding:4px 12px;color:#dc2626">${r.status}</td><td style="padding:4px 12px">${esc((r.error_message ?? "").slice(0, 160))}</td></tr>`,
-           )
-           .join("")}
-       </table>`
-    : "";
-  return `
-    <h2>${problems.length ? "⚠️" : "✅"} Monitoring ffhandball — saison ${saison}</h2>
-    ${probList}
-    <p style="color:#64748b">Rejets ETL sur 24 h : ${rejets24h}</p>
-    ${failedTable}
-  `;
+  const body = [
+    problems.length
+      ? emailCallout(`<strong>${problems.length} problème(s) détecté(s)</strong>${emailList(problems)}`, "warning")
+      : emailCallout("Aucun problème détecté — tous les runs récents sont au vert.", "success"),
+    `<div style="height:14px;"></div>`,
+    `<div style="font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;font-size:12px;color:#64748b;">Rejets ETL sur les dernières 24 h : <strong style="color:#334155;">${rejets24h}</strong></div>`,
+    failed.length
+      ? `<div style="height:16px;"></div><div style="font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;font-size:13px;font-weight:700;color:#0f172a;">Runs en échec / partiels</div><div style="height:8px;"></div>` +
+        emailTable(
+          ["Entité", "Statut", "Erreur"],
+          failed.map((r) => [r.name, r.status, (r.error_message ?? "").slice(0, 140)]),
+        )
+      : "",
+  ].join("");
+  return renderEmail({
+    status: problems.length ? "warning" : "success",
+    title: `Monitoring — saison ${saison}`,
+    preheader: problems.length ? `${problems.length} problème(s) détecté(s)` : "Tout est au vert",
+    bodyHtml: body,
+    footerNote: "Monitoring ffhandball",
+  });
 }
 
 async function main(): Promise<void> {
