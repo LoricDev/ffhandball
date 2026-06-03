@@ -8,6 +8,7 @@ export interface ScrapeRunInput {
 
 export interface ScrapeRunHandle {
   id: string;
+  setTotal(n: number): Promise<void>;
   incrementPages(n?: number): Promise<void>;
   finishSuccess(): Promise<void>;
   finishFailure(error: unknown): Promise<void>;
@@ -24,6 +25,9 @@ export async function startScrapeRun(input: ScrapeRunInput): Promise<ScrapeRunHa
 
   return {
     id,
+    async setTotal(n: number) {
+      await query(`UPDATE raw.scrape_runs SET pages_total = $1 WHERE id = $2`, [n, id]);
+    },
     async incrementPages(n = 1) {
       await query(
         `UPDATE raw.scrape_runs SET pages_scraped = pages_scraped + $1 WHERE id = $2`,
