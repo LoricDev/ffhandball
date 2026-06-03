@@ -18,7 +18,7 @@ import {
   slugifyLibelle,
 } from "@/scrapers/ffhandball/competition-list.scraper.js";
 import { parseCompetitionDetail } from "@/scrapers/ffhandball/competition-detail.scraper.js";
-import { parseRencontreList } from "@/scrapers/ffhandball/rencontre-list.scraper.js";
+import { parseRencontreList, type JourneeInfo } from "@/scrapers/ffhandball/rencontre-list.scraper.js";
 import { parseClassement } from "@/scrapers/ffhandball/classement.scraper.js";
 import { resolveDateWindow, type DateWindow } from "@/scrapers/shared/date-window.js";
 import { parseStatsJoueurs } from "@/scrapers/ffhandball/stats-joueurs.scraper.js";
@@ -31,7 +31,7 @@ interface CliArgs {
   limit?: number;
   slug?: string;
   level?: "national" | "regional" | "departemental";
-  journees?: "all" | "courante";
+  journees?: "all" | "courante" | "recent";
   window: DateWindow | null;
 }
 
@@ -76,12 +76,13 @@ function parseCliArgs(): CliArgs {
     level = values.level as "national" | "regional" | "departemental";
   }
 
-  let journees: "all" | "courante" | undefined;
+  let journees: "all" | "courante" | "recent" | undefined;
   if (values.journees !== undefined) {
-    if (values.journees !== "all" && values.journees !== "courante") {
-      throw new Error(`Invalid --journees value: ${values.journees}. Use 'all' or 'courante'.`);
+    const valid = ["all", "courante", "recent"] as const;
+    if (!valid.includes(values.journees as (typeof valid)[number])) {
+      throw new Error(`Invalid --journees value: ${values.journees}. Use 'all', 'recent' or 'courante'.`);
     }
-    journees = values.journees as "all" | "courante";
+    journees = values.journees as "all" | "courante" | "recent";
   }
 
   let recentDays: number | undefined;
@@ -513,11 +514,53 @@ async function selectScrapablePoules(
   return res.rows;
 }
 
+function startOfDayMs(now: Date): number {
+  const d = new Date(now);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+/**
+ * Journées à fetcher EN PLUS de la page courante, selon le mode :
+ *  - "courante" : aucune (seule la page par défaut, déjà récupérée).
+ *  - "all"      : toutes les journées DÉJÀ jouées (on saute les journées futures : aucun match
+ *                 à récupérer, et ce sont autant de hits non-cachés qui font basculer le WAF).
+ *  - "recent"   : seulement les journées jouées dans la fenêtre glissante des N derniers jours
+ *                 (runs réguliers ; le backfill complet se fait une fois en "all").
+ * La journée déjà couverte par la page courante est toujours exclue.
+ */
+function journeesToFetch(
+  mode: "all" | "courante" | "recent",
+  journees: JourneeInfo[],
+  alreadyFetched: number | undefined,
+  now: Date,
+): number[] {
+  if (mode === "courante") return [];
+  const todayMs = startOfDayMs(now);
+  const recentFromMs = todayMs - env.SCRAPE_MATCHS_RECENT_DAYS * 86_400_000;
+  const picked: number[] = [];
+  for (const j of journees) {
+    if (j.numero === alreadyFetched) continue;
+    const debutMs = j.date_debut ? Date.parse(`${j.date_debut}T00:00:00`) : NaN;
+    const finMs = j.date_fin ? Date.parse(`${j.date_fin}T23:59:59`) : debutMs;
+    // Saute les journées futures (date de début > aujourd'hui) : pas encore jouées.
+    if (Number.isFinite(debutMs) && debutMs > todayMs) continue;
+    if (mode === "recent") {
+      const refMs = Number.isFinite(finMs) ? finMs : debutMs;
+      // Sans date exploitable, on ne peut pas confirmer « récent » → on n'ajoute pas (la page
+      // courante couvre déjà la journée en cours).
+      if (!Number.isFinite(refMs) || refMs < recentFromMs) continue;
+    }
+    picked.push(j.numero);
+  }
+  return picked;
+}
+
 async function scrapeMatchs(
   saison: string,
   opts: {
     level?: "national" | "regional" | "departemental";
-    journees?: "all" | "courante";
+    journees?: "all" | "courante" | "recent";
     limit?: number;
     window?: DateWindow | null;
   },
@@ -539,6 +582,9 @@ async function scrapeMatchs(
     let pouleSkipped = 0;
     let processed = 0;
     const mode = opts.journees ?? "courante";
+    // Horloge figée pour tout le run : « journée future » et « fenêtre récente » sont évaluées
+    // de façon cohérente d'une poule à l'autre.
+    const now = new Date();
     const prog = new Progress("scrape matchs", poules.length);
     await run.setTotal(poules.length);
 
@@ -581,12 +627,10 @@ async function scrapeMatchs(
         natural_key: `${en.ext_equipe_id}-${en.ext_poule_id}`, payload: en, saison, http_status: res.status,
       }));
 
-      // If --journees=all, iterate over remaining journées
+      // Journées supplémentaires à fetcher selon le mode (all/recent), en sautant les futures.
       const journeeAlreadyFetched = parsed.matchs[0]?.journee;
-      if (mode === "all" && parsed.journees_disponibles.length > 0) {
-        const remaining = parsed.journees_disponibles.filter(
-          (j) => j !== journeeAlreadyFetched,
-        );
+      const remaining = journeesToFetch(mode, parsed.journees, journeeAlreadyFetched, now);
+      if (remaining.length > 0) {
         for (const j of remaining) {
           const jUrl = `${baseUrl}?numero_journee=${j}`;
           const jRes = await tryFetchHtml(run, jUrl);
@@ -870,7 +914,7 @@ async function main(): Promise<void> {
   } else if (args.entity === "matchs") {
     await scrapeMatchs(args.saison, {
       level: args.level as "national" | "regional" | "departemental" | undefined,
-      journees: args.journees as "all" | "courante" | undefined,
+      journees: args.journees as "all" | "courante" | "recent" | undefined,
       limit: args.limit,
       window: args.window,
     });
