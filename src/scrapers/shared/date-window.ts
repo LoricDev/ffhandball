@@ -53,7 +53,7 @@ export function parseDate(input: string): Date {
  * Renvoie `null` si aucun filtre temporel n'est demandé.
  */
 export function resolveDateWindow(
-  opts: { from?: string; to?: string; weekend?: boolean; live?: boolean },
+  opts: { from?: string; to?: string; weekend?: boolean; live?: boolean; recentDays?: number },
   now: Date,
 ): DateWindow | null {
   if (opts.from || opts.to) {
@@ -61,6 +61,9 @@ export function resolveDateWindow(
     const to = opts.to ? parseDate(opts.to) : new Date(8.64e15); // ~max Date
     if (to <= from) throw new Error(`Fenêtre invalide : --to (${opts.to}) doit suivre --from (${opts.from})`);
     return { from, to };
+  }
+  if (opts.recentDays && opts.recentDays > 0) {
+    return { from: new Date(now.getTime() - opts.recentDays * 86_400_000), to: new Date(now.getTime()) };
   }
   if (opts.live) return liveWindow(now);
   if (opts.weekend) return weekendWindow(now);
