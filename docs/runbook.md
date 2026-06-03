@@ -42,9 +42,14 @@ La sortie texte regroupe :
   cours), nombre de runs historiques, âge du dernier run, et liste des saisons
   disponibles (la saison inspectée est marquée `(active)`).
 - **SCRAPE** — dernière exécution par scraper : état, date de démarrage, **durée**
-  (ou `en cours`), pages scrapées, **âge** relatif.
-- **ETL** — dernière exécution par entité : état, démarrage, durée, **read**
-  (`rows_read`), **ins/upd/rej** et **warn** (`warnings_count`).
+  (ou `X% en cours` pour un run actif, = pages/total), pages scrapées, **âge** relatif.
+- **ETL** — dernière exécution par entité : état, démarrage, **durée** (ou `X% en cours`,
+  = `rows_read` checkpointé / total), **read**, **ins/upd/rej** et **warn**.
+
+Un scrape ou ETL **en cours** affiche donc son avancement en temps réel depuis n'importe
+quel terminal (les scrapes publient `pages`/`pages_total`, les ETL streamés checkpointent
+`rows_read` toutes les ~3 s). En live dans le terminal qui lance le job, une barre de
+progression détaillée (%/débit/ETA) s'affiche aussi (cf. `src/lib/progress.ts`).
 - **VOLUMÉTRIE RAW** — par table de capture, lignes totales + clés naturelles
   uniques + date de dernière capture, filtré sur la saison (avec ligne TOTAL).
 - **VOLUMÉTRIE CORE** — comptage par table normalisée (découvertes via
