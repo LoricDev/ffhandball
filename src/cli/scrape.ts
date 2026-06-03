@@ -561,6 +561,31 @@ async function scrapeMatchs(
         totalInserted++;
       }
 
+      // Équipes + engagements de la poule (source complète depuis equipe_options) : garantit
+      // que toute équipe référencée par un match est en base. Capturé une fois par poule.
+      for (const eq of parsed.equipes) {
+        await insertRaw("equipes", {
+          scrape_run_id: run.id,
+          source_url: eq.source_url,
+          source_site: "ffhandball.fr",
+          natural_key: eq.ext_equipe_id,
+          payload: eq,
+          saison,
+          http_status: res.status,
+        });
+      }
+      for (const en of parsed.engagements) {
+        await insertRaw("engagements", {
+          scrape_run_id: run.id,
+          source_url: en.source_url,
+          source_site: "ffhandball.fr",
+          natural_key: `${en.ext_equipe_id}-${en.ext_poule_id}`,
+          payload: en,
+          saison,
+          http_status: res.status,
+        });
+      }
+
       // If --journees=all, iterate over remaining journées
       if (mode === "all" && parsed.journees_disponibles.length > 0) {
         const remaining = parsed.journees_disponibles.filter(

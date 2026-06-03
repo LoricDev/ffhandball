@@ -1,10 +1,17 @@
 // src/scrapers/ffhandball/rencontre-list.scraper.ts
 import * as cheerio from "cheerio";
 import { rawMatchPayloadSchema, type RawMatchPayload } from "@/schemas/match.schema.js";
+import { rawEquipePayloadSchema, type RawEquipePayload } from "@/schemas/equipe.schema.js";
+import { rawEngagementPayloadSchema, type RawEngagementPayload } from "@/schemas/engagement.schema.js";
 
 export interface RencontreListResult {
   matchs: RawMatchPayload[];
   journees_disponibles: number[];
+  // Équipes de la poule (depuis equipe_options) : source COMPLÈTE et fiable, car toute équipe
+  // référencée par un match de cette poule y figure (corrige le trou de couverture des équipes,
+  // le calendar-button des fiches compétition étant parfois incomplet).
+  equipes: RawEquipePayload[];
+  engagements: RawEngagementPayload[];
 }
 
 function loadAttributes($: cheerio.CheerioAPI, componentName: string): unknown | null {
@@ -50,19 +57,38 @@ export function parseRencontreList(
 
   const pouleSelector = loadAttributes($, "competitions---poule-selector") as
     | {
-        equipe_options?: Array<{ id?: unknown; ext_equipeId?: unknown }>;
+        equipe_options?: Array<{ id?: unknown; ext_equipeId?: unknown; libelle?: unknown }>;
         poules?: Array<{ ext_pouleId?: unknown; journees?: unknown }>;
         selected_poule?: { ext_pouleId?: unknown; journees?: unknown };
       }
     | null;
   if (!pouleSelector) return null;
 
-  // Index equipe interne id → ext_equipeId
+  // Index equipe interne id → ext_equipeId, et capture des équipes/engagements de la poule.
+  // equipe_options liste TOUTES les équipes de la poule courante (avec leur libellé) → source
+  // complète : c'est ce qui garantit qu'une équipe référencée par un match existe en base.
   const equipeIdIndex = new Map<string, string>();
+  const equipes: RawEquipePayload[] = [];
+  const engagements: RawEngagementPayload[] = [];
+  const seenEquipe = new Set<string>();
   for (const opt of pouleSelector.equipe_options ?? []) {
     const id = typeof opt.id === "string" ? opt.id : null;
     const extId = typeof opt.ext_equipeId === "string" ? opt.ext_equipeId : null;
     if (id && extId) equipeIdIndex.set(id, extId);
+    if (!extId) continue;
+
+    const nom = typeof opt.libelle === "string" ? opt.libelle.trim() : null;
+    if (nom && !seenEquipe.has(extId)) {
+      seenEquipe.add(extId);
+      const pe = rawEquipePayloadSchema.safeParse({ ext_equipe_id: extId, nom, source_url: sourceUrl });
+      if (pe.success) equipes.push(pe.data);
+    }
+    const pen = rawEngagementPayloadSchema.safeParse({
+      ext_equipe_id: extId,
+      ext_poule_id: extPouleId,
+      source_url: sourceUrl,
+    });
+    if (pen.success) engagements.push(pen.data);
   }
 
   // Journées disponibles (depuis la poule sélectionnée OU celle qui matche extPouleId)
@@ -78,7 +104,7 @@ export function parseRencontreList(
     | { rencontres?: Array<Record<string, unknown>> }
     | null;
   if (!rencontreData?.rencontres) {
-    return { matchs: [], journees_disponibles };
+    return { matchs: [], journees_disponibles, equipes, engagements };
   }
 
   const matchs: RawMatchPayload[] = [];
@@ -119,5 +145,5 @@ export function parseRencontreList(
     if (parsed.success) matchs.push(parsed.data);
   }
 
-  return { matchs, journees_disponibles };
+  return { matchs, journees_disponibles, equipes, engagements };
 }
