@@ -125,32 +125,22 @@ pnpm etl --entity=matchs --saison=2025-2026 --since=2026-06-06T10:00:00Z   # bor
 `--incremental` lit `core.etl_runs` pour trouver le `finished_at` du dernier ETL matchs
 `success`. S'il n'en existe aucun, bascule en run complet (avec un warning).
 
-### 4. Rafraîchissement post-match (cron quotidien)
+### 4. Rafraîchissement post-match (cron)
 
-Les scores n'étant publiés que **le lendemain** (et les FdM encore plus tard), **un seul passage
-par jour** suffit. On le scope sur les derniers jours (fenêtre large pour absorber le décalage et
-les retardataires) et on le met en cron — pas de boucle `while`. Hors jours de match, les
-fenêtres sont vides → coût quasi nul.
+Les scores n'étant publiés que **le lendemain** (et les FdM encore plus tard), **un passage par
+jour** suffit. C'est déjà câblé dans les crons versionnés ([`deploy/cron/`](../deploy/cron/),
+installés par `install-crontab.sh`), désormais alignés sur le scoping `--days`/`--played` :
 
-Script `refresh-recent.sh` :
-```bash
-#!/usr/bin/env bash
-set -euo pipefail
-S=2025-2026
-# Scores + classements : matchs des 3 derniers jours (couvre le décalage du lendemain)
-pnpm scrape --entity=matchs         --saison=$S --days=3
-pnpm etl    --entity=matchs         --saison=$S --incremental
-pnpm scrape --entity=classements    --saison=$S --days=3
-pnpm etl    --entity=classements    --saison=$S
-# Feuilles de match : publiées plus tardivement → fenêtre plus large
-pnpm scrape --entity=feuilles-match --saison=$S --played --days=10
-pnpm etl    --entity=feuilles-match --saison=$S
-```
+- [`cron-daily.sh`](../deploy/cron/cron-daily.sh) (02:00) — matchs (journée courante) + ETL
+  **incrémental**, classements `--days=3`, **FdM `--played --days=10`** (l'ETL en dérive le score
+  sans attendre la publication serveur), stats-joueurs.
+- [`cron-weekly-fdm-recent.sh`](../deploy/cron/cron-weekly-fdm-recent.sh) (lundi 03:00) — filet
+  FdM `--played --days=30` pour les feuilles publiées tardivement.
+- [`cron-monthly-fdm-full.sh`](../deploy/cron/cron-monthly-fdm-full.sh) (1er du mois) — rattrapage
+  FdM complet.
 
-```cron
-# tous les matins à 7h
-0 7 * * *  cd /opt/ffhandball && ./refresh-recent.sh >> /var/log/ffhb-refresh.log 2>&1
-```
+Hors jours de match, les fenêtres `--days` sont vides → coût quasi nul. Pour un déclenchement
+manuel : `SAISON=2025-2026 ./deploy/cron/cron-daily.sh`.
 
 Vérifier le périmètre d'un passage : `pnpm poules:actives --days=3` (ou `--weekend`).
 Un 2ᵉ passage en soirée (ex. 19h) peut rattraper plus vite les matchs du jour si besoin, mais

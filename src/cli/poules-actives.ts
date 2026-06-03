@@ -1,5 +1,5 @@
 // src/cli/poules-actives.ts — combien de poules jouent sur une fenêtre (ex. un week-end),
-// et estimation du temps de scrape correspondant (faisabilité d'une mise à jour live).
+// et estimation du temps de scrape correspondant (dimensionner un passage de rafraîchissement).
 //
 // Usage : pnpm poules:actives [--saison=2025-2026] [--weekend] [--from=YYYY-MM-DD --to=YYYY-MM-DD]
 import { parseArgs } from "node:util";
@@ -16,7 +16,6 @@ interface NiveauRow {
 
 // Coût observé par requête : attente du rate-limit + ~130 ms de fetch/parse/insert.
 const OVERHEAD_S = 0.13;
-const CYCLE_S = 300; // budget « toutes les 5 min »
 
 function fmtDate(d: Date): string {
   return d.toISOString().replace("T", " ").slice(0, 16);
@@ -99,15 +98,13 @@ async function main(): Promise<void> {
   out(`  fenêtre : ${fmtDate(window.from)} → ${fmtDate(window.to)}  (heure locale)`);
   out(`  débit estimé : ${perReq.toFixed(2)} s/poule (rate-limit ${env.SCRAPE_RATE_LIMIT_MS} ms + ~${OVERHEAD_S}s)`);
   out("═".repeat(W));
-  out(`  ${pad("niveau", 16)} ${rpad("poules", 8)} ${rpad("matchs", 8)} ${rpad("scrape", 10)} ${rpad("cycles/5min", 12)}`);
+  out(`  ${pad("niveau", 16)} ${rpad("poules", 8)} ${rpad("matchs", 8)} ${rpad("temps scrape", 14)}`);
   out("  " + "─".repeat(W - 2));
 
   const line = (label: string, poules: number, matchs: number): void => {
     const secs = poules * perReq;
-    const cycles = Math.ceil(secs / CYCLE_S);
     out(
-      `  ${pad(label, 16)} ${rpad(String(poules), 8)} ${rpad(String(matchs), 8)} ` +
-        `${rpad(fmtDuration(secs), 10)} ${rpad(secs <= CYCLE_S ? "✓ 1" : String(cycles), 12)}`,
+      `  ${pad(label, 16)} ${rpad(String(poules), 8)} ${rpad(String(matchs), 8)} ${rpad(fmtDuration(secs), 14)}`,
     );
   };
 
@@ -119,13 +116,10 @@ async function main(): Promise<void> {
   if (totalPoules === 0) {
     out("  Aucun match dans la fenêtre — rien à rafraîchir (ou ETL matchs pas encore passé).");
   } else {
-    const totalSecs = totalPoules * perReq;
     out(
-      totalSecs <= CYCLE_S
-        ? `  → Tous niveaux tiennent dans un cycle de 5 min (${fmtDuration(totalSecs)}). Live global possible.`
-        : `  → Tous niveaux = ${fmtDuration(totalSecs)} > 5 min. Cibler par --level (ex. national) pour le live 5 min ;\n    les niveaux dont « cycles/5min » = ✓ 1 sont rafraîchissables toutes les 5 min.`,
+      `  → Scraper ces poules (--days/--weekend) prend ~${fmtDuration(totalPoules * perReq)} au débit actuel.` +
+        ` Cibler par --level pour réduire.`,
     );
-    out(`  Capacité par cycle au débit actuel : ~${Math.floor(CYCLE_S / perReq)} poules / 5 min.`);
   }
   out();
 }
