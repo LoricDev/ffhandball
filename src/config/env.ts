@@ -4,6 +4,11 @@ const envSchema = z.object({
   DATABASE_URL: z.string().url(),
   SCRAPE_USER_AGENT: z.string().min(10),
   SCRAPE_RATE_LIMIT_MS: z.coerce.number().int().min(0).default(1500),
+  // Plancher de débit DÉDIÉ au domaine média FdM (media-ffhb-fdm.ffhandball.fr). Ce domaine
+  // passe par CloudFront → origine et bride l'IP au 405 sur les cache-miss (chaque PDF n'est
+  // tiré qu'une fois). Il lui faut un rythme bien plus lent que le HTML pour ne JAMAIS déclencher
+  // le bridage (et donc éviter les cooldowns de 60–300 s qui plombent le débit réel).
+  SCRAPE_FDM_RATE_LIMIT_MS: z.coerce.number().int().min(0).default(1500),
   SCRAPE_CONCURRENCY: z.coerce.number().int().min(1).default(2),
   SCRAPE_RETRY_MAX: z.coerce.number().int().min(0).default(3),
   // Anti-blocage edge/origine (CloudFront → Apache) : un 403/405/429 signale que l'IP est
