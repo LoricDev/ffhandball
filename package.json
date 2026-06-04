@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "commands": "node --import tsx src/cli/commands.ts",
     "scrape": "node --env-file=.env --import tsx src/cli/scrape.ts",
     "etl": "node --env-file=.env --import tsx src/cli/etl.ts",
     "apikey": "node --env-file=.env --import tsx src/cli/apikey.ts",
