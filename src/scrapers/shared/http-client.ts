@@ -24,6 +24,27 @@ const BLOCK_STATUSES = new Set([403, 405, 429]);
 // PDF tiré une seule fois). Il bride l'IP au 405 bien plus tôt que le HTML → plancher dédié.
 const FDM_MEDIA_DOMAIN = "media-ffhb-fdm.ffhandball.fr";
 
+// Headers de diagnostic CloudFront/origine, journalisés à chaque blocage. Ils tranchent QUI
+// bride, ce qui décide si répartir sur plusieurs IP servirait à quelque chose :
+//   - `server: CloudFront` (+ `x-cache: Error from cloudfront`) → rejet AU bord (WAF par IP
+//     source) → distribuer sur plusieurs IP AIDERAIT.
+//   - `server: Apache`/origine (+ `x-cache: Miss/Error from cloudfront`) → 405 généré par
+//     l'ORIGINE sur cache-miss → l'origine ne voit que les IP de CloudFront, pas la tienne :
+//     multiplier les IP n'y changerait RIEN (et augmenterait la charge → plus de 405).
+// `retry-after` (429) et `x-amz-cf-pop`/`x-amz-cf-id` complètent le tableau (PoP, trace).
+const CDN_DIAG_HEADERS = [
+  "server", "via", "x-cache", "age", "retry-after", "x-amz-cf-pop", "x-amz-cf-id",
+] as const;
+
+function cdnDiagnostics(res: Response): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const h of CDN_DIAG_HEADERS) {
+    const v = res.headers.get(h);
+    if (v) out[h] = v;
+  }
+  return out;
+}
+
 // Plancher de débit applicable à un domaine. Global par défaut, mais le domaine média FdM a le
 // sien (cf. SCRAPE_FDM_RATE_LIMIT_MS) pour ne pas déclencher le bridage CloudFront sur cache-miss.
 function rateLimitFor(domain: Domain): number {
@@ -43,13 +64,18 @@ function isRetryableError(err: unknown): boolean {
 }
 
 // Met le domaine en pause : cooldown croissant (× nb de blocages consécutifs), plafonné.
-function markBlocked(domain: Domain): void {
+// `status` + `cdn` (headers CloudFront/origine) sont journalisés pour diagnostiquer edge vs
+// origine (cf. CDN_DIAG_HEADERS) : c'est ce qui dit si répartir sur plusieurs IP servirait.
+function markBlocked(domain: Domain, status: number, cdn: Record<string, string>): void {
   const n = (consecutiveBlocks.get(domain) ?? 0) + 1;
   consecutiveBlocks.set(domain, n);
   const ms = Math.min(env.SCRAPE_COOLDOWN_MS * n, env.SCRAPE_COOLDOWN_MAX_MS);
   const until = Date.now() + ms;
   if (until > (cooldownUntil.get(domain) ?? 0)) cooldownUntil.set(domain, until);
-  logger.warn({ domain, consecutiveBlocks: n, cooldownMs: ms }, "domaine bridé (HTTP 403/405/429) — mise en pause");
+  logger.warn(
+    { domain, status, consecutiveBlocks: n, cooldownMs: ms, cdn },
+    "domaine bridé (HTTP 403/405/429) — mise en pause",
+  );
 }
 
 function clearBlocked(domain: Domain): void {
@@ -94,7 +120,7 @@ export async function fetchHtml(url: string): Promise<FetchResult> {
         },
       });
       if (!res.ok) {
-        if (BLOCK_STATUSES.has(res.status)) markBlocked(domain);
+        if (BLOCK_STATUSES.has(res.status)) markBlocked(domain, res.status, cdnDiagnostics(res));
         throw new HttpError(`HTTP ${res.status} for ${url}`, res.status, url);
       }
       clearBlocked(domain);
@@ -139,7 +165,7 @@ export async function fetchBinary(url: string): Promise<BinaryResponse> {
       // HTTP 4xx/5xx are returned as data — caller decides how to handle (e.g. skip on 404).
       // Only network-level exceptions trigger retry. On alimente quand même le cooldown : un
       // 403/405/429 ici (PDF FdM) signale le même bridage IP que pour le HTML.
-      if (BLOCK_STATUSES.has(res.status)) markBlocked(domain);
+      if (BLOCK_STATUSES.has(res.status)) markBlocked(domain, res.status, cdnDiagnostics(res));
       else if (res.ok) clearBlocked(domain);
       const contentType = res.headers.get("content-type") ?? "";
       const body = Buffer.from(await res.arrayBuffer());
