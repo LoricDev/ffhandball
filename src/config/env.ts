@@ -19,6 +19,10 @@ const envSchema = z.object({
   // --journees=recent : fenêtre glissante (en jours) des journées récemment jouées à re-scraper
   // lors des runs réguliers (le backfill complet se fait une fois avec --journees=all).
   SCRAPE_MATCHS_RECENT_DAYS: z.coerce.number().int().positive().default(14),
+  // FdM : âge (jours) au-delà duquel on cesse de retenter un 404 (cache négatif borné). Une
+  // feuille non publiée N jours après le match ne le sera plus → on arrête de taper l'origine
+  // (cache-miss = cause des 405). En deçà on retente (publication tardive). Cf. migration 0021.
+  SCRAPE_FDM_MAX_AGE_DAYS: z.coerce.number().int().positive().default(60),
   LOG_LEVEL: z.enum(["trace", "debug", "info", "warn", "error", "fatal"]).default("info"),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   API_PORT: z.coerce.number().int().default(3000),
