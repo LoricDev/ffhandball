@@ -5,10 +5,10 @@ import { logger } from "@/lib/logger.js";
 
 type Domain = string;
 
-// Prochain instant de départ autorisé par domaine. `SCRAPE_RATE_LIMIT_MS` reste un PLANCHER
-// GLOBAL : au plus une requête démarrée par intervalle et par domaine, même sous concurrence
-// (politesse vis-à-vis de la source). La concurrence (pool, ailleurs) ne sert qu'à masquer la
-// latence de traitement pour atteindre réellement ce plancher — pas à le dépasser.
+// Prochain instant de départ autorisé par domaine. Le plancher de débit (cf. rateLimitFor) est
+// appliqué PAR DOMAINE : au plus une requête démarrée par intervalle et par domaine, même sous
+// concurrence (politesse vis-à-vis de la source). La concurrence (pool, ailleurs) ne sert qu'à
+// masquer la latence de traitement pour atteindre réellement ce plancher — pas à le dépasser.
 const nextStartAt = new Map<Domain, number>();
 // Instant jusqu'auquel le domaine est en pause après un blocage (cooldown), et compteur de
 // blocages consécutifs pour faire croître la pause. Partagés par tous les workers concurrents.
@@ -19,6 +19,16 @@ const consecutiveBlocks = new Map<Domain, number>();
 // volume de requêtes non-cachées venant d'une seule IP. Inutile de matraquer : on note le
 // blocage et on met le domaine en pause.
 const BLOCK_STATUSES = new Set([403, 405, 429]);
+
+// Domaine média des feuilles de match : CloudFront → origine, cache-miss systématique (chaque
+// PDF tiré une seule fois). Il bride l'IP au 405 bien plus tôt que le HTML → plancher dédié.
+const FDM_MEDIA_DOMAIN = "media-ffhb-fdm.ffhandball.fr";
+
+// Plancher de débit applicable à un domaine. Global par défaut, mais le domaine média FdM a le
+// sien (cf. SCRAPE_FDM_RATE_LIMIT_MS) pour ne pas déclencher le bridage CloudFront sur cache-miss.
+function rateLimitFor(domain: Domain): number {
+  return domain === FDM_MEDIA_DOMAIN ? env.SCRAPE_FDM_RATE_LIMIT_MS : env.SCRAPE_RATE_LIMIT_MS;
+}
 
 // Seuls les statuts transitoires sont retryés. Les 4xx déterministes (404, 410, et 403/405 qui
 // sont ici un bridage instantané) ne le sont PAS : réessayer ne change rien sur le coup et
@@ -54,7 +64,7 @@ function clearBlocked(domain: Domain): void {
 function reserveSlot(domain: Domain): number {
   const now = Date.now();
   const start = Math.max(now, nextStartAt.get(domain) ?? 0, cooldownUntil.get(domain) ?? 0);
-  nextStartAt.set(domain, start + env.SCRAPE_RATE_LIMIT_MS);
+  nextStartAt.set(domain, start + rateLimitFor(domain));
   return start;
 }
 
