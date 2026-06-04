@@ -33,6 +33,7 @@ interface CliArgs {
   level?: "national" | "regional" | "departemental";
   journees?: "all" | "courante" | "recent";
   window: DateWindow | null;
+  reparseCache?: boolean;
 }
 
 function parseCliArgs(): CliArgs {
@@ -53,6 +54,9 @@ function parseCliArgs(): CliArgs {
       days: { type: "string" },      // fenêtre [now−N jours, now] (ex. backfill FdM récentes)
       // feuilles-match : accepté mais sans effet — les matchs joués (< aujourd'hui) sont le défaut.
       played: { type: "boolean" },
+      // feuilles-match : re-parser les PDF en cache (échecs de parsing passés), SANS réseau.
+      // À lancer après une amélioration du parser. Cf. raw.feuilles_match_fetch_state.
+      "reparse-cache": { type: "boolean" },
     },
   });
   if (!values.entity) throw new Error("--entity required");
@@ -112,6 +116,7 @@ function parseCliArgs(): CliArgs {
     level,
     journees,
     window,
+    reparseCache: values["reparse-cache"] === true,
   };
 }
 
@@ -803,6 +808,54 @@ async function scrapeStatsJoueurs(
   }
 }
 
+const FDM_MEDIA_SITE = "media-ffhb-fdm.ffhandball.fr";
+
+// Enregistre l'issue NON-réussie d'un fetch FdM (cf. migration 0021). 'parse_failed' stocke les
+// bytes (re-parsing offline ultérieur, zéro réseau) ; 'not_found' = 404 (cache négatif borné).
+// Upsert sur (fdm_code, saison) : ré-issue ⇒ on incrémente attempts et on rafraîchit l'état.
+async function recordFdmFetchState(opts: {
+  fdm_code: string;
+  saison: string;
+  source_url: string;
+  status: "parse_failed" | "not_found";
+  http_status: number;
+  pdf_bytes?: Buffer | null;
+  content_type?: string | null;
+}): Promise<void> {
+  await query(
+    `INSERT INTO raw.feuilles_match_fetch_state AS fs
+       (fdm_code, saison, source_url, status, http_status, pdf_bytes, pdf_size_bytes, content_type)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+     ON CONFLICT (fdm_code, saison) DO UPDATE SET
+       status          = EXCLUDED.status,
+       http_status     = EXCLUDED.http_status,
+       source_url      = EXCLUDED.source_url,
+       pdf_bytes       = EXCLUDED.pdf_bytes,
+       pdf_size_bytes  = EXCLUDED.pdf_size_bytes,
+       content_type    = EXCLUDED.content_type,
+       attempts        = fs.attempts + 1,
+       last_attempt_at = now()`,
+    [
+      opts.fdm_code,
+      opts.saison,
+      opts.source_url,
+      opts.status,
+      opts.http_status,
+      opts.pdf_bytes ?? null,
+      opts.pdf_bytes ? opts.pdf_bytes.length : null,
+      opts.content_type ?? null,
+    ],
+  );
+}
+
+// À appeler dès qu'une FdM est capturée avec succès : purge tout état d'échec antérieur.
+async function clearFdmFetchState(fdm_code: string, saison: string): Promise<void> {
+  await query(
+    `DELETE FROM raw.feuilles_match_fetch_state WHERE fdm_code = $1 AND saison = $2`,
+    [fdm_code, saison],
+  );
+}
+
 async function scrapeFeuillesMatch(
   saison: string,
   opts: { limit?: number; window?: DateWindow | null },
@@ -826,6 +879,12 @@ async function scrapeFeuillesMatch(
       params.push(opts.window.from, opts.window.to);
       windowFilter = ` AND m.date_heure >= $2 AND m.date_heure < $3`;
     }
+    const ageIdx = params.length + 1;
+    params.push(env.SCRAPE_FDM_MAX_AGE_DAYS);
+    // Exclut, en plus des FdM déjà capturées : (a) les PDF en cache d'échec de parsing — on a déjà
+    // les bytes, inutile de re-télécharger (récupérables via --reparse-cache) ; (b) les 404 dont le
+    // match est plus vieux que SCRAPE_FDM_MAX_AGE_DAYS — la feuille ne viendra plus. Les 404 récents
+    // restent retentés (publication tardive). Cf. migration 0021.
     const codesRes = await query<{ fdm_code: string }>(
       `SELECT DISTINCT m.fdm_code
          FROM core.matchs m
@@ -836,6 +895,15 @@ async function scrapeFeuillesMatch(
           AND NOT EXISTS (
             SELECT 1 FROM raw.feuilles_match fm
             WHERE fm.natural_key = m.fdm_code AND fm.saison = $1
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM raw.feuilles_match_fetch_state fs
+            WHERE fs.fdm_code = m.fdm_code AND fs.saison = $1
+              AND (
+                fs.status = 'parse_failed'
+                OR (fs.status = 'not_found'
+                    AND m.date_heure < now() - make_interval(days => $${ageIdx}::int))
+              )
           )
         ORDER BY m.fdm_code`,
       params,
@@ -864,9 +932,15 @@ async function scrapeFeuillesMatch(
 
       if (res.status === 404) {
         total404++;
+        // Cache négatif : on cessera de retenter une fois le match trop vieux (cf. sélection).
+        await recordFdmFetchState({
+          fdm_code, saison, source_url: url, status: "not_found", http_status: 404,
+        });
         continue;
       }
       if (res.status >= 400) {
+        // Bridage transitoire (405/403/429) déjà géré par le cooldown du http-client : on NE
+        // mémorise PAS d'état (sinon on s'exclurait à tort), on retentera au prochain run.
         logger.warn({ url, status: res.status }, "FdM fetch failed");
         continue;
       }
@@ -874,18 +948,25 @@ async function scrapeFeuillesMatch(
       const parsed = await parseFdmPdf(res.body, url, fdm_code);
       if (!parsed) {
         parseFail++;
+        // PDF bien téléchargé mais non parsé : on garde les bytes pour re-parser plus tard SANS
+        // re-télécharger (--reparse-cache après amélioration du parser).
+        await recordFdmFetchState({
+          fdm_code, saison, source_url: url, status: "parse_failed",
+          http_status: res.status, pdf_bytes: res.body, content_type: res.contentType,
+        });
         continue;
       }
 
       await insertRaw("feuilles_match", {
         scrape_run_id: run.id,
         source_url: url,
-        source_site: "media-ffhb-fdm.ffhandball.fr",
+        source_site: FDM_MEDIA_SITE,
         natural_key: fdm_code,
         payload: parsed,
         saison,
         http_status: res.status,
       });
+      await clearFdmFetchState(fdm_code, saison);
       totalSuccess++;
     }
     prog.done(toProcess.length);
@@ -894,6 +975,66 @@ async function scrapeFeuillesMatch(
     await run.finishSuccess();
   } catch (err) {
     logger.error({ err }, "feuilles-match scrape failed");
+    await run.finishFailure(err);
+    throw err;
+  }
+}
+
+// Mode --reparse-cache : re-parse les PDF mis en cache lors d'échecs de parsing passés, SANS
+// aucun accès réseau. À lancer après une amélioration du parser FdM. Les succès sont promus dans
+// raw.feuilles_match et purgés du cache ; les échecs persistants restent en cache pour plus tard.
+async function reparseFdmCache(saison: string, opts: { limit?: number }): Promise<void> {
+  const run = await startScrapeRun({
+    source_site: FDM_MEDIA_SITE,
+    scraper_name: "feuilles-match",
+    saison,
+  });
+  logger.info({ run_id: run.id }, "starting feuilles-match re-parse from cache (no network)");
+
+  try {
+    const cached = await query<{ fdm_code: string; source_url: string; pdf_bytes: Buffer }>(
+      `SELECT fdm_code, source_url, pdf_bytes
+         FROM raw.feuilles_match_fetch_state
+        WHERE saison = $1 AND status = 'parse_failed' AND pdf_bytes IS NOT NULL
+        ORDER BY fdm_code`,
+      [saison],
+    );
+    let rows = cached.rows;
+    if (opts.limit !== undefined) rows = rows.slice(0, opts.limit);
+    logger.info({ count: rows.length }, "cached FdM PDFs to re-parse");
+
+    let recovered = 0;
+    let stillFail = 0;
+    let processed = 0;
+    const prog = new Progress("reparse feuilles-match (cache)", rows.length);
+    await run.setTotal(rows.length);
+
+    for (const { fdm_code, source_url, pdf_bytes } of rows) {
+      prog.tick(++processed);
+      await run.incrementPages(1);
+      const parsed = await parseFdmPdf(pdf_bytes, source_url, fdm_code);
+      if (!parsed) {
+        stillFail++;
+        continue;
+      }
+      await insertRaw("feuilles_match", {
+        scrape_run_id: run.id,
+        source_url,
+        source_site: FDM_MEDIA_SITE,
+        natural_key: fdm_code,
+        payload: parsed,
+        saison,
+        http_status: 200,
+      });
+      await clearFdmFetchState(fdm_code, saison);
+      recovered++;
+    }
+    prog.done(rows.length);
+
+    logger.info({ recovered, stillFail, total: rows.length }, "feuilles-match cache re-parse done");
+    await run.finishSuccess();
+  } catch (err) {
+    logger.error({ err }, "feuilles-match cache re-parse failed");
     await run.finishFailure(err);
     throw err;
   }
@@ -927,7 +1068,11 @@ async function main(): Promise<void> {
   } else if (args.entity === "stats-joueurs") {
     await scrapeStatsJoueurs(args.saison, { limit: args.limit });
   } else if (args.entity === "feuilles-match") {
-    await scrapeFeuillesMatch(args.saison, { limit: args.limit, window: args.window });
+    if (args.reparseCache) {
+      await reparseFdmCache(args.saison, { limit: args.limit });
+    } else {
+      await scrapeFeuillesMatch(args.saison, { limit: args.limit, window: args.window });
+    }
   } else {
     throw new Error(`unknown entity: ${args.entity}`);
   }
