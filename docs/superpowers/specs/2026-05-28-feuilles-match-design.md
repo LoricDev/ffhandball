@@ -13,7 +13,7 @@ Les 8 features publiques du pipeline sont livrées. Les données joueurs publiqu
 
 **Découverte décisive** : les feuilles de match (FdM) officielles FFHandball sont accessibles publiquement en PDF, indexées par `fdmCode` (champ déjà capturé dans `raw.matchs.payload`).
 
-**URL pattern** : `https://media-ffhb-fdm.ffhandball.fr/fdm/{c1}/{c2}/{c3}/{c4}/{fdmCode}.pdf` où `c1..c4` sont les 4 premières lettres du code. Exemple : `VAGPOQJ` → `/fdm/V/A/G/P/VAGPOQJ.pdf`.
+**URL pattern** : `https://fdm.fdme.ffhandball.fr/{c1}/{c2}/{c3}/{c4}/{fdmCode}.pdf` où `c1..c4` sont les 4 premières lettres du code. Exemple : `VAGPOQJ` → `/fdm/V/A/G/P/VAGPOQJ.pdf`.
 
 **Validation** : PDF v1.4, 2 pages, ~300 KB en moyenne, **texte extractible** (testé avec `pdf-parse` v2). Contenu : composition complète avec n° licence, stats par joueur (buts, 7m, tirs, arrêts, sanctions), déroulé chronologique action par action.
 
@@ -45,7 +45,7 @@ raw.matchs.payload.fdm_code (existant, ~50-200k entrées selon scope)
         │
         ▼ Pour chaque fdm_code unique :
         │
-fetch https://media-ffhb-fdm.ffhandball.fr/fdm/{c1}/{c2}/{c3}/{c4}/{fdmCode}.pdf
+fetch https://fdm.fdme.ffhandball.fr/{c1}/{c2}/{c3}/{c4}/{fdmCode}.pdf
         │ (rate-limited ≥2s, UA identifiable, nocturne pour full run)
         ▼
 parseFdmPdf(pdfBuffer, sourceUrl, fdmCode) :
@@ -410,7 +410,7 @@ async function scrapeFeuillesMatch(saison: string, opts: { limit? }) {
 
     let totalSuccess = 0, total404 = 0, parseFail = 0;
     for (const { fdm_code } of toProcess) {
-      const url = `https://media-ffhb-fdm.ffhandball.fr/fdm/${fdm_code[0]}/${fdm_code[1]}/${fdm_code[2]}/${fdm_code[3]}/${fdm_code}.pdf`;
+      const url = `https://fdm.fdme.ffhandball.fr/${fdm_code[0]}/${fdm_code[1]}/${fdm_code[2]}/${fdm_code[3]}/${fdm_code}.pdf`;
       const res = await fetchBinary(url);  // helper similar à fetchHtml mais retourne buffer
       await run.incrementPages(1);
       if (res.status === 404) { total404++; continue; }
@@ -422,7 +422,7 @@ async function scrapeFeuillesMatch(saison: string, opts: { limit? }) {
       await insertRaw("feuilles_match", {
         scrape_run_id: run.id,
         source_url: url,
-        source_site: "media-ffhb-fdm.ffhandball.fr",
+        source_site: "fdm.fdme.ffhandball.fr",
         natural_key: fdm_code,
         payload: parsed,
         saison,
@@ -497,7 +497,7 @@ CREATE INDEX IF NOT EXISTS idx_matchs_fdm_code ON core.matchs (fdm_code);
 ```
 
 - `fdm_code` : code court FFHB (ex `"VAGPOQJ"`), peuplé par l'ETL `matchs` étendu depuis `raw.matchs.payload.fdm_code`. Sert de natural key pour résoudre `match_id ↔ FdM` côté ETL `feuilles-match`.
-- `fdm_url` : URL complète du PDF FdM (ex `"https://media-ffhb-fdm.ffhandball.fr/fdm/V/A/G/P/VAGPOQJ.pdf"`), peuplée par l'ETL `feuilles-match` après téléchargement réussi (HTTP 200). Permet à l'API future de servir directement le lien sans recalcul du pattern. NULL tant que le PDF n'a pas été téléchargé/parsé (FdM pas encore publiée pour les matchs futurs, ou pas encore scrapé).
+- `fdm_url` : URL complète du PDF FdM (ex `"https://fdm.fdme.ffhandball.fr/V/A/G/P/VAGPOQJ.pdf"`), peuplée par l'ETL `feuilles-match` après téléchargement réussi (HTTP 200). Permet à l'API future de servir directement le lien sans recalcul du pattern. NULL tant que le PDF n'a pas été téléchargé/parsé (FdM pas encore publiée pour les matchs futurs, ou pas encore scrapé).
 
 Cette modification est mineure (pas de breakage). L'ETL `matchs` existant est étendu de quelques lignes pour propager `fdm_code` (déjà dans le payload Zod-validé).
 

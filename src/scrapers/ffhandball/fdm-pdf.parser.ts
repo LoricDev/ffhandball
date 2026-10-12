@@ -65,8 +65,13 @@ function parseHeader(page1Text: string, _fdmCode: string): HeaderResult | null {
   // Poule + Groupe : "56-HONNEUR MASC POULE 3 Groupe M56000202G"
   const pouleLine = lines.find((l) => l.includes("Groupe") && !l.includes("Code Renc") && !l.startsWith("Organisateur") && !l.startsWith("Compétition"));
   const pouleMatch = pouleLine?.match(/^(.+?)\s+Groupe\s+(.+)$/);
-  const poule_libelle = pouleMatch?.[1]?.trim();
-  const groupe = pouleMatch?.[2]?.trim();
+  // Nouvelle FDME (2026-2027) : le libellé de poule et "Groupe XXX" sont sur deux lignes.
+  const groupeIdx = lines.findIndex((l) => /^Groupe\s+\S+/.test(l));
+  const poule_libelle =
+    pouleMatch?.[1]?.trim() ?? (groupeIdx > 0 ? lines[groupeIdx - 1]?.trim() : undefined);
+  const groupe =
+    pouleMatch?.[2]?.trim() ??
+    (groupeIdx >= 0 ? lines[groupeIdx]!.replace(/^Groupe\s+/, "").trim() : undefined);
 
   // Équipes + score final : "ETAIN RAYON ARTISTIQUE SPORTIF STAINOIS / SARRALBE 23 37"
   const matchLine = lines.find((l) => l.includes(" / ") && /\d+\s+\d+\s*$/.test(l));
@@ -78,22 +83,35 @@ function parseHeader(page1Text: string, _fdmCode: string): HeaderResult | null {
   const score_visiteur = parseInt(matchMatch[4]!, 10);
 
   // Date : "DATE: samedi 25/04/2026 20:30 Journée / Date"
-  const dateLine = lines.find((l) => l.startsWith("DATE:"));
-  const dateMatch = dateLine?.match(/^DATE:\s*(.+?)(?:\s+Journ[eé]e|$)/);
+  // Nouvelle FDME : "Date samedi 03/10/2026 21:00 Journée J4 Salle OMNISPORTS" sur une seule ligne.
+  const dateLine = lines.find(
+    (l) => l.startsWith("DATE:") || /^Date\s+\S+\s+\d{2}\/\d{2}\/\d{4}/.test(l),
+  );
+  const dateMatch = dateLine?.match(/^(?:DATE:|Date)\s*(.+?)(?:\s+Journ[eé]e|$)/);
   const date_heure_str = dateMatch?.[1]?.trim() ?? "";
 
   // Journée : "J18 du 28/03/26 au 29/03/26" or "Inintiale J18 du..."
   const journeeMatch = page1Text.match(/J\d+\s+du\s+[\d/]+\s+au\s+[\d/]+/);
-  const journee_libelle = journeeMatch?.[0];
+  const journee_libelle =
+    journeeMatch?.[0] ?? dateLine?.match(/Journ[eé]e\s+(J\d+)/)?.[1];
 
   // Salle : "SALLE: 5655 - OMNISPORT DE LA GALAVAUDE"
   const salleMatch = page1Text.match(/SALLE:\s*(.+?)(?:\n|$)/);
   const salle_raw = salleMatch?.[1]?.trim();
   // Remove leading code like "5655 - "
-  const salle_libelle = salle_raw?.replace(/^\d+\s*-\s*/, "").trim();
+  const salleNewMatch = dateLine?.match(/\sSalle\s+(.+)$/);
+  const salle_libelle = salle_raw
+    ? salle_raw.replace(/^\d+\s*-\s*/, "").trim()
+    : salleNewMatch?.[1]?.trim();
   // Address is on the next line after SALLE
   const salleIdx = lines.findIndex((l) => l.includes("SALLE:"));
-  const salle_adresse = salleIdx >= 0 && salleIdx + 1 < lines.length ? lines[salleIdx + 1] : undefined;
+  const dateIdx = dateLine ? lines.indexOf(dateLine) : -1;
+  const salle_adresse =
+    salleIdx >= 0 && salleIdx + 1 < lines.length
+      ? lines[salleIdx + 1]
+      : salleNewMatch && dateIdx >= 0
+        ? lines[dateIdx + 1]?.trim() || undefined
+        : undefined;
 
   // Score mi-temps : from "DETAIL SCORE" section
   // Format: "10 17 23 37" where first two numbers are mi-temps (période 1)
@@ -152,6 +170,8 @@ const OFFICIEL_ROLES: Array<[string, string]> = [
   ["Tuteur de Table", "tuteur_table"],
   ["Responsable de Salle", "responsable_salle"],
   ["Responsable de", "responsable_salle"],
+  ["Resp. de salle", "responsable_salle"],
+  ["Juge accomp.", "accompagnateur"],
   ["Chronométreur", "chronometreur"],
   ["Secrétaire", "secretaire"],
   ["Accompagnateur", "accompagnateur"],
@@ -169,7 +189,9 @@ function parseOfficiels(page1Text: string): RawOfficielInFdm[] {
     // NOM = one or more all-caps tokens (with hyphen/apostrophe allowed)
     // prenom = first lowercase token
     // licence = 10-13 digits
-    const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const escaped = label
+      .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+      .replace(/[a-zà-ÿ]/gi, (c) => `[${c.toLowerCase()}${c.toUpperCase()}]`);
     const re = new RegExp(
       `${escaped}\\s+([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝ][A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝ'\\-]*)(?:\\s+([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝ][A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝ'\\-]*))*\\s+([a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüý][a-zA-Z'\\- ]*)\\s+(\\d{10,13})`,
       "g"
@@ -178,7 +200,7 @@ function parseOfficiels(page1Text: string): RawOfficielInFdm[] {
     // Simpler approach: after the label, match NOM(s) prenom licence
     // NOM = sequence of all-uppercase words, prenom = first word with lowercase
     const simpleRe = new RegExp(
-      `${escaped}\\s+((?:[A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝ][A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝ'\\-]+\\s+)+)([a-z][a-zA-Z'\\-]*)\\s+(\\d{10,13})`,
+      `${escaped}\\s+((?:[A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝ][A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝ'\\-]+\\s+)+)([A-Za-zÀ-ÿ][a-zA-ZÀ-ÿ'\\-]*)\\s+(\\d{10,13})`,
       "g"
     );
 
@@ -384,17 +406,23 @@ function parseJoueurLine(line: string): RawJoueurInFdm | null {
 
 function parseComposition(page1Text: string, section: "recevant" | "visiteur"): RawJoueurInFdm[] {
   const lines = page1Text.split("\n");
-  const marker = section === "recevant" ? "Club Recevant" : "Club Visiteur";
+  // Ancien format : "Club Recevant" sur une ligne ; nouvelle FDME : "Club" / "recevant" / "- 5657013".
+  const word = section === "recevant" ? "recevant" : "visiteur";
+  const isMarker = (i: number, w: string): boolean => {
+    const l = lines[i] ?? "";
+    if (new RegExp(`club\\s+${w}`, "i").test(l)) return true;
+    return l.trim() === "Club" && (lines[i + 1] ?? "").trim().toLowerCase() === w;
+  };
 
   // Find the section start
-  const startIdx = lines.findIndex((l) => l.includes(marker));
+  const startIdx = lines.findIndex((_, i) => isMarker(i, word));
   if (startIdx < 0) return [];
 
   // For "recevant", end at "Club Visiteur" or "DETAIL"
   // For "visiteur", end at "DETAIL" or end of text
   let endIdx: number;
   if (section === "recevant") {
-    const visIdx = lines.findIndex((l, i) => i > startIdx && l.includes("Club Visiteur"));
+    const visIdx = lines.findIndex((_, i) => i > startIdx && isMarker(i, "visiteur"));
     const detailIdx = lines.findIndex((l, i) => i > startIdx && l.includes("DETAIL"));
     endIdx = Math.min(
       visIdx > 0 ? visIdx : Infinity,
