@@ -36,7 +36,7 @@ describe("runEquipesEtl", () => {
     await query(`DELETE FROM raw.competitions`);
     await query(`DELETE FROM raw.equipes`);
     await query(`DELETE FROM raw.scrape_runs WHERE scraper_name='competitions'`);
-    await query(`TRUNCATE core.engagements, core.equipes, core.poules, core.phases, core.competitions, core.etl_runs, core.etl_warnings, core.etl_rejets RESTART IDENTITY CASCADE`);
+    await query(`TRUNCATE core.engagements, core.equipes, core.poules, core.phases, core.competitions, core.clubs, core.etl_runs, core.etl_warnings, core.etl_rejets RESTART IDENTITY CASCADE`);
     await setupSaison();
   });
 
@@ -65,6 +65,22 @@ describe("runEquipesEtl", () => {
     expect(row.rows[0]!.club_id).toBeNull();
     expect(row.rows[0]!.ext_structure_id).toBe("1720");
     expect(row.rows[0]!.logo).toBe("logo.jpg");
+  });
+
+  it("résout club_id quand un club correspond à ext_structure_id (sans warning)", async () => {
+    await query(`INSERT INTO core.clubs (id_ffhb, nom) VALUES ('1720', 'BREST BRETAGNE HANDBALL') ON CONFLICT DO NOTHING`);
+    await insertRawEquipe(
+      { ext_equipe_id: "EQ2", nom: "BREST BB", ext_structure_id: "1720", source_url: "https://x/" },
+      "EQ2",
+    );
+    const report = await runEquipesEtl(SAISON);
+    expect(report.rows_inserted).toBe(1);
+    expect(report.warnings_count).toBe(0); // club trouvé → plus de warning
+
+    const row = await query<{ club_id: number | null }>(
+      `SELECT e.club_id FROM core.equipes e WHERE e.id_ffhb = 'EQ2'`,
+    );
+    expect(row.rows[0]!.club_id).not.toBeNull();
   });
 
   it("rejects invalid payload", async () => {

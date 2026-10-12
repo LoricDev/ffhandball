@@ -42,14 +42,15 @@ run_step() {
   fi
 }
 
-# Scrape FdM complet (sans --limit — scrape toutes les FdM non encore en raw)
-# Le scraper est idempotent : saute les FdM déjà présentes en raw via natural_key
-run_step "scrape feuilles-match (complet, sans limit)" \
-  npm run scrape -- --entity=feuilles-match --saison="$SAISON"
+# Scrape FdM complet : tous les matchs JOUÉS de la saison jusqu'à aujourd'hui, pas encore
+# capturés (les matchs à venir n'ont pas de FdM → exclus). Idempotent : saute les FdM déjà
+# présentes en raw via natural_key.
+run_step "scrape feuilles-match (complet, jusqu'à aujourd'hui)" \
+  pnpm scrape --entity=feuilles-match --saison="$SAISON"
 
 # ETL cascade : joueurs + match_compositions + match_actions + match_officiels arbitres
 run_step "etl feuilles-match (cascade)" \
-  npm run etl -- --entity=feuilles-match --saison="$SAISON"
+  pnpm etl --entity=feuilles-match --saison="$SAISON"
 
 if [ "$ERRORS" -eq 0 ]; then
   log "=== cron-monthly-fdm-full terminé avec succès ==="

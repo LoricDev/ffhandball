@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # deploy/cron/cron-daily.sh
-# Scrape quotidien : journée courante matchs + ETL cascade + classements + stats-joueurs
+# Scrape quotidien : matchs (journée courante) + classements & FdM des matchs joués récents
+# (l'ETL FdM dérive le score sans attendre la publication serveur) + stats-joueurs.
 # Lancé chaque nuit à 02:00 par le crontab utilisateur.
 
 set -euo pipefail
@@ -42,30 +43,39 @@ run_step() {
 
 # 1. Matchs journée courante
 run_step "scrape matchs (journée courante)" \
-  npm run scrape -- --entity=matchs --saison="$SAISON"
+  pnpm scrape --entity=matchs --saison="$SAISON"
 
-run_step "etl matchs" \
-  npm run etl -- --entity=matchs --saison="$SAISON"
+run_step "etl matchs (incrémental)" \
+  pnpm etl --entity=matchs --saison="$SAISON" --incremental
 
 run_step "etl arbitres" \
-  npm run etl -- --entity=arbitres --saison="$SAISON"
+  pnpm etl --entity=arbitres --saison="$SAISON"
 
 run_step "etl match_officiels" \
-  npm run etl -- --entity=match_officiels --saison="$SAISON"
+  pnpm etl --entity=match_officiels --saison="$SAISON"
 
-# 2. Classements
-run_step "scrape classements" \
-  npm run scrape -- --entity=classements --saison="$SAISON"
+# 2. Classements (seulement les poules ayant joué récemment)
+run_step "scrape classements (3 derniers jours)" \
+  pnpm scrape --entity=classements --saison="$SAISON" --days=3
 
 run_step "etl classements" \
-  npm run etl -- --entity=classements --saison="$SAISON"
+  pnpm etl --entity=classements --saison="$SAISON"
 
-# 3. Stats joueurs (national + régional séniors)
+# 3. Feuilles de match récentes : l'ETL en dérive le SCORE sans attendre la publication
+#    serveur (le lendemain). Le scrape FdM ne cible que les matchs joués (date < auj.) ;
+#    --days=10 le borne aux 10 derniers jours, et il saute les FdM déjà capturées → coût minime.
+run_step "scrape feuilles-match (joués, 10 derniers jours)" \
+  pnpm scrape --entity=feuilles-match --saison="$SAISON" --days=10
+
+run_step "etl feuilles-match" \
+  pnpm etl --entity=feuilles-match --saison="$SAISON"
+
+# 4. Stats joueurs (national + régional séniors)
 run_step "scrape stats-joueurs" \
-  npm run scrape -- --entity=stats-joueurs --saison="$SAISON"
+  pnpm scrape --entity=stats-joueurs --saison="$SAISON"
 
 run_step "etl stats-joueurs" \
-  npm run etl -- --entity=stats-joueurs --saison="$SAISON"
+  pnpm etl --entity=stats-joueurs --saison="$SAISON"
 
 # ─── Bilan ───────────────────────────────────────────────────────────────────
 

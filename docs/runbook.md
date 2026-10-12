@@ -3,7 +3,7 @@
 ## Lancer un scrape
 
 ```bash
-npm run scrape -- --entity=<entity> --saison=YYYY-YYYY [--url=...]
+pnpm scrape --entity=<entity> --saison=YYYY-YYYY [--url=...]
 ```
 
 Le scraper :
@@ -15,7 +15,7 @@ Le scraper :
 ## Lancer un ETL
 
 ```bash
-npm run etl -- --entity=<entity> --saison=YYYY-YYYY
+pnpm etl --entity=<entity> --saison=YYYY-YYYY
 ```
 
 L'ETL :
@@ -24,6 +24,182 @@ L'ETL :
 3. Normalise (texte, dates, FKs)
 4. UPSERT idempotent vers `core.<entity>`
 5. Rapport dans `core.etl_runs`
+
+## Suivre l'état du pipeline
+
+```bash
+pnpm status                       # saison la plus récente présente en base
+pnpm status --saison=2025-2026    # saison explicite
+pnpm status --json                # sortie JSON (monitoring / cron / alerting)
+```
+
+`--saison` est **optionnel** : sans argument, la commande sélectionne la saison la
+plus récente trouvée dans `raw.scrape_runs` / `core.etl_runs`.
+
+La sortie texte regroupe :
+
+- **En-tête** — bilan par section (`✓` succès / `~` partiel / `✗` échec / `…` en
+  cours), nombre de runs historiques, âge du dernier run, et liste des saisons
+  disponibles (la saison inspectée est marquée `(active)`).
+- **SCRAPE** — dernière exécution par scraper : état, date de démarrage, **durée**
+  (ou `X% en cours` pour un run actif, = pages/total), pages scrapées, **âge** relatif.
+- **ETL** — dernière exécution par entité : état, démarrage, **durée** (ou `X% en cours`,
+  = `rows_read` checkpointé / total), **read**, **ins/upd/rej** et **warn**.
+
+Un scrape ou ETL **en cours** affiche donc son avancement en temps réel depuis n'importe
+quel terminal (les scrapes publient `pages`/`pages_total`, les ETL streamés checkpointent
+`rows_read` toutes les ~3 s). En live dans le terminal qui lance le job, une barre de
+progression détaillée (%/débit/ETA) s'affiche aussi (cf. `src/lib/progress.ts`).
+- **VOLUMÉTRIE RAW** — par table de capture, lignes totales + clés naturelles
+  uniques + date de dernière capture, filtré sur la saison (avec ligne TOTAL).
+- **VOLUMÉTRIE CORE** — comptage par table normalisée (découvertes via
+  `information_schema`). Filtre `saison` quand la table porte `saison_code`,
+  sinon `global` (référentiel non filtrable par saison).
+- **INCIDENTS** — liste des runs `failed` / `partial` avec leur message d'erreur.
+
+En cas de base injoignable, la commande affiche un message explicite (`ECONNREFUSED`
+→ « base de données injoignable… vérifiez que Postgres tourne et `DATABASE_URL` »).
+Le mode `--json` expose les mêmes données (`resume`, `scrape`, `etl`,
+`volumetrieRaw`, `volumetrieCore`, `saisonsDisponibles`) pour l'automatisation.
+
+## Monitoring & maintenance (crons)
+
+Trois commandes + des crons dédiés ([`deploy/cron/`](../deploy/cron/), installés par
+`install-crontab.sh`). Les alertes passent par le mailer (no-op si `MAIL_*` non configuré).
+
+```bash
+pnpm monitor                       # santé runs + fraîcheur + qualité ; mail si problème
+pnpm monitor --digest              # force l'envoi d'un récap même si tout est OK
+pnpm maintenance                   # purge core.api_logs (>90j) + VACUUM ANALYZE
+pnpm maintenance --dry-run         # compte sans supprimer/vacuumer
+pnpm notify "sujet" "corps"        # envoie un mail (primitive pour scripts bash)
+```
+
+- `monitor` ([cron-monitor.sh](../deploy/cron/cron-monitor.sh), **07:00**) détecte : runs scrape/ETL
+  `failed`/`partial` (dernière exécution), absence d'activité depuis `--max-age-hours` (défaut 36 h),
+  et matchs joués il y a >`--stale-score-days` (défaut 10 j) toujours sans score. Saison = la plus
+  récente par défaut.
+- `cron-healthcheck.sh` (**toutes les 5 min**) sonde `/ready` et alerte **une seule fois par
+  incident** (flag), puis notifie le rétablissement.
+- `cron-weekly-structure.sh` (**dimanche 05:00**) re-scrape les référentiels (clubs, compétitions,
+  poules, équipes…) qui dérivent en cours de saison.
+- `cron-maintenance.sh` (**dimanche 06:00**) lance `pnpm maintenance` + supprime les logs cron >30 j.
+
+Crons existants alignés : `cron-daily.sh` (02:00) inclut désormais matchs `--incremental`,
+classements `--days=3` et FdM `--days=10` ; `cron-weekly-fdm-recent.sh` utilise `--days=30`.
+
+## Mise à jour post-match (scores + feuilles de match)
+
+> **ffhandball.fr n'est pas une source temps réel.** Sur les pages matchs, le score n'est publié
+> par le serveur ffhandball qu'**à partir du lendemain**. **Mais la feuille de match (PDF) contient
+> le score**, et elle est disponible avant cette publication : l'ETL `feuilles-match` **dérive donc
+> le score** (`score_recevant`→domicile, `score_visiteur`→extérieur) dès qu'on a récupéré et parsé
+> le PDF — on n'attend plus le serveur. Le score n'est rempli que s'il est encore absent, donc un
+> score déjà publié/corrigé par ffhandball n'est jamais écrasé.
+>
+> **Conséquence : inutile de poller souvent** — un **run par jour** (le matin, matchs de la veille)
+> suffit, sur une fenêtre des derniers jours pour absorber les retardataires. La FdM étant le chemin
+> le plus rapide vers le score, le passage `feuilles-match` est le plus utile.
+
+Un refresh complet d'une saison ≈ 10 h (dominé par le nombre de poules, scrapées une par une
+au rate-limit). Pour ne rafraîchir **que les matchs récents**, on combine : scrape ciblé par
+date (`--days`), ETL incrémental, et mesure de faisabilité.
+
+### 1. Mesurer combien de poules jouent
+
+```bash
+pnpm poules:actives --saison=2025-2026            # week-end courant (défaut)
+pnpm poules:actives --from=2026-06-06 --to=2026-06-08
+```
+
+Affiche, par niveau, le nombre de poules/matchs dans la fenêtre et le **temps de scrape estimé**
+(au débit `SCRAPE_RATE_LIMIT_MS`). Sert à dimensionner le périmètre d'un passage de rafraîchissement
+(combien de temps prend le scrape des matchs récents, par niveau).
+
+### 2. Scraper uniquement les poules qui jouent
+
+`matchs` et `classements` acceptent un **scoping temporel** : seules les poules ayant un
+match dans la fenêtre sont scrapées (via `core.matchs.date_heure`, donc l'ETL matchs doit
+déjà être passé au moins une fois pour peupler les dates).
+
+```bash
+# Recommandé : matchs des 2 derniers jours (les résultats y atterrissent en différé)
+pnpm scrape --entity=matchs --saison=2025-2026 --days=2
+
+# Week-end courant, tous niveaux confondus
+pnpm scrape --entity=matchs --saison=2025-2026 --weekend
+
+# Fenêtre explicite (dates ou datetimes ISO)
+pnpm scrape --entity=matchs --saison=2025-2026 --from=2026-06-06 --to=2026-06-08
+```
+
+- `--days=N` = `now−N jours … now` : la bonne fenêtre pour **rattraper les résultats** qui
+  arrivent en différé. On re-scrape les matchs récents jusqu'à ce que leur score (= la FdM) soit
+  saisi. Couplé à la dédup `payload_hash`, une poule sans nouveauté n'écrit rien.
+- `--weekend` = samedi 00:00 → lundi 00:00 de la semaine ISO en cours (heure locale).
+- `--live` (`now−2h … now+30min`) existe mais a **peu d'intérêt ici** : les scores n'étant pas
+  temps réel, la fenêtre est presque toujours vide de nouveautés. Utile seulement pour le cas
+  rare « score saisi avant la FdM » (problème de FdM), ou pour voir qui joue à l'instant T.
+- Priorité : `--from`/`--to` > `--days` > `--live` > `--weekend`.
+- Les matchs à heure estimée (minuit) ne tombent pas dans `--live` → `--days`/`--weekend` les couvrent.
+
+### 3. ETL incrémental (ne retraiter que le delta)
+
+L'ETL matchs complet relit ~194k lignes (~6 min). En mode incrémental, il ne traite que
+les lignes capturées depuis le dernier ETL réussi → quelques secondes.
+
+```bash
+pnpm etl --entity=matchs --saison=2025-2026 --incremental    # depuis le dernier ETL matchs OK
+pnpm etl --entity=matchs --saison=2025-2026 --since=2026-06-06T10:00:00Z   # borne explicite
+```
+
+`--incremental` lit `core.etl_runs` pour trouver le `finished_at` du dernier ETL matchs
+`success`. S'il n'en existe aucun, bascule en run complet (avec un warning).
+
+### 4. Rafraîchissement post-match (cron)
+
+Les scores n'étant publiés que **le lendemain** (et les FdM encore plus tard), **un passage par
+jour** suffit. C'est déjà câblé dans les crons versionnés ([`deploy/cron/`](../deploy/cron/),
+installés par `install-crontab.sh`), désormais alignés sur le scoping `--days` :
+
+- [`cron-daily.sh`](../deploy/cron/cron-daily.sh) (02:00) — matchs (journée courante) + ETL
+  **incrémental**, classements `--days=3`, **FdM `--days=10`** (l'ETL en dérive le score
+  sans attendre la publication serveur), stats-joueurs.
+- [`cron-weekly-fdm-recent.sh`](../deploy/cron/cron-weekly-fdm-recent.sh) (lundi 03:00) — filet
+  FdM `--days=30` pour les feuilles publiées tardivement.
+- [`cron-monthly-fdm-full.sh`](../deploy/cron/cron-monthly-fdm-full.sh) (1er du mois) — rattrapage
+  FdM complet.
+
+Hors jours de match, les fenêtres `--days` sont vides → coût quasi nul. Pour un déclenchement
+manuel : `SAISON=2025-2026 ./deploy/cron/cron-daily.sh`.
+
+Vérifier le périmètre d'un passage : `pnpm poules:actives --days=3` (ou `--weekend`).
+Un 2ᵉ passage en soirée (ex. 19h) peut rattraper plus vite les matchs du jour si besoin, mais
+ce n'est pas nécessaire — la quasi-totalité des résultats arrive le lendemain.
+
+### Régler le débit (concurrence + rate-limit)
+
+`matchs` et `classements` traitent les poules en parallèle (`SCRAPE_CONCURRENCY` workers).
+**Important** : `SCRAPE_RATE_LIMIT_MS` reste un **plancher global par domaine** — au plus une
+requête démarrée par intervalle, même sous concurrence (politesse). La concurrence ne
+*dépasse* pas ce plancher : elle masque la latence de traitement (~0,13 s/poule d'insertion)
+pour l'atteindre réellement, et permet de soutenir un intervalle plus court.
+
+Débit ≈ `min(SCRAPE_CONCURRENCY / latence, 1000 / SCRAPE_RATE_LIMIT_MS)` req/s.
+
+| Réglage | Débit | ~temps/poule |
+|---|---|---|
+| 500 ms, concurrence 1 (séquentiel) | ~1,6/s | 0,63 s |
+| 500 ms, concurrence 4 | ~2/s (plancher) | 0,50 s |
+| **150 ms, concurrence 4** | **~6,6/s** | **0,15 s** |
+| 100 ms, concurrence 4 | ~10/s | 0,10 s |
+
+→ Pour aller ~×4, **baisse `SCRAPE_RATE_LIMIT_MS`** (ex. 150 ms) ; la concurrence=4 permet de
+soutenir ce rythme malgré la latence. Garder un intervalle généreux = plus poli mais plus lent.
+La concurrence seule, à 500 ms, ne gagne que ~20 %.
+
+**Limites restantes** : l'ETL classements n'est pas encore incrémental (mais rapide, ~1m26) ;
+les scrapers structurels (clubs, compétitions…) restent séquentiels.
 
 ## Inspecter les rejets / warnings
 
@@ -47,7 +223,7 @@ TRUNCATE core.clubs CASCADE;
 
 Puis :
 ```bash
-npm run etl -- --entity=clubs --saison=2025-2026
+pnpm etl --entity=clubs --saison=2025-2026
 ```
 
 Les données `raw.clubs` ne sont pas touchées — pas besoin de rescraper.
@@ -55,9 +231,9 @@ Les données `raw.clubs` ne sont pas touchées — pas besoin de rescraper.
 ## Reset complet de la base
 
 ```bash
-npm run db:reset       # ⚠️ drop le volume Docker
-npm run db:migrate
-npm run db:seed
+pnpm db:reset       # ⚠️ drop le volume Docker
+pnpm db:migrate
+pnpm db:seed
 ```
 
 ## Ajouter une nouvelle saison
@@ -77,13 +253,13 @@ Elle visite chaque fiche détail club sur `monclub.ffhandball.fr` et alimente
 
 ```bash
 # Test dev sur 1 slug
-npm run scrape -- --entity=club-details --saison=2025-2026 --slug=handball-club-de-vihiers
+pnpm scrape --entity=club-details --saison=2025-2026 --slug=handball-club-de-vihiers
 
 # Validation sur 50 clubs (les 50 premiers slugs renvoyés par la home)
-npm run scrape -- --entity=club-details --saison=2025-2026 --limit=50
+pnpm scrape --entity=club-details --saison=2025-2026 --limit=50
 
 # Run complet (~2326 clubs, ~60 min à 1.5 s/req — préférer en nocturne)
-npm run scrape -- --entity=club-details --saison=2025-2026
+pnpm scrape --entity=club-details --saison=2025-2026
 ```
 
 Le scraper :
@@ -96,8 +272,8 @@ Le scraper :
 ### ETL dans l'ordre
 
 ```bash
-npm run etl -- --entity=salles --saison=2025-2026
-npm run etl -- --entity=clubs  --saison=2025-2026
+pnpm etl --entity=salles --saison=2025-2026
+pnpm etl --entity=clubs  --saison=2025-2026
 ```
 
 **Important :** lancer `salles` **avant** `clubs`. Sinon le `salle_principale_id`
@@ -167,10 +343,10 @@ pour en extraire les phases et poules.
 
 ```bash
 # Test dev : un seul niveau, peu de détails
-npm run scrape -- --entity=competitions --saison=2025-2026 --level=national --limit=5
+pnpm scrape --entity=competitions --saison=2025-2026 --level=national --limit=5
 
 # Run complet (les 3 niveaux, ~500-700 compétitions, ~25-35 min)
-npm run scrape -- --entity=competitions --saison=2025-2026
+pnpm scrape --entity=competitions --saison=2025-2026
 ```
 
 Le scraper :
@@ -184,9 +360,9 @@ Le scraper :
 ### ETL dans l'ordre
 
 ```bash
-npm run etl -- --entity=competitions --saison=2025-2026
-npm run etl -- --entity=phases       --saison=2025-2026
-npm run etl -- --entity=poules       --saison=2025-2026
+pnpm etl --entity=competitions --saison=2025-2026
+pnpm etl --entity=phases       --saison=2025-2026
+pnpm etl --entity=poules       --saison=2025-2026
 ```
 
 **Ordre obligatoire :** `competitions` → `phases` → `poules`. Lancer `phases` avant `competitions` génère un warning par phase (FK competition non résolue) et skippe la ligne. Un re-run de `phases` après `competitions` résout les FKs manquantes (les anciens warnings restent en base mais l'état final est correct).
@@ -244,14 +420,14 @@ récupérer les équipes (le HTML brut n'est pas stocké en raw).
 
 ```bash
 # Re-run complet pour peupler raw.equipes + raw.engagements
-npm run scrape -- --entity=competitions --saison=2025-2026
+pnpm scrape --entity=competitions --saison=2025-2026
 
 # ETL — ordre complet (5 étapes désormais)
-npm run etl -- --entity=competitions  --saison=2025-2026
-npm run etl -- --entity=phases        --saison=2025-2026
-npm run etl -- --entity=poules        --saison=2025-2026
-npm run etl -- --entity=equipes       --saison=2025-2026  # ← nouveau
-npm run etl -- --entity=engagements   --saison=2025-2026  # ← nouveau
+pnpm etl --entity=competitions  --saison=2025-2026
+pnpm etl --entity=phases        --saison=2025-2026
+pnpm etl --entity=poules        --saison=2025-2026
+pnpm etl --entity=equipes       --saison=2025-2026  # ← nouveau
+pnpm etl --entity=engagements   --saison=2025-2026  # ← nouveau
 ```
 
 **Important — FK `club_id` non résolue** : à ce stade, `core.equipes.club_id` est
@@ -321,16 +497,16 @@ competitions) pour itérer.
 
 ```bash
 # Dev — 5 poules nationales, journée courante
-npm run scrape -- --entity=matchs --saison=2025-2026 --level=national --limit=5
+pnpm scrape --entity=matchs --saison=2025-2026 --level=national --limit=5
 
 # Journée courante 3 niveaux (~1500-3000 req, ~1h)
-npm run scrape -- --entity=matchs --saison=2025-2026
+pnpm scrape --entity=matchs --saison=2025-2026
 
 # Toutes journées nationales (~1300-2600 req, ~30-65 min)
-npm run scrape -- --entity=matchs --saison=2025-2026 --level=national --journees=all
+pnpm scrape --entity=matchs --saison=2025-2026 --level=national --journees=all
 
 # Run complet 3 niveaux toutes journées (~40-80k req, 17-33h sur plusieurs nuits)
-npm run scrape -- --entity=matchs --saison=2025-2026 --journees=all
+pnpm scrape --entity=matchs --saison=2025-2026 --journees=all
 ```
 
 **Modes journées :**
@@ -340,7 +516,7 @@ npm run scrape -- --entity=matchs --saison=2025-2026 --journees=all
 ### ETL
 
 ```bash
-npm run etl -- --entity=matchs --saison=2025-2026
+pnpm etl --entity=matchs --saison=2025-2026
 ```
 
 **Ordre obligatoire global** : `competitions → phases → poules → equipes → engagements → matchs`.
@@ -410,8 +586,8 @@ Pas de scraping nouveau. Les arbitres sont extraits depuis `raw.matchs.payload`
 ```bash
 # Pré-requis : raw.matchs déjà peuplée (cf. section "Scraper les matchs")
 
-npm run etl -- --entity=arbitres        --saison=2025-2026
-npm run etl -- --entity=match_officiels --saison=2025-2026
+pnpm etl --entity=arbitres        --saison=2025-2026
+pnpm etl --entity=match_officiels --saison=2025-2026
 ```
 
 L'ordre `arbitres → match_officiels` est obligatoire (le second résout FK vers `core.arbitres`).
@@ -475,19 +651,19 @@ phases JOIN competitions), mais 1 seul fetch par poule (pas d'iteration journée
 
 ```bash
 # Dev — 5 poules nationales
-npm run scrape -- --entity=classements --saison=2025-2026 --level=national --limit=5
+pnpm scrape --entity=classements --saison=2025-2026 --level=national --limit=5
 
 # Toutes les poules nationales (~50-100 poules, ~2-3 min)
-npm run scrape -- --entity=classements --saison=2025-2026 --level=national
+pnpm scrape --entity=classements --saison=2025-2026 --level=national
 
 # Run complet 3 niveaux (~5000 poules, ~2h à 1.5 s/req)
-npm run scrape -- --entity=classements --saison=2025-2026
+pnpm scrape --entity=classements --saison=2025-2026
 ```
 
 ### ETL
 
 ```bash
-npm run etl -- --entity=classements --saison=2025-2026
+pnpm etl --entity=classements --saison=2025-2026
 ```
 
 **Ordre obligatoire global** : `competitions → phases → poules → equipes →
@@ -577,10 +753,10 @@ poste/position joueur — derrière login GestHand (RGPD).
 
 ```bash
 # Dev — 20 poules (nationales + régionales selon ordre c.id_ffhb)
-npm run scrape -- --entity=stats-joueurs --saison=2025-2026 --limit=20
+pnpm scrape --entity=stats-joueurs --saison=2025-2026 --limit=20
 
 # Run complet national + régional séniors (~500-1000 poules, ~15-30 min)
-npm run scrape -- --entity=stats-joueurs --saison=2025-2026
+pnpm scrape --entity=stats-joueurs --saison=2025-2026
 ```
 
 Pas d'option `--level` — le filtre `afficher_stats_joueurs=true` est appliqué en
@@ -589,7 +765,7 @@ amont et couvre tous les niveaux concernés (national + régional séniors).
 ### ETL
 
 ```bash
-npm run etl -- --entity=stats-joueurs --saison=2025-2026
+pnpm etl --entity=stats-joueurs --saison=2025-2026
 ```
 
 **Ordre obligatoire global** : `competitions → phases → poules → equipes →
@@ -598,8 +774,8 @@ engagements → matchs → arbitres → match_officiels → classements → stat
 **Important** : si `core.competitions.afficher_stats_joueurs` est NULL pour les
 compétitions régionales, relancer d'abord :
 ```bash
-npm run scrape -- --entity=competitions --saison=2025-2026
-npm run etl -- --entity=competitions --saison=2025-2026
+pnpm scrape --entity=competitions --saison=2025-2026
+pnpm etl --entity=competitions --saison=2025-2026
 ```
 
 ### Suivre la couverture
@@ -696,10 +872,10 @@ auparavant), enrichit `core.match_compositions`, peuple `core.match_actions`
 
 ```bash
 # Dev — 5 FdMs (test)
-npm run scrape -- --entity=feuilles-match --saison=2025-2026 --limit=5
+pnpm scrape --entity=feuilles-match --saison=2025-2026 --limit=5
 
 # Run complet (~50-200k FdMs, 30-100h selon scope matchs, MULTI-NUITS)
-npm run scrape -- --entity=feuilles-match --saison=2025-2026
+pnpm scrape --entity=feuilles-match --saison=2025-2026
 ```
 
 Le scraper :
@@ -711,17 +887,47 @@ Le scraper :
 
 Skip silencieux sur HTTP 404 (FdM pas encore publiée).
 
+### Rattraper les FdM publiées en retard (backfill)
+
+Les FdM ne sont **pas toujours publiées tout de suite** après le match (parfois plusieurs
+heures/jours). Le filtre « déjà en `raw.feuilles_match` » + la dédup `payload_hash` font qu'un
+**re-run rattrape les FdM tardives** sans re-télécharger les acquises.
+
+Le scrape FdM ne cible **que les matchs déjà joués** (`date_heure < now`, source `core.matchs`) :
+les matchs **à venir** n'ont pas de FdM, ils sont donc toujours exclus (zéro 404 inutile).
+`--days=N` (ou `--from`/`--to`) borne en plus aux N derniers jours.
+
+```bash
+# Rattrapage complet : toutes les FdM des matchs joués de la saison, jusqu'à aujourd'hui
+pnpm scrape --entity=feuilles-match --saison=2025-2026
+pnpm etl    --entity=feuilles-match --saison=2025-2026
+
+# Borné aux 7 derniers jours (passage quotidien)
+pnpm scrape --entity=feuilles-match --saison=2025-2026 --days=7
+pnpm etl    --entity=feuilles-match --saison=2025-2026
+```
+
+Cadence conseillée : **1×/jour** (cron du matin) — les FdM arrivent lentement, et comme le score
+arrive avec la FdM, le même passage quotidien rafraîchit matchs + FdM (cf. « Mise à jour
+post-match »). Un code FdM toujours en 404 après ~1-2 semaines ne sera probablement jamais publié
+→ `--days=10` borne le rattrapage et évite de retenter indéfiniment.
+`pnpm poules:actives` ne couvre pas les FdM, mais le log du scrape donne `total404` / `totalSuccess`.
+
 ### ETL
 
 ```bash
-npm run etl -- --entity=feuilles-match --saison=2025-2026
+pnpm etl --entity=feuilles-match --saison=2025-2026
 ```
 
 Cascade transactionnelle par FdM :
 1. UPDATE `core.matchs.fdm_url`
-2. UPSERT `core.joueurs` (par numero_licence)
-3. UPSERT `core.match_compositions` (par match × joueur)
-4. UPSERT `core.match_actions` (par match × ordre)
+2. **Dérive le score** : `core.matchs.score_dom/score_ext` (+ mi-temps, `statut='joue'`) depuis
+   `score_recevant`/`score_visiteur` de la FdM — **uniquement si le score est encore NULL** (ne
+   clobbere jamais un score déjà publié par ffhandball). C'est ce qui donne le score sans attendre
+   la publication serveur du lendemain.
+3. UPSERT `core.joueurs` (par numero_licence)
+4. UPSERT `core.match_compositions` (par match × joueur)
+5. UPSERT `core.match_actions` (par match × ordre)
 
 ROLLBACK si erreur dans la cascade. Idempotent.
 
@@ -735,6 +941,7 @@ SELECT count(*) FROM raw.feuilles_match WHERE saison = '2025-2026';
 SELECT
   count(*) FILTER (WHERE fdm_code IS NOT NULL) AS matchs_avec_fdm_code,
   count(*) FILTER (WHERE fdm_url IS NOT NULL) AS matchs_avec_fdm_parse,
+  count(*) FILTER (WHERE score_dom IS NOT NULL) AS matchs_avec_score,
   count(*) AS total_matchs
 FROM core.matchs;
 
@@ -800,11 +1007,11 @@ API REST read-only basée sur Hono. Documentation auto via Swagger UI.
 
 ```bash
 # Production
-npm run api
+pnpm api
 # → http://localhost:3000 (config via .env API_PORT, API_HOST)
 
 # Watch mode (auto-reload dev)
-npm run api:dev
+pnpm api:dev
 
 # Documentation interactive
 open http://localhost:3000/docs
@@ -915,10 +1122,10 @@ date d'un mois à chaque règlement. Si l'abonnement lapse, la clé expire d'ell
 
 **Gestion des clés — CLI** (sur le serveur) :
 ```bash
-npm run apikey -- create --label=client@example.com --months=1   # token affiché UNE FOIS
-npm run apikey -- list
-npm run apikey -- renew  --prefix=ffhb_xxxxxxxx --months=1        # à chaque paiement
-npm run apikey -- revoke --prefix=ffhb_xxxxxxxx
+pnpm apikey create --label=client@example.com --months=1   # token affiché UNE FOIS
+pnpm apikey list
+pnpm apikey renew  --prefix=ffhb_xxxxxxxx --months=1        # à chaque paiement
+pnpm apikey revoke --prefix=ffhb_xxxxxxxx
 ```
 
 **Gestion des clés — endpoints admin** (pour le site, garde `X-Admin-Secret: $ADMIN_SECRET`) :
