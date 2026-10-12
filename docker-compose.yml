@@ -2,6 +2,7 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: ffhandball-postgres
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ffhandball
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ffhandball}
@@ -19,6 +20,7 @@ services:
   adminer:
     image: adminer:latest
     container_name: ffhandball-adminer
+    restart: unless-stopped
     ports:
       - "8081:8080"
     depends_on:
