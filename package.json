@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@10.33.4",
   "engines": {
     "node": ">=20"
   },
@@ -10,10 +11,18 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "commands": "node --import tsx src/cli/commands.ts",
     "scrape": "node --env-file=.env --import tsx src/cli/scrape.ts",
     "etl": "node --env-file=.env --import tsx src/cli/etl.ts",
     "apikey": "node --env-file=.env --import tsx src/cli/apikey.ts",
     "status": "node --env-file=.env --import tsx src/cli/status.ts",
+    "diag": "node --env-file=.env --import tsx src/cli/diag.ts",
+    "migrate": "node --env-file=.env --import tsx src/cli/migrate.ts",
+    "prune-raw": "node --env-file=.env --import tsx src/cli/prune-raw.ts",
+    "poules:actives": "node --env-file=.env --import tsx src/cli/poules-actives.ts",
+    "monitor": "node --env-file=.env --import tsx src/cli/monitor.ts",
+    "maintenance": "node --env-file=.env --import tsx src/cli/maintenance.ts",
+    "notify": "node --env-file=.env --import tsx src/cli/notify.ts",
     "pipeline": "node --env-file=.env --import tsx src/cli/pipeline.ts",
     "mail:test": "node --env-file=.env --import tsx src/cli/mail-test.ts",
     "db:up": "docker compose up -d",
@@ -47,5 +56,10 @@
     "@types/pg": "^8.11.10",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
   }
 }

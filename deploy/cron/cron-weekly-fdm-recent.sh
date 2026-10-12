@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # deploy/cron/cron-weekly-fdm-recent.sh
-# Scrape hebdomadaire : FdM des matchs joués récemment (proxy --limit pour filtre date)
+# Rattrapage hebdomadaire des FdM des matchs joués des 30 derniers jours (filet pour les FdM
+# publiées tardivement, au-delà de la fenêtre de 10 jours du cron-daily).
 # Lancé chaque lundi à 03:00 par le crontab utilisateur.
 
 set -euo pipefail
@@ -40,13 +41,14 @@ run_step() {
   fi
 }
 
-# Scrape FdM récents (--limit=2000 comme proxy pour les matchs joués cette semaine)
-# Les FdM déjà présents en raw sont ignorés (idempotence append-only + natural_key)
-run_step "scrape feuilles-match (limit 2000)" \
-  npm run scrape -- --entity=feuilles-match --saison="$SAISON" --limit=2000
+# Rattrapage FdM des matchs joués des 30 derniers jours (filet plus large que le cron-daily,
+# qui couvre déjà 10 jours). Le scrape FdM ne cible que les matchs joués (date < auj.) ;
+# les FdM déjà capturées sont ignorées → ne télécharge que les FdM tardives nouvellement publiées.
+run_step "scrape feuilles-match (joués, 30 derniers jours)" \
+  pnpm scrape --entity=feuilles-match --saison="$SAISON" --days=30
 
 run_step "etl feuilles-match" \
-  npm run etl -- --entity=feuilles-match --saison="$SAISON"
+  pnpm etl --entity=feuilles-match --saison="$SAISON"
 
 if [ "$ERRORS" -eq 0 ]; then
   log "=== cron-weekly-fdm-recent terminé avec succès ==="

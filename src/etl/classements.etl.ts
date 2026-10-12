@@ -1,13 +1,12 @@
 // src/etl/classements.etl.ts
 import { query } from "@/db/client.js";
+import { iterateRawBatched, countRawDistinct } from "@/etl/shared/iterate-raw-batched.js";
 import { rawClassementPayloadSchema, type RawClassementPayload } from "@/schemas/classement.schema.js";
 import { logger } from "@/lib/logger.js";
-
-interface RawClassementRow {
-  id: number;
-  natural_key: string;
-  payload: unknown;
-}
+import { insertWarnings, type EtlWarning } from "@/etl/shared/etl-warnings.js";
+import { loadIdIndex } from "@/etl/shared/lookups.js";
+import { Progress } from "@/lib/progress.js";
+import { EtlCheckpoint } from "@/etl/shared/checkpoint.js";
 
 export interface EtlReport {
   etl_run_id: number;
@@ -18,22 +17,6 @@ export interface EtlReport {
   rows_updated: number;
   rows_noop: number;
   warnings_count: number;
-}
-
-async function resolvePouleId(idFfhb: string, saison: string): Promise<number | null> {
-  const r = await query<{ id: number }>(
-    `SELECT id FROM core.poules WHERE id_ffhb = $1 AND saison_code = $2`,
-    [idFfhb, saison],
-  );
-  return r.rows[0]?.id ?? null;
-}
-
-async function resolveEquipeId(idFfhb: string, saison: string): Promise<number | null> {
-  const r = await query<{ id: number }>(
-    `SELECT id FROM core.equipes WHERE id_ffhb = $1 AND saison_code = $2`,
-    [idFfhb, saison],
-  );
-  return r.rows[0]?.id ?? null;
 }
 
 export async function runClassementsEtl(saison: string): Promise<EtlReport> {
@@ -55,16 +38,17 @@ export async function runClassementsEtl(saison: string): Promise<EtlReport> {
   };
 
   try {
-    const rawRows = await query<RawClassementRow>(
-      `SELECT DISTINCT ON (natural_key) id, natural_key, payload
-         FROM raw.classements
-         WHERE saison = $1
-         ORDER BY natural_key, scraped_at DESC`,
-      [saison],
-    );
-    report.rows_read = rawRows.rowCount ?? 0;
+    // Préchargement des index FK en mémoire + warnings insérés en lot à la fin.
+    const poules = await loadIdIndex("poules", saison);
+    const equipes = await loadIdIndex("equipes", saison);
+    const warnings: EtlWarning[] = [];
+    const prog = new Progress("etl classements", await countRawDistinct("raw.classements", saison));
+    const checkpoint = new EtlCheckpoint(etl_run_id);
 
-    for (const row of rawRows.rows) {
+    for await (const row of iterateRawBatched("raw.classements", saison)) {
+      report.rows_read++;
+      prog.tick(report.rows_read);
+      await checkpoint.maybe(report.rows_read);
       const parsed = rawClassementPayloadSchema.safeParse(row.payload);
       if (!parsed.success) {
         await query(
@@ -79,24 +63,16 @@ export async function runClassementsEtl(saison: string): Promise<EtlReport> {
 
       const p: RawClassementPayload = parsed.data;
 
-      const poule_id = await resolvePouleId(p.ext_poule_id, saison);
+      const poule_id = poules.get(p.ext_poule_id) ?? null;
       if (poule_id === null) {
-        await query(
-          `INSERT INTO core.etl_warnings (etl_run_id, entity, natural_key, message)
-           VALUES ($1,'classements',$2,$3)`,
-          [etl_run_id, p.ext_classement_id, `poule ${p.ext_poule_id} introuvable`],
-        );
+        warnings.push({ natural_key: p.ext_classement_id, message: `poule ${p.ext_poule_id} introuvable` });
         report.warnings_count++;
         continue;
       }
 
-      const equipe_id = await resolveEquipeId(p.ext_equipe_id, saison);
+      const equipe_id = equipes.get(p.ext_equipe_id) ?? null;
       if (equipe_id === null) {
-        await query(
-          `INSERT INTO core.etl_warnings (etl_run_id, entity, natural_key, message)
-           VALUES ($1,'classements',$2,$3)`,
-          [etl_run_id, p.ext_classement_id, `equipe ${p.ext_equipe_id} introuvable`],
-        );
+        warnings.push({ natural_key: p.ext_classement_id, message: `equipe ${p.ext_equipe_id} introuvable` });
         report.warnings_count++;
         continue;
       }
@@ -132,6 +108,9 @@ export async function runClassementsEtl(saison: string): Promise<EtlReport> {
       if (upsert.rows[0]!.inserted) report.rows_inserted++;
       else report.rows_updated++;
     }
+
+    prog.done(report.rows_read);
+    await insertWarnings(etl_run_id, "classements", warnings);
 
     await query(
       `UPDATE core.etl_runs

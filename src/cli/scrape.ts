@@ -1,10 +1,13 @@
 import { parseArgs } from "node:util";
 import * as cheerio from "cheerio";
 import { logger } from "@/lib/logger.js";
+import { env } from "@/config/env.js";
 import { closePool, query } from "@/db/client.js";
 import { fetchHtml, fetchBinary } from "@/scrapers/shared/http-client.js";
+import { forEachConcurrent } from "@/scrapers/shared/concurrency.js";
+import { Progress } from "@/lib/progress.js";
 import { startScrapeRun, type ScrapeRunHandle } from "@/scrapers/shared/scrape-run.js";
-import { insertRaw } from "@/scrapers/shared/raw-insert.js";
+import { insertRaw, insertRawBatch, type RawRow } from "@/scrapers/shared/raw-insert.js";
 import { parseClubsListing } from "@/scrapers/ffhandball/clubs.scraper.js";
 import { parseClubDetail } from "@/scrapers/ffhandball/club-details.scraper.js";
 import { parseClubSlugs } from "@/scrapers/ffhandball/club-slugs.scraper.js";
@@ -15,8 +18,9 @@ import {
   slugifyLibelle,
 } from "@/scrapers/ffhandball/competition-list.scraper.js";
 import { parseCompetitionDetail } from "@/scrapers/ffhandball/competition-detail.scraper.js";
-import { parseRencontreList } from "@/scrapers/ffhandball/rencontre-list.scraper.js";
+import { parseRencontreList, type JourneeInfo } from "@/scrapers/ffhandball/rencontre-list.scraper.js";
 import { parseClassement } from "@/scrapers/ffhandball/classement.scraper.js";
+import { resolveDateWindow, type DateWindow } from "@/scrapers/shared/date-window.js";
 import { parseStatsJoueurs } from "@/scrapers/ffhandball/stats-joueurs.scraper.js";
 import { parseFdmPdf } from "@/scrapers/ffhandball/fdm-pdf.parser.js";
 
@@ -27,7 +31,9 @@ interface CliArgs {
   limit?: number;
   slug?: string;
   level?: "national" | "regional" | "departemental";
-  journees?: "all" | "courante";
+  journees?: "all" | "courante" | "recent";
+  window: DateWindow | null;
+  reparseCache?: boolean;
 }
 
 function parseCliArgs(): CliArgs {
@@ -40,6 +46,17 @@ function parseCliArgs(): CliArgs {
       slug: { type: "string" },
       level: { type: "string" },
       journees: { type: "string" },
+      // Scoping temporel (matchs/classements) : ne scraper que les poules qui jouent.
+      live: { type: "boolean" },     // matchs en cours/imminents (now−2h … now+30min)
+      weekend: { type: "boolean" },
+      from: { type: "string" },
+      to: { type: "string" },
+      days: { type: "string" },      // fenêtre [now−N jours, now] (ex. backfill FdM récentes)
+      // feuilles-match : accepté mais sans effet — les matchs joués (< aujourd'hui) sont le défaut.
+      played: { type: "boolean" },
+      // feuilles-match : re-parser les PDF en cache (échecs de parsing passés), SANS réseau.
+      // À lancer après une amélioration du parser. Cf. raw.feuilles_match_fetch_state.
+      "reparse-cache": { type: "boolean" },
     },
   });
   if (!values.entity) throw new Error("--entity required");
@@ -63,13 +80,32 @@ function parseCliArgs(): CliArgs {
     level = values.level as "national" | "regional" | "departemental";
   }
 
-  let journees: "all" | "courante" | undefined;
+  let journees: "all" | "courante" | "recent" | undefined;
   if (values.journees !== undefined) {
-    if (values.journees !== "all" && values.journees !== "courante") {
-      throw new Error(`Invalid --journees value: ${values.journees}. Use 'all' or 'courante'.`);
+    const valid = ["all", "courante", "recent"] as const;
+    if (!valid.includes(values.journees as (typeof valid)[number])) {
+      throw new Error(`Invalid --journees value: ${values.journees}. Use 'all', 'recent' or 'courante'.`);
     }
-    journees = values.journees as "all" | "courante";
+    journees = values.journees as "all" | "courante" | "recent";
   }
+
+  let recentDays: number | undefined;
+  if (values.days !== undefined) {
+    const n = Number.parseInt(values.days, 10);
+    if (!Number.isFinite(n) || n <= 0) throw new Error(`--days doit être un entier positif, reçu ${values.days}`);
+    recentDays = n;
+  }
+
+  const window = resolveDateWindow(
+    {
+      from: values.from,
+      to: values.to,
+      weekend: values.weekend === true,
+      live: values.live === true,
+      recentDays,
+    },
+    new Date(),
+  );
 
   return {
     entity: values.entity,
@@ -79,6 +115,8 @@ function parseCliArgs(): CliArgs {
     slug: values.slug,
     level,
     journees,
+    window,
+    reparseCache: values["reparse-cache"] === true,
   };
 }
 
@@ -170,10 +208,18 @@ async function scrapeClubDetails(
     let inserted_salles = 0;
     let no_salle = 0;
     let parse_failed = 0;
+    let fetch_failed = 0;
+    let cdProcessed = 0;
+    const cdProg = new Progress("scrape club-details", slugs.length);
+    await run.setTotal(slugs.length);
     for (const slug of slugs) {
+      cdProg.tick(++cdProcessed);
       const url = `https://monclub.ffhandball.fr/clubs/${slug}/`;
-      const res = await fetchHtml(url);
-      await run.incrementPages(1);
+      const res = await tryFetchHtml(run, url);
+      if (res === null) {
+        fetch_failed++;
+        continue;
+      }
 
       const parsed = parseClubDetail(res.body, res.url);
       if (!parsed) {
@@ -208,8 +254,9 @@ async function scrapeClubDetails(
         no_salle++;
       }
     }
+    cdProg.done(slugs.length);
     logger.info(
-      { inserted_clubs, inserted_salles, no_salle, parse_failed },
+      { inserted_clubs, inserted_salles, no_salle, parse_failed, fetch_failed },
       "club-details scrape done",
     );
     await run.finishSuccess();
@@ -349,7 +396,11 @@ async function scrapeCompetitions(
     let insertedEngagements = 0;
     let parseFailed = 0;
     let detailSkipped = 0;
+    let compProcessed = 0;
+    const compProg = new Progress("scrape competitions", competitions.length);
+    await run.setTotal(competitions.length);
     for (const { ext_competition_id, detail_url } of competitions) {
+      compProg.tick(++compProcessed);
       const res = await tryFetchHtml(run, detail_url);
       if (!res) {
         detailSkipped++;
@@ -410,6 +461,7 @@ async function scrapeCompetitions(
         insertedEngagements++;
       }
     }
+    compProg.done(competitions.length);
 
     logger.info(
       { totalCompetitions, insertedPhases, insertedPoules, insertedEquipes, insertedEngagements, parseFailed, listSkipped, detailSkipped },
@@ -423,12 +475,99 @@ async function scrapeCompetitions(
   }
 }
 
+interface ScrapablePoule {
+  ext_poule_id: string;
+  ext_competition_id: string;
+  niveau: string;
+  detail_url: string;
+}
+
+/**
+ * Poules scrapables d'une saison (filtrables par niveau). Si `window` est fourni, ne
+ * retient que les poules ayant au moins un match dans la fenêtre [from, to[ — base du
+ * scraping ciblé « week-end » (réduit 12k poules à celles qui jouent réellement).
+ */
+async function selectScrapablePoules(
+  saison: string,
+  level: string | undefined,
+  window: DateWindow | null,
+): Promise<ScrapablePoule[]> {
+  const windowFilter = window
+    ? ` AND EXISTS (
+           SELECT 1 FROM core.matchs m
+            WHERE m.poule_id = po.id
+              AND m.date_heure >= $3 AND m.date_heure < $4
+         )`
+    : "";
+  const params: unknown[] = [saison, level ?? null];
+  if (window) params.push(window.from, window.to);
+
+  const res = await query<ScrapablePoule>(
+    `SELECT po.id_ffhb AS ext_poule_id,
+            c.id_ffhb  AS ext_competition_id,
+            c.niveau,
+            c.detail_url
+       FROM core.poules po
+       JOIN core.phases ph       ON ph.id = po.phase_id
+       JOIN core.competitions c  ON c.id = ph.competition_id
+      WHERE po.saison_code = $1
+        AND ($2::text IS NULL OR c.niveau = $2)
+        AND c.detail_url IS NOT NULL${windowFilter}
+      ORDER BY c.niveau, c.id_ffhb, po.id_ffhb`,
+    params,
+  );
+  return res.rows;
+}
+
+function startOfDayMs(now: Date): number {
+  const d = new Date(now);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+/**
+ * Journées à fetcher EN PLUS de la page courante, selon le mode :
+ *  - "courante" : aucune (seule la page par défaut, déjà récupérée).
+ *  - "all"      : toutes les journées DÉJÀ jouées (on saute les journées futures : aucun match
+ *                 à récupérer, et ce sont autant de hits non-cachés qui font basculer le WAF).
+ *  - "recent"   : seulement les journées jouées dans la fenêtre glissante des N derniers jours
+ *                 (runs réguliers ; le backfill complet se fait une fois en "all").
+ * La journée déjà couverte par la page courante est toujours exclue.
+ */
+function journeesToFetch(
+  mode: "all" | "courante" | "recent",
+  journees: JourneeInfo[],
+  alreadyFetched: number | undefined,
+  now: Date,
+): number[] {
+  if (mode === "courante") return [];
+  const todayMs = startOfDayMs(now);
+  const recentFromMs = todayMs - env.SCRAPE_MATCHS_RECENT_DAYS * 86_400_000;
+  const picked: number[] = [];
+  for (const j of journees) {
+    if (j.numero === alreadyFetched) continue;
+    const debutMs = j.date_debut ? Date.parse(`${j.date_debut}T00:00:00`) : NaN;
+    const finMs = j.date_fin ? Date.parse(`${j.date_fin}T23:59:59`) : debutMs;
+    // Saute les journées futures (date de début > aujourd'hui) : pas encore jouées.
+    if (Number.isFinite(debutMs) && debutMs > todayMs) continue;
+    if (mode === "recent") {
+      const refMs = Number.isFinite(finMs) ? finMs : debutMs;
+      // Sans date exploitable, on ne peut pas confirmer « récent » → on n'ajoute pas (la page
+      // courante couvre déjà la journée en cours).
+      if (!Number.isFinite(refMs) || refMs < recentFromMs) continue;
+    }
+    picked.push(j.numero);
+  }
+  return picked;
+}
+
 async function scrapeMatchs(
   saison: string,
   opts: {
     level?: "national" | "regional" | "departemental";
-    journees?: "all" | "courante";
+    journees?: "all" | "courante" | "recent";
     limit?: number;
+    window?: DateWindow | null;
   },
 ): Promise<void> {
   const run = await startScrapeRun({
@@ -440,99 +579,87 @@ async function scrapeMatchs(
 
   try {
     // 1. SELECT poules from core (with their competition's detail_url + niveau)
-    const poulesRes = await query<{
-      ext_poule_id: string;
-      ext_competition_id: string;
-      niveau: string;
-      detail_url: string;
-    }>(
-      `SELECT po.id_ffhb AS ext_poule_id,
-              c.id_ffhb  AS ext_competition_id,
-              c.niveau,
-              c.detail_url
-         FROM core.poules po
-         JOIN core.phases ph       ON ph.id = po.phase_id
-         JOIN core.competitions c  ON c.id = ph.competition_id
-        WHERE po.saison_code = $1
-          AND ($2::text IS NULL OR c.niveau = $2)
-          AND c.detail_url IS NOT NULL
-        ORDER BY c.niveau, c.id_ffhb, po.id_ffhb`,
-      [saison, opts.level ?? null],
-    );
-
-    let poules = poulesRes.rows;
+    let poules = await selectScrapablePoules(saison, opts.level, opts.window ?? null);
     if (opts.limit !== undefined) poules = poules.slice(0, opts.limit);
-    logger.info({ count: poules.length }, "poules to process");
+    logger.info({ count: poules.length, windowed: Boolean(opts.window) }, "poules to process");
 
     let totalInserted = 0;
     let pouleSkipped = 0;
+    let processed = 0;
     const mode = opts.journees ?? "courante";
+    // Horloge figée pour tout le run : « journée future » et « fenêtre récente » sont évaluées
+    // de façon cohérente d'une poule à l'autre.
+    const now = new Date();
+    const prog = new Progress("scrape matchs", poules.length);
+    await run.setTotal(poules.length);
 
-    for (const po of poules) {
+    // Poules traitées en parallèle (au plus SCRAPE_CONCURRENCY en vol). Le rate-limit reste
+    // un plancher global par domaine — la concurrence masque la latence d'insertion sans
+    // dépasser le plancher. Les compteurs sont incrémentés de façon synchrone (sûr).
+    await forEachConcurrent(poules, env.SCRAPE_CONCURRENCY, async (po) => {
+      prog.tick(++processed);
       const baseUrl = `${po.detail_url}poule-${po.ext_poule_id}/`;
 
       // First fetch : journée courante (no query param)
-      const res = await fetchHtml(baseUrl);
-      await run.incrementPages(1);
-      if (res.status >= 400) {
-        logger.warn({ url: baseUrl, status: res.status }, "poule page failed");
+      const res = await tryFetchHtml(run, baseUrl);
+      if (res === null) {
         pouleSkipped++;
-        continue;
+        return;
       }
       const parsed = parseRencontreList(res.body, baseUrl, po.ext_poule_id);
       if (!parsed) {
         logger.warn({ url: baseUrl }, "parseRencontreList returned null");
         pouleSkipped++;
-        continue;
+        return;
       }
 
+      // On accumule toutes les lignes de la poule puis on insère en lot (1 SELECT + 1 INSERT
+      // par table/poule au lieu de 2 allers-retours/ligne) : la base n'empêche plus les
+      // workers de saturer le plancher de rate-limit.
+      const matchRows: RawRow[] = parsed.matchs.map((m) => ({
+        scrape_run_id: run.id, source_url: m.source_url, source_site: "ffhandball.fr",
+        natural_key: m.ext_rencontre_id, payload: m, saison, http_status: res.status,
+      }));
+
+      // Équipes + engagements de la poule (source complète depuis equipe_options) : garantit
+      // que toute équipe référencée par un match est en base. Capturé une fois par poule.
+      const equipeRows: RawRow[] = parsed.equipes.map((eq) => ({
+        scrape_run_id: run.id, source_url: eq.source_url, source_site: "ffhandball.fr",
+        natural_key: eq.ext_equipe_id, payload: eq, saison, http_status: res.status,
+      }));
+      const engagementRows: RawRow[] = parsed.engagements.map((en) => ({
+        scrape_run_id: run.id, source_url: en.source_url, source_site: "ffhandball.fr",
+        natural_key: `${en.ext_equipe_id}-${en.ext_poule_id}`, payload: en, saison, http_status: res.status,
+      }));
+
+      // Journées supplémentaires à fetcher selon le mode (all/recent), en sautant les futures.
       const journeeAlreadyFetched = parsed.matchs[0]?.journee;
-      for (const m of parsed.matchs) {
-        await insertRaw("matchs", {
-          scrape_run_id: run.id,
-          source_url: m.source_url,
-          source_site: "ffhandball.fr",
-          natural_key: m.ext_rencontre_id,
-          payload: m,
-          saison,
-          http_status: res.status,
-        });
-        totalInserted++;
-      }
-
-      // If --journees=all, iterate over remaining journées
-      if (mode === "all" && parsed.journees_disponibles.length > 0) {
-        const remaining = parsed.journees_disponibles.filter(
-          (j) => j !== journeeAlreadyFetched,
-        );
+      const remaining = journeesToFetch(mode, parsed.journees, journeeAlreadyFetched, now);
+      if (remaining.length > 0) {
         for (const j of remaining) {
           const jUrl = `${baseUrl}?numero_journee=${j}`;
-          const jRes = await fetchHtml(jUrl);
-          await run.incrementPages(1);
-          if (jRes.status >= 400) {
-            logger.warn({ url: jUrl, status: jRes.status }, "journée page failed");
-            continue;
-          }
+          const jRes = await tryFetchHtml(run, jUrl);
+          if (jRes === null) continue;
           const jParsed = parseRencontreList(jRes.body, jUrl, po.ext_poule_id);
           if (!jParsed) continue;
           for (const m of jParsed.matchs) {
-            await insertRaw("matchs", {
-              scrape_run_id: run.id,
-              source_url: m.source_url,
-              source_site: "ffhandball.fr",
-              natural_key: m.ext_rencontre_id,
-              payload: m,
-              saison,
-              http_status: jRes.status,
+            matchRows.push({
+              scrape_run_id: run.id, source_url: m.source_url, source_site: "ffhandball.fr",
+              natural_key: m.ext_rencontre_id, payload: m, saison, http_status: jRes.status,
             });
-            totalInserted++;
           }
         }
       }
-    }
+
+      const mres = await insertRawBatch("matchs", matchRows);
+      await insertRawBatch("equipes", equipeRows);
+      await insertRawBatch("engagements", engagementRows);
+      totalInserted += mres.inserted;
+    });
+    prog.done(poules.length);
 
     logger.info(
-      { totalInserted, pouleSkipped, mode },
+      { totalInserted, pouleSkipped, mode, concurrency: env.SCRAPE_CONCURRENCY },
       "matchs scrape done",
     );
     await run.finishSuccess();
@@ -548,6 +675,7 @@ async function scrapeClassements(
   opts: {
     level?: "national" | "regional" | "departemental";
     limit?: number;
+    window?: DateWindow | null;
   },
 ): Promise<void> {
   const run = await startScrapeRun({
@@ -558,69 +686,46 @@ async function scrapeClassements(
   logger.info({ run_id: run.id, ...opts }, "starting classements scrape");
 
   try {
-    const poulesRes = await query<{
-      ext_poule_id: string;
-      ext_competition_id: string;
-      niveau: string;
-      detail_url: string;
-    }>(
-      `SELECT po.id_ffhb AS ext_poule_id,
-              c.id_ffhb  AS ext_competition_id,
-              c.niveau,
-              c.detail_url
-         FROM core.poules po
-         JOIN core.phases ph       ON ph.id = po.phase_id
-         JOIN core.competitions c  ON c.id = ph.competition_id
-        WHERE po.saison_code = $1
-          AND ($2::text IS NULL OR c.niveau = $2)
-          AND c.detail_url IS NOT NULL
-        ORDER BY c.niveau, c.id_ffhb, po.id_ffhb`,
-      [saison, opts.level ?? null],
-    );
-
-    let poules = poulesRes.rows;
+    let poules = await selectScrapablePoules(saison, opts.level, opts.window ?? null);
     if (opts.limit !== undefined) poules = poules.slice(0, opts.limit);
-    logger.info({ count: poules.length }, "poules to process");
+    logger.info({ count: poules.length, windowed: Boolean(opts.window) }, "poules to process");
 
     let totalInserted = 0;
     let pouleSkipped = 0;
     let pouleVide = 0;
+    let processed = 0;
+    const prog = new Progress("scrape classements", poules.length);
+    await run.setTotal(poules.length);
 
-    for (const po of poules) {
+    await forEachConcurrent(poules, env.SCRAPE_CONCURRENCY, async (po) => {
+      prog.tick(++processed);
       const url = `${po.detail_url}poule-${po.ext_poule_id}/classements/`;
-      const res = await fetchHtml(url);
-      await run.incrementPages(1);
-      if (res.status >= 400) {
-        logger.warn({ url, status: res.status }, "classement page failed");
+      const res = await tryFetchHtml(run, url);
+      if (res === null) {
         pouleSkipped++;
-        continue;
+        return;
       }
       const parsed = parseClassement(res.body, url, po.ext_poule_id);
       if (parsed === null) {
         logger.warn({ url }, "parseClassement returned null");
         pouleSkipped++;
-        continue;
+        return;
       }
       if (parsed.length === 0) {
         pouleVide++;
-        continue;
+        return;
       }
-      for (const c of parsed) {
-        await insertRaw("classements", {
-          scrape_run_id: run.id,
-          source_url: c.source_url,
-          source_site: "ffhandball.fr",
-          natural_key: c.ext_classement_id,
-          payload: c,
-          saison,
-          http_status: res.status,
-        });
-        totalInserted++;
-      }
-    }
+      const rows: RawRow[] = parsed.map((c) => ({
+        scrape_run_id: run.id, source_url: c.source_url, source_site: "ffhandball.fr",
+        natural_key: c.ext_classement_id, payload: c, saison, http_status: res.status,
+      }));
+      const { inserted } = await insertRawBatch("classements", rows);
+      totalInserted += inserted;
+    });
+    prog.done(poules.length);
 
     logger.info(
-      { totalInserted, pouleSkipped, pouleVide, totalPoules: poules.length },
+      { totalInserted, pouleSkipped, pouleVide, totalPoules: poules.length, concurrency: env.SCRAPE_CONCURRENCY },
       "classements scrape done",
     );
     await run.finishSuccess();
@@ -665,13 +770,17 @@ async function scrapeStatsJoueurs(
 
     let totalInserted = 0;
     let pouleSansStats = 0;
+    let pouleSkipped = 0;
+    let sjProcessed = 0;
+    const sjProg = new Progress("scrape stats-joueurs", poules.length);
+    await run.setTotal(poules.length);
 
     for (const po of poules) {
+      sjProg.tick(++sjProcessed);
       const url = `${po.detail_url}poule-${po.ext_poule_id}/statistiques/`;
-      const res = await fetchHtml(url);
-      await run.incrementPages(1);
-      if (res.status >= 400) {
-        logger.warn({ url, status: res.status }, "stats page failed");
+      const res = await tryFetchHtml(run, url);
+      if (res === null) {
+        pouleSkipped++;
         continue;
       }
       const parsed = parseStatsJoueurs(res.body, url, po.ext_poule_id);
@@ -679,21 +788,16 @@ async function scrapeStatsJoueurs(
         pouleSansStats++;
         continue;
       }
-      for (const s of parsed) {
-        await insertRaw("stats_joueurs", {
-          scrape_run_id: run.id,
-          source_url: s.source_url,
-          source_site: "ffhandball.fr",
-          natural_key: `${s.ext_poule_id}-${s.individu_id}`,
-          payload: s,
-          saison,
-          http_status: res.status,
-        });
-        totalInserted++;
-      }
+      const rows: RawRow[] = parsed.map((s) => ({
+        scrape_run_id: run.id, source_url: s.source_url, source_site: "ffhandball.fr",
+        natural_key: `${s.ext_poule_id}-${s.individu_id}`, payload: s, saison, http_status: res.status,
+      }));
+      const { inserted } = await insertRawBatch("stats_joueurs", rows);
+      totalInserted += inserted;
     }
+    sjProg.done(poules.length);
     logger.info(
-      { totalInserted, pouleSansStats, totalPoules: poules.length },
+      { totalInserted, pouleSansStats, pouleSkipped, totalPoules: poules.length },
       "stats-joueurs scrape done",
     );
     await run.finishSuccess();
@@ -704,9 +808,57 @@ async function scrapeStatsJoueurs(
   }
 }
 
+const FDM_MEDIA_SITE = "media-ffhb-fdm.ffhandball.fr";
+
+// Enregistre l'issue NON-réussie d'un fetch FdM (cf. migration 0021). 'parse_failed' stocke les
+// bytes (re-parsing offline ultérieur, zéro réseau) ; 'not_found' = 404 (cache négatif borné).
+// Upsert sur (fdm_code, saison) : ré-issue ⇒ on incrémente attempts et on rafraîchit l'état.
+async function recordFdmFetchState(opts: {
+  fdm_code: string;
+  saison: string;
+  source_url: string;
+  status: "parse_failed" | "not_found";
+  http_status: number;
+  pdf_bytes?: Buffer | null;
+  content_type?: string | null;
+}): Promise<void> {
+  await query(
+    `INSERT INTO raw.feuilles_match_fetch_state AS fs
+       (fdm_code, saison, source_url, status, http_status, pdf_bytes, pdf_size_bytes, content_type)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+     ON CONFLICT (fdm_code, saison) DO UPDATE SET
+       status          = EXCLUDED.status,
+       http_status     = EXCLUDED.http_status,
+       source_url      = EXCLUDED.source_url,
+       pdf_bytes       = EXCLUDED.pdf_bytes,
+       pdf_size_bytes  = EXCLUDED.pdf_size_bytes,
+       content_type    = EXCLUDED.content_type,
+       attempts        = fs.attempts + 1,
+       last_attempt_at = now()`,
+    [
+      opts.fdm_code,
+      opts.saison,
+      opts.source_url,
+      opts.status,
+      opts.http_status,
+      opts.pdf_bytes ?? null,
+      opts.pdf_bytes ? opts.pdf_bytes.length : null,
+      opts.content_type ?? null,
+    ],
+  );
+}
+
+// À appeler dès qu'une FdM est capturée avec succès : purge tout état d'échec antérieur.
+async function clearFdmFetchState(fdm_code: string, saison: string): Promise<void> {
+  await query(
+    `DELETE FROM raw.feuilles_match_fetch_state WHERE fdm_code = $1 AND saison = $2`,
+    [fdm_code, saison],
+  );
+}
+
 async function scrapeFeuillesMatch(
   saison: string,
-  opts: { limit?: number },
+  opts: { limit?: number; window?: DateWindow | null },
 ): Promise<void> {
   const run = await startScrapeRun({
     source_site: "media-ffhb-fdm.ffhandball.fr",
@@ -716,19 +868,45 @@ async function scrapeFeuillesMatch(
   logger.info({ run_id: run.id, ...opts }, "starting feuilles-match scrape");
 
   try {
-    // 1. Codes uniques à scraper (filtrer ceux déjà en raw.feuilles_match)
+    // 1. Codes FdM à scraper : matchs DÉJÀ JOUÉS uniquement (date_heure < now), non encore
+    //    capturés. Les matchs À VENIR n'ont jamais de FdM → toujours exclus (zéro 404 inutile).
+    //    Sans fenêtre : toute la saison jusqu'à aujourd'hui (rattrapage complet). --days borne
+    //    en plus aux N derniers jours (passages quotidiens). Le filtre NOT EXISTS + la dédup
+    //    payload_hash font qu'un re-run rattrape les FdM publiées en retard sans re-télécharger.
+    const params: unknown[] = [saison];
+    let windowFilter = "";
+    if (opts.window) {
+      params.push(opts.window.from, opts.window.to);
+      windowFilter = ` AND m.date_heure >= $2 AND m.date_heure < $3`;
+    }
+    const ageIdx = params.length + 1;
+    params.push(env.SCRAPE_FDM_MAX_AGE_DAYS);
+    // Exclut, en plus des FdM déjà capturées : (a) les PDF en cache d'échec de parsing — on a déjà
+    // les bytes, inutile de re-télécharger (récupérables via --reparse-cache) ; (b) les 404 dont le
+    // match est plus vieux que SCRAPE_FDM_MAX_AGE_DAYS — la feuille ne viendra plus. Les 404 récents
+    // restent retentés (publication tardive). Cf. migration 0021.
     const codesRes = await query<{ fdm_code: string }>(
-      `SELECT DISTINCT m.payload->>'fdm_code' AS fdm_code
-         FROM raw.matchs m
-        WHERE m.saison = $1
-          AND m.payload->>'fdm_code' IS NOT NULL
-          AND m.payload->>'fdm_code' != ''
+      `SELECT DISTINCT m.fdm_code
+         FROM core.matchs m
+         JOIN core.poules po ON po.id = m.poule_id
+        WHERE po.saison_code = $1
+          AND m.fdm_code IS NOT NULL AND m.fdm_code <> ''
+          AND m.date_heure < now()${windowFilter}
           AND NOT EXISTS (
             SELECT 1 FROM raw.feuilles_match fm
-            WHERE fm.natural_key = m.payload->>'fdm_code' AND fm.saison = $1
+            WHERE fm.natural_key = m.fdm_code AND fm.saison = $1
           )
-        ORDER BY fdm_code`,
-      [saison],
+          AND NOT EXISTS (
+            SELECT 1 FROM raw.feuilles_match_fetch_state fs
+            WHERE fs.fdm_code = m.fdm_code AND fs.saison = $1
+              AND (
+                fs.status = 'parse_failed'
+                OR (fs.status = 'not_found'
+                    AND m.date_heure < now() - make_interval(days => $${ageIdx}::int))
+              )
+          )
+        ORDER BY m.fdm_code`,
+      params,
     );
 
     let toProcess = codesRes.rows;
@@ -738,8 +916,12 @@ async function scrapeFeuillesMatch(
     let totalSuccess = 0;
     let total404 = 0;
     let parseFail = 0;
+    let processed = 0;
+    const prog = new Progress("scrape feuilles-match", toProcess.length);
+    await run.setTotal(toProcess.length);
 
     for (const { fdm_code } of toProcess) {
+      prog.tick(++processed);
       if (fdm_code.length < 4) {
         logger.warn({ fdm_code }, "fdm_code too short, skip");
         continue;
@@ -750,9 +932,15 @@ async function scrapeFeuillesMatch(
 
       if (res.status === 404) {
         total404++;
+        // Cache négatif : on cessera de retenter une fois le match trop vieux (cf. sélection).
+        await recordFdmFetchState({
+          fdm_code, saison, source_url: url, status: "not_found", http_status: 404,
+        });
         continue;
       }
       if (res.status >= 400) {
+        // Bridage transitoire (405/403/429) déjà géré par le cooldown du http-client : on NE
+        // mémorise PAS d'état (sinon on s'exclurait à tort), on retentera au prochain run.
         logger.warn({ url, status: res.status }, "FdM fetch failed");
         continue;
       }
@@ -760,25 +948,93 @@ async function scrapeFeuillesMatch(
       const parsed = await parseFdmPdf(res.body, url, fdm_code);
       if (!parsed) {
         parseFail++;
+        // PDF bien téléchargé mais non parsé : on garde les bytes pour re-parser plus tard SANS
+        // re-télécharger (--reparse-cache après amélioration du parser).
+        await recordFdmFetchState({
+          fdm_code, saison, source_url: url, status: "parse_failed",
+          http_status: res.status, pdf_bytes: res.body, content_type: res.contentType,
+        });
         continue;
       }
 
       await insertRaw("feuilles_match", {
         scrape_run_id: run.id,
         source_url: url,
-        source_site: "media-ffhb-fdm.ffhandball.fr",
+        source_site: FDM_MEDIA_SITE,
         natural_key: fdm_code,
         payload: parsed,
         saison,
         http_status: res.status,
       });
+      await clearFdmFetchState(fdm_code, saison);
       totalSuccess++;
     }
+    prog.done(toProcess.length);
 
     logger.info({ totalSuccess, total404, parseFail, totalProcessed: toProcess.length }, "feuilles-match scrape done");
     await run.finishSuccess();
   } catch (err) {
     logger.error({ err }, "feuilles-match scrape failed");
+    await run.finishFailure(err);
+    throw err;
+  }
+}
+
+// Mode --reparse-cache : re-parse les PDF mis en cache lors d'échecs de parsing passés, SANS
+// aucun accès réseau. À lancer après une amélioration du parser FdM. Les succès sont promus dans
+// raw.feuilles_match et purgés du cache ; les échecs persistants restent en cache pour plus tard.
+async function reparseFdmCache(saison: string, opts: { limit?: number }): Promise<void> {
+  const run = await startScrapeRun({
+    source_site: FDM_MEDIA_SITE,
+    scraper_name: "feuilles-match",
+    saison,
+  });
+  logger.info({ run_id: run.id }, "starting feuilles-match re-parse from cache (no network)");
+
+  try {
+    const cached = await query<{ fdm_code: string; source_url: string; pdf_bytes: Buffer }>(
+      `SELECT fdm_code, source_url, pdf_bytes
+         FROM raw.feuilles_match_fetch_state
+        WHERE saison = $1 AND status = 'parse_failed' AND pdf_bytes IS NOT NULL
+        ORDER BY fdm_code`,
+      [saison],
+    );
+    let rows = cached.rows;
+    if (opts.limit !== undefined) rows = rows.slice(0, opts.limit);
+    logger.info({ count: rows.length }, "cached FdM PDFs to re-parse");
+
+    let recovered = 0;
+    let stillFail = 0;
+    let processed = 0;
+    const prog = new Progress("reparse feuilles-match (cache)", rows.length);
+    await run.setTotal(rows.length);
+
+    for (const { fdm_code, source_url, pdf_bytes } of rows) {
+      prog.tick(++processed);
+      await run.incrementPages(1);
+      const parsed = await parseFdmPdf(pdf_bytes, source_url, fdm_code);
+      if (!parsed) {
+        stillFail++;
+        continue;
+      }
+      await insertRaw("feuilles_match", {
+        scrape_run_id: run.id,
+        source_url,
+        source_site: FDM_MEDIA_SITE,
+        natural_key: fdm_code,
+        payload: parsed,
+        saison,
+        http_status: 200,
+      });
+      await clearFdmFetchState(fdm_code, saison);
+      recovered++;
+    }
+    prog.done(rows.length);
+
+    logger.info({ recovered, stillFail, total: rows.length }, "feuilles-match cache re-parse done");
+    await run.finishSuccess();
+  } catch (err) {
+    logger.error({ err }, "feuilles-match cache re-parse failed");
     await run.finishFailure(err);
     throw err;
   }
@@ -799,18 +1055,24 @@ async function main(): Promise<void> {
   } else if (args.entity === "matchs") {
     await scrapeMatchs(args.saison, {
       level: args.level as "national" | "regional" | "departemental" | undefined,
-      journees: args.journees as "all" | "courante" | undefined,
+      journees: args.journees as "all" | "courante" | "recent" | undefined,
       limit: args.limit,
+      window: args.window,
     });
   } else if (args.entity === "classements") {
     await scrapeClassements(args.saison, {
       level: args.level as "national" | "regional" | "departemental" | undefined,
       limit: args.limit,
+      window: args.window,
     });
   } else if (args.entity === "stats-joueurs") {
     await scrapeStatsJoueurs(args.saison, { limit: args.limit });
   } else if (args.entity === "feuilles-match") {
-    await scrapeFeuillesMatch(args.saison, { limit: args.limit });
+    if (args.reparseCache) {
+      await reparseFdmCache(args.saison, { limit: args.limit });
+    } else {
+      await scrapeFeuillesMatch(args.saison, { limit: args.limit, window: args.window });
+    }
   } else {
     throw new Error(`unknown entity: ${args.entity}`);
   }
