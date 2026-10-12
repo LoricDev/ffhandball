@@ -808,7 +808,7 @@ async function scrapeStatsJoueurs(
   }
 }
 
-const FDM_MEDIA_SITE = "media-ffhb-fdm.ffhandball.fr";
+const FDM_MEDIA_SITE = "fdm.fdme.ffhandball.fr";
 
 // Enregistre l'issue NON-réussie d'un fetch FdM (cf. migration 0021). 'parse_failed' stocke les
 // bytes (re-parsing offline ultérieur, zéro réseau) ; 'not_found' = 404 (cache négatif borné).
@@ -861,7 +861,7 @@ async function scrapeFeuillesMatch(
   opts: { limit?: number; window?: DateWindow | null },
 ): Promise<void> {
   const run = await startScrapeRun({
-    source_site: "media-ffhb-fdm.ffhandball.fr",
+    source_site: "fdm.fdme.ffhandball.fr",
     scraper_name: "feuilles-match",
     saison,
   });
@@ -926,7 +926,7 @@ async function scrapeFeuillesMatch(
         logger.warn({ fdm_code }, "fdm_code too short, skip");
         continue;
       }
-      const url = `https://media-ffhb-fdm.ffhandball.fr/fdm/${fdm_code[0]}/${fdm_code[1]}/${fdm_code[2]}/${fdm_code[3]}/${fdm_code}.pdf`;
+      const url = `https://fdm.fdme.ffhandball.fr/${fdm_code[0]}/${fdm_code[1]}/${fdm_code[2]}/${fdm_code[3]}/${fdm_code}.pdf`;
       const res = await fetchBinary(url);
       await run.incrementPages(1);
 

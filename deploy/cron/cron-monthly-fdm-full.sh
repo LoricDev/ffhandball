@@ -6,8 +6,12 @@
 
 set -euo pipefail
 
+# Une seule instance à la fois (évite les scrapes parallèles qui font bloquer le site).
+exec 9>/tmp/ffhandball-cron-monthly-fdm-full.lock
+flock -n 9 || { echo "cron-monthly-fdm-full déjà en cours, abandon."; exit 0; }
+
 APP_DIR="${APP_DIR:-/opt/ffhandball}"
-SAISON="${SAISON:-2025-2026}"
+source "$(dirname "$0")/lib-saison.sh"
 DATE_NOW=$(date +%Y-%m-%d)
 LOG_DIR="/var/log/ffhandball"
 LOG="$LOG_DIR/cron-monthly-fdm-full-$DATE_NOW.log"

@@ -22,7 +22,7 @@ const BLOCK_STATUSES = new Set([403, 405, 429]);
 
 // Domaine média des feuilles de match : CloudFront → origine, cache-miss systématique (chaque
 // PDF tiré une seule fois). Il bride l'IP au 405 bien plus tôt que le HTML → plancher dédié.
-const FDM_MEDIA_DOMAIN = "media-ffhb-fdm.ffhandball.fr";
+const FDM_MEDIA_DOMAIN = "fdm.fdme.ffhandball.fr";
 
 // Headers de diagnostic CloudFront/origine, journalisés à chaque blocage. Ils tranchent QUI
 // bride, ce qui décide si répartir sur plusieurs IP servirait à quelque chose :

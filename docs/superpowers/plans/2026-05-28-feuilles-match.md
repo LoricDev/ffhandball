@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development. Steps use checkbox (`- [ ]`) syntax.
 
-**Goal:** Télécharger les FdM PDF depuis `media-ffhb-fdm.ffhandball.fr`, parser via `pdf-parse` v2 (Node-pur), alimenter `core.joueurs` (vide jusqu'ici), enrichir `core.match_compositions`, créer `core.match_actions` (déroulé chronologique), étendre `core.match_officiels`.
+**Goal:** Télécharger les FdM PDF depuis `fdm.fdme.ffhandball.fr`, parser via `pdf-parse` v2 (Node-pur), alimenter `core.joueurs` (vide jusqu'ici), enrichir `core.match_compositions`, créer `core.match_actions` (déroulé chronologique), étendre `core.match_officiels`.
 
 **Architecture:** Scraper PDF binaire (helper `fetchBinary`) → parser FdM (`fdm-pdf.parser.ts` avec 2 sous-parsers page 1 et page 2) → schéma Zod structuré → `raw.feuilles_match` (existante) → ETL cascade transactionnelle vers 5 tables core.
 
@@ -61,7 +61,7 @@ Sélectionner 2 codes : un national (LBE = compétition de référence) et un r�
 UA="Mozilla/5.0 ffhandball-pipeline (loric@example.com)"
 
 for CODE in VAGARCA VAGARIM; do  # remplacer par les codes choisis en 1.2
-  URL="https://media-ffhb-fdm.ffhandball.fr/fdm/${CODE:0:1}/${CODE:1:1}/${CODE:2:1}/${CODE:3:1}/${CODE}.pdf"
+  URL="https://fdm.fdme.ffhandball.fr/${CODE:0:1}/${CODE:1:1}/${CODE:2:1}/${CODE:3:1}/${CODE}.pdf"
   echo "Fetching: $URL"
   curl -sL -A "$UA" -o "tests/fixtures/fdm-${CODE}.pdf" -w "HTTP %{http_code} | size: %{size_download}\n" "$URL"
   sleep 2
@@ -303,7 +303,7 @@ describe("rawFeuilleMatchPayloadSchema", () => {
       composition_recevant: [],
       composition_visiteur: [],
       actions: [],
-      source_url: "https://media-ffhb-fdm.ffhandball.fr/fdm/V/A/G/P/VAGPOQJ.pdf",
+      source_url: "https://fdm.fdme.ffhandball.fr/V/A/G/P/VAGPOQJ.pdf",
     });
     expect(r.success).toBe(true);
   });
@@ -486,7 +486,7 @@ function fixturePath(name: string): string {
   return fileURLToPath(new URL(`../fixtures/${name}`, import.meta.url));
 }
 
-const SOURCE_URL = "https://media-ffhb-fdm.ffhandball.fr/fdm/V/A/G/P/VAGPOQJ.pdf";
+const SOURCE_URL = "https://fdm.fdme.ffhandball.fr/V/A/G/P/VAGPOQJ.pdf";
 
 describe("parseFdmPdf — metadata (Page 1)", () => {
   it("extracts fdm_code, équipes, score from VAGPOQJ", async () => {
@@ -1417,7 +1417,7 @@ async function scrapeFeuillesMatch(
   opts: { limit?: number },
 ): Promise<void> {
   const run = await startScrapeRun({
-    source_site: "media-ffhb-fdm.ffhandball.fr",
+    source_site: "fdm.fdme.ffhandball.fr",
     scraper_name: "feuilles-match",
     saison,
   });
@@ -1452,7 +1452,7 @@ async function scrapeFeuillesMatch(
         logger.warn({ fdm_code }, "fdm_code too short, skip");
         continue;
       }
-      const url = `https://media-ffhb-fdm.ffhandball.fr/fdm/${fdm_code[0]}/${fdm_code[1]}/${fdm_code[2]}/${fdm_code[3]}/${fdm_code}.pdf`;
+      const url = `https://fdm.fdme.ffhandball.fr/${fdm_code[0]}/${fdm_code[1]}/${fdm_code[2]}/${fdm_code[3]}/${fdm_code}.pdf`;
       const res = await fetchBinary(url);
       await run.incrementPages(1);
 
@@ -1474,7 +1474,7 @@ async function scrapeFeuillesMatch(
       await insertRaw("feuilles_match", {
         scrape_run_id: run.id,
         source_url: url,
-        source_site: "media-ffhb-fdm.ffhandball.fr",
+        source_site: "fdm.fdme.ffhandball.fr",
         natural_key: fdm_code,
         payload: parsed,
         saison,
@@ -1602,12 +1602,12 @@ async function seedMatchWithFdmCode(extMatchId: string, fdmCode: string): Promis
 async function insertRawFdm(payload: object, naturalKey: string): Promise<void> {
   const runRes = await query<{ id: string }>(
     `INSERT INTO raw.scrape_runs (source_site, scraper_name, saison, status)
-     VALUES ('media-ffhb-fdm.ffhandball.fr','feuilles-match',$1,'success') RETURNING id`,
+     VALUES ('fdm.fdme.ffhandball.fr','feuilles-match',$1,'success') RETURNING id`,
     [SAISON],
   );
   await query(
     `INSERT INTO raw.feuilles_match (scrape_run_id, source_url, source_site, natural_key, payload, payload_hash, saison, http_status)
-     VALUES ($1,'https://x/','media-ffhb-fdm.ffhandball.fr',$2,$3,'h',$4,200)`,
+     VALUES ($1,'https://x/','fdm.fdme.ffhandball.fr',$2,$3,'h',$4,200)`,
     [runRes.rows[0]!.id, naturalKey, payload, SAISON],
   );
 }
@@ -1650,7 +1650,7 @@ function buildFdmPayload(fdmCode: string): object {
         description_brute: "But JR N°25 BAUDSON valentin",
       },
     ],
-    source_url: "https://media-ffhb-fdm.ffhandball.fr/fdm/V/A/G/P/VAGPOQJ.pdf",
+    source_url: "https://fdm.fdme.ffhandball.fr/V/A/G/P/VAGPOQJ.pdf",
   };
 }
 
@@ -2076,7 +2076,7 @@ import { runFeuillesMatchEtl } from "@/etl/feuilles-match.etl.js";
 
 const SAISON = "2025-2026";
 const FDM_CODE = "VAGPOQJ";
-const URL = `https://media-ffhb-fdm.ffhandball.fr/fdm/V/A/G/P/${FDM_CODE}.pdf`;
+const URL = `https://fdm.fdme.ffhandball.fr/V/A/G/P/${FDM_CODE}.pdf`;
 
 function fixturePath(name: string): string {
   return fileURLToPath(new URL(`../fixtures/${name}`, import.meta.url));
@@ -2123,7 +2123,7 @@ async function setup(): Promise<void> {
 async function startRun(): Promise<string> {
   const r = await query<{ id: string }>(
     `INSERT INTO raw.scrape_runs (source_site, scraper_name, saison, status)
-     VALUES ('media-ffhb-fdm.ffhandball.fr','feuilles-match',$1,'success') RETURNING id`,
+     VALUES ('fdm.fdme.ffhandball.fr','feuilles-match',$1,'success') RETURNING id`,
     [SAISON],
   );
   return r.rows[0]!.id;
@@ -2146,7 +2146,7 @@ describe("feuilles-match end-to-end", () => {
     await insertRaw("feuilles_match", {
       scrape_run_id: run_id,
       source_url: URL,
-      source_site: "media-ffhb-fdm.ffhandball.fr",
+      source_site: "fdm.fdme.ffhandball.fr",
       natural_key: FDM_CODE,
       payload: parsed!,
       saison: SAISON,
@@ -2220,7 +2220,7 @@ EOF
 ## Scraper les feuilles de match (FdM PDFs)
 
 Télécharge et parse les feuilles de match officielles FFHandball au format PDF
-depuis `media-ffhb-fdm.ffhandball.fr`. Alimente `core.joueurs` (vide
+depuis `fdm.fdme.ffhandball.fr`. Alimente `core.joueurs` (vide
 auparavant), enrichit `core.match_compositions`, peuple `core.match_actions`
 (déroulé chronologique).
 
@@ -2244,7 +2244,7 @@ npm run scrape -- --entity=feuilles-match --saison=2025-2026
 Le scraper :
 1. SELECT codes uniques depuis `raw.matchs.payload->>'fdm_code'`
 2. Filtre ceux déjà en `raw.feuilles_match` (idempotence sans re-download)
-3. Pour chaque code : télécharge `https://media-ffhb-fdm.ffhandball.fr/fdm/{c1}/{c2}/{c3}/{c4}/{code}.pdf`
+3. Pour chaque code : télécharge `https://fdm.fdme.ffhandball.fr/{c1}/{c2}/{c3}/{c4}/{code}.pdf`
 4. Parse via `pdf-parse` v2 (page 1 metadata + officiels + compositions, page 2 déroulé)
 5. insertRaw avec payload JSONB structuré (pas de PDF brut conservé)
 

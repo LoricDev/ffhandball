@@ -857,7 +857,7 @@ Puis re-lancer `etl --entity=stats-joueurs`. `raw.stats_joueurs` n'est pas touch
 ## Scraper les feuilles de match (FdM PDFs)
 
 Télécharge et parse les feuilles de match officielles FFHandball au format PDF
-depuis `media-ffhb-fdm.ffhandball.fr`. Alimente `core.joueurs` (vide
+depuis `fdm.fdme.ffhandball.fr`. Alimente `core.joueurs` (vide
 auparavant), enrichit `core.match_compositions`, peuple `core.match_actions`
 (déroulé chronologique).
 
@@ -881,7 +881,7 @@ pnpm scrape --entity=feuilles-match --saison=2025-2026
 Le scraper :
 1. SELECT codes uniques depuis `raw.matchs.payload->>'fdm_code'`
 2. Filtre ceux déjà en `raw.feuilles_match` (idempotence sans re-download)
-3. Pour chaque code : télécharge `https://media-ffhb-fdm.ffhandball.fr/fdm/{c1}/{c2}/{c3}/{c4}/{code}.pdf`
+3. Pour chaque code : télécharge `https://fdm.fdme.ffhandball.fr/{c1}/{c2}/{c3}/{c4}/{code}.pdf`
 4. Parse via `pdf-parse` v2 (page 1 metadata + officiels + compositions, page 2 déroulé)
 5. insertRaw avec payload JSONB structuré (pas de PDF brut conservé)
 
