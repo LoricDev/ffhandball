@@ -13,7 +13,7 @@ MARKER_END="# --- ffhandball pipeline END ---"
 CRON_BLOCK="$MARKER_START
 # Mise à jour quotidienne : matchs + ETL cascade + classements + FdM récentes + stats-joueurs (02:00)
 0 2 * * *   $APP_DIR/deploy/cron/cron-daily.sh
-# Monitoring : santé runs + fraîcheur + qualité, alerte mail (07:00)
+# Récap quotidien par mail : santé runs, activité 24 h, qualité, alertes (07:00)
 0 7 * * *   $APP_DIR/deploy/cron/cron-monitor.sh
 # Healthcheck API toutes les 5 min (alerte une fois par incident)
 */5 * * * * $APP_DIR/deploy/cron/cron-healthcheck.sh
