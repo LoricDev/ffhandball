@@ -7,6 +7,7 @@
 // sort en 1 seulement si le monitoring lui-même échoue (ex. base injoignable).
 import { parseArgs } from "node:util";
 import { closePool, query } from "@/db/client.js";
+import { env } from "@/config/env.js";
 import { canonicalizeSaison } from "@/etl/shared/parse-saison.js";
 import { sendMail } from "@/lib/mailer.js";
 import { renderEmail, emailTable, emailCallout, emailList, emailCodeBlock, escapeHtml } from "@/lib/email-template.js";
@@ -45,7 +46,12 @@ function fdmPdfUrl(code: string): string | null {
 }
 
 interface NoScoreDetails {
+  /** Matchs sans score À SURVEILLER (hors bruit). */
   total: number;
+  /** Parmi eux, ceux passés le seuil depuis moins de 24 h (nouveaux depuis hier). */
+  nouveaux: number;
+  /** Matchs sans score mais sans FdM attendue : ne déclenchent pas l'alerte. */
+  bruit: Array<{ kind: string; n: number }>;
   parStatut: Array<{ statut: string; n: number }>;
   parCause: Array<{ cause: string; n: number }>;
   parCompetition: Array<{ competition: string; n: number }>;
@@ -60,7 +66,7 @@ const NO_SCORE_WHERE = `po.saison_code = $1
         AND m.score_dom IS NULL`;
 
 async function noScoreDetails(saison: string, days: number): Promise<NoScoreDetails> {
-  const params = [saison, days];
+  const params = [saison, days, env.SCRAPE_FDM_MAX_AGE_DAYS];
   const from = `FROM core.matchs m
        JOIN core.poules po ON po.id = m.poule_id
        JOIN core.phases ph ON ph.id = po.phase_id
@@ -69,6 +75,12 @@ async function noScoreDetails(saison: string, days: number): Promise<NoScoreDeta
        JOIN core.equipes ee ON ee.id = m.equipe_ext_id
        LEFT JOIN raw.feuilles_match_fetch_state fs ON fs.fdm_code = m.fdm_code AND fs.saison = po.saison_code
       WHERE ${NO_SCORE_WHERE}`;
+  // Bruit probable (n'alerte pas) : tournois de détection (pas de FdM) et FdM en 404 depuis plus
+  // de SCRAPE_FDM_MAX_AGE_DAYS (forfait / match non joué : la feuille ne viendra plus).
+  const noise = `(c.nom ILIKE '%TOURNOI%'
+         OR (fs.status = 'not_found' AND m.date_heure < now() - ($3::int * interval '1 day')))`;
+  const real = `${from} AND NOT ${noise}`;
+  const noisy = `${from} AND ${noise}`;
   // Cause probable : le score est dérivé de la FdM quand ffhandball ne le publie pas (cf. feuilles-match.etl).
   const cause = `CASE
          WHEN m.fdm_code IS NULL THEN 'Pas de code FdM sur le listing ffhandball'
@@ -81,18 +93,24 @@ async function noScoreDetails(saison: string, days: number): Promise<NoScoreDeta
          ELSE 'FdM pas encore tentée'
        END`;
   const causes = await query<{ cause: string; n: string }>(
-    `SELECT ${cause} AS cause, count(*)::bigint AS n ${from} GROUP BY 1 ORDER BY n DESC`, params);
+    `SELECT ${cause} AS cause, count(*)::bigint AS n ${real} GROUP BY 1 ORDER BY n DESC`, params);
   const statut = await query<{ statut: string; n: string }>(
-    `SELECT m.statut, count(*)::bigint AS n ${from} GROUP BY m.statut ORDER BY n DESC`, params);
+    `SELECT m.statut, count(*)::bigint AS n ${real} GROUP BY m.statut ORDER BY n DESC`, params);
   const comp = await query<{ competition: string; n: string }>(
-    `SELECT c.nom AS competition, count(*)::bigint AS n ${from} GROUP BY c.nom ORDER BY n DESC LIMIT 10`, params);
+    `SELECT c.nom AS competition, count(*)::bigint AS n ${real} GROUP BY c.nom ORDER BY n DESC LIMIT 10`, params);
   const matchs = await query<NoScoreMatch>(
     `SELECT m.id_ffhb_match, m.date_heure, m.statut, c.nom AS competition, po.nom AS poule,
             ed.nom AS dom, ee.nom AS ext, m.fdm_code, ${cause} AS cause,
             fs.http_status AS fdm_http, fs.attempts AS fdm_attempts, fs.last_attempt_at AS fdm_last_attempt,
             c.detail_url || 'poule-' || po.id_ffhb || '/'
               || CASE WHEN m.journee IS NOT NULL THEN '?numero_journee=' || m.journee ELSE '' END AS url
-       ${from} ORDER BY m.date_heure ASC LIMIT ${DETAIL_LIMIT}`, params);
+       ${real} ORDER BY m.date_heure ASC LIMIT ${DETAIL_LIMIT}`, params);
+  const nouveaux = await query<{ n: string }>(
+    `SELECT count(*)::bigint AS n ${real} AND m.date_heure >= now() - (($2::int + 1) * interval '1 day')`, params);
+  const bruit = await query<{ kind: string; n: string }>(
+    `SELECT CASE WHEN c.nom ILIKE '%TOURNOI%' THEN 'Tournois (pas de FdM attendue)'
+                 ELSE 'FdM introuvable (404) depuis plus de ' || $3::int || ' j (forfait / non joué probable)' END AS kind,
+            count(*)::bigint AS n ${noisy} GROUP BY 1 ORDER BY n DESC`, params);
   const parStatut = statut.rows.map((r) => ({ statut: r.statut, n: Number(r.n) }));
   const sql = [
     "SELECT m.id_ffhb_match, m.date_heure, m.statut, po.nom AS poule",
@@ -104,6 +122,8 @@ async function noScoreDetails(saison: string, days: number): Promise<NoScoreDeta
   ].join("\n");
   return {
     total: parStatut.reduce((a, r) => a + r.n, 0),
+    nouveaux: Number(nouveaux.rows[0]!.n),
+    bruit: bruit.rows.map((r) => ({ kind: r.kind, n: Number(r.n) })),
     parStatut,
     parCause: causes.rows.map((r) => ({ cause: r.cause, n: Number(r.n) })),
     parCompetition: comp.rows.map((r) => ({ competition: r.competition, n: Number(r.n) })),
@@ -117,14 +137,26 @@ const H = (t: string): string =>
 
 const fmtDate = (d: Date): string => d.toISOString().slice(0, 16).replace("T", " ");
 
+const NOTE_STYLE = "font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;font-size:12px;color:#64748b;margin-top:6px;";
+
+/** Matchs sans score mais sans FdM attendue : listés pour info, jamais en alerte. */
+function bruitHtml(d: NoScoreDetails): string {
+  if (d.bruit.length === 0) return "";
+  return (
+    H("Sans score mais sans alerte (bruit probable)") +
+    emailTable(["Catégorie", "Nb"], d.bruit.map((r) => [r.kind, String(r.n)]), ["l", "r"])
+  );
+}
+
 function noScoreHtml(d: NoScoreDetails, days: number): string {
   const shown = d.matchs.length;
   return [
-    H(`Matchs sans score (&gt; ${days} j) — détail`),
+    H(`Matchs sans score à surveiller (&gt; ${days} j) — détail`),
+    `<div style="${NOTE_STYLE}">${d.nouveaux} nouveau(x) depuis hier (passés le seuil de ${days} j dans les dernières 24 h).</div><div style="height:8px;"></div>`,
     emailTable(["Statut", "Nb"], d.parStatut.map((r) => [r.statut, String(r.n)]), ["l", "r"]),
     H("Cause probable (état de la FdM)"),
     emailTable(["Cause", "Nb"], d.parCause.map((r) => [r.cause, String(r.n)]), ["l", "r"]),
-    `<div style="font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;font-size:12px;color:#64748b;margin-top:6px;">Un match perdu par forfait n'a pas de FdM : le lien PDF renverra alors une erreur (404), c'est normal.</div>`,
+    `<div style="${NOTE_STYLE}">Un match perdu par forfait n'a pas de FdM : le lien PDF renverra alors une erreur (404). Passé ${env.SCRAPE_FDM_MAX_AGE_DAYS} j, ces matchs sont classés en bruit.</div>`,
     H("Par compétition (top 10)"),
     emailTable(["Compétition", "Nb"], d.parCompetition.map((r) => [r.competition, String(r.n)]), ["l", "r"]),
     H(`Les ${shown} plus anciens${d.total > shown ? ` (sur ${d.total})` : ""}`),
@@ -298,6 +330,10 @@ async function main(): Promise<void> {
   const staleScoreDays = Number(values["stale-score-days"] ?? 10);
   const saison = values.saison ? canonicalizeSaison(values.saison) : await latestSaison();
   if (!saison) throw new Error("Aucune saison en base.");
+  // Saison courante attendue (bascule le 1er juillet, comme deploy/cron/lib-saison.sh).
+  const now = new Date();
+  const startYear = now.getUTCMonth() + 1 >= 7 ? now.getUTCFullYear() : now.getUTCFullYear() - 1;
+  const expectedSaison = `${startYear}-${startYear + 1}`;
 
   // Dernier run par scraper et par entité ETL.
   const scrape = await query<RunRow>(
@@ -323,6 +359,20 @@ async function main(): Promise<void> {
     }
   }
 
+  // 1bis. Mauvaise saison : les crons (ou la dernière activité) ne tournent pas sur la saison courante.
+  if (!values.saison && saison !== expectedSaison) {
+    problems.push(
+      `La dernière activité concerne la saison ${saison}, pas la saison courante ${expectedSaison} : les crons ciblent peut-être la mauvaise saison`,
+    );
+  }
+
+  // 1ter. Scrape « réussi » mais vide : signe d'une cible erronée ou d'un site qui a changé.
+  for (const r of scrape.rows) {
+    if ((r.name === "matchs" || r.name === "competitions") && r.status === "success" && r.pages_scraped === 0) {
+      problems.push(`scrape ${r.name} : succès mais 0 page traitée (${fmtDate(r.started_at)})`);
+    }
+  }
+
   // 2. Fraîcheur : aucune activité depuis trop longtemps.
   let last: Date | null = null;
   for (const r of runs) {
@@ -339,8 +389,20 @@ async function main(): Promise<void> {
   let extraHtml = "";
   if (noScore.total > 0) {
     const statuts = noScore.parStatut.map((r) => `${r.n} ${r.statut}`).join(", ");
-    problems.push(`${noScore.total} match(s) joué(s) il y a >${staleScoreDays} j sans score (${statuts})`);
+    const nouveaux = noScore.nouveaux > 0 ? `, dont ${noScore.nouveaux} nouveau(x) depuis hier` : "";
+    problems.push(`${noScore.total} match(s) joué(s) il y a >${staleScoreDays} j sans score (${statuts}${nouveaux})`);
     extraHtml = noScoreHtml(noScore, staleScoreDays);
+  }
+  extraHtml += bruitHtml(noScore);
+
+  // Info : rattrapage FdM en cours (les causes « jamais tentée » se résorbent alors d'elles-mêmes).
+  const fdmRun = scrape.rows.find((r) => r.name === "feuilles-match" && r.status === "running");
+  if (fdmRun) {
+    const prog = fdmRun.pages_total ? ` (${fdmRun.pages_scraped ?? 0}/${fdmRun.pages_total} PDF)` : "";
+    extraHtml =
+      `<div style="height:14px;"></div>` +
+      emailCallout(`<strong>Rattrapage des FdM en cours</strong>${prog} — démarré le ${fmtDate(fdmRun.started_at)}. Les matchs « jamais tentés » seront traités à sa fin ; le site de FdM peut limiter le débit (HTTP 429).`, "info") +
+      extraHtml;
   }
 
   // Info : rejets ETL sur 24 h.
@@ -356,8 +418,8 @@ async function main(): Promise<void> {
   for (const m of noScore.matchs.slice(0, 10)) {
     process.stdout.write(`    · ${fmtDate(m.date_heure)} ${m.competition} — ${m.poule} : ${m.dom} vs ${m.ext} [${m.cause}] ${m.url ?? m.id_ffhb_match}${m.fdm_code ? ` fdm=${m.fdm_code}` : ""}\n`);
   }
-  process.stdout.write(`  24 h : ${act.matchsMisAJour} match(s) mis à jour (${act.resultats} avec résultat), ${act.fdmCaptees} FdM captée(s), base ${act.dbSize}
-`);
+  process.stdout.write(`  24 h : ${act.matchsMisAJour} match(s) mis à jour (${act.resultats} avec résultat), ${act.fdmCaptees} FdM captée(s), base ${act.dbSize}\n`);
+  for (const b of noScore.bruit) process.stdout.write(`  (i) bruit sans alerte : ${b.n} — ${b.kind}`+String.fromCharCode(10));
   if (rejets24h > 0) process.stdout.write(`  (i) ${rejets24h} rejet(s) ETL sur 24 h\n`);
 
   if (!ok || values.digest) {
