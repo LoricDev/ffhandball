@@ -27,6 +27,10 @@ sudo ./deploy/deploy-all.sh
 
 Le script demande interactivement :
 - **Domaine** (ex: `api.exemple.fr`) — laisser vide pour ignorer HTTPS
+- **Domaine du site vitrine** (ex: `exemple.fr`) — optionnel, sert `site/` ; `www.` redirige dessus.
+  Les enregistrements DNS A de la racine et de `www` doivent déjà pointer sur le serveur, sinon
+  le certificat HTTPS n'est pas émis (simple avertissement : relancer la commande certbot ensuite).
+  Régler aussi `baseUrl` dans `site/config.js` sur l'URL publique de l'API.
 - **Email de contact** — utilisé dans User-Agent scraping + Let's Encrypt
 - **Mot de passe Postgres** — auto-généré si laissé vide (recommandé)
 
