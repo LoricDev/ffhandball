@@ -9,6 +9,7 @@ APP_DIR="${APP_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 REAL_USER="${REAL_USER:-$(whoami)}"
 
 log() { echo "[setup-app] $*"; }
+as_root() { if [ "$(id -u)" -eq 0 ]; then "$@"; else sudo "$@"; fi; }
 
 # ─── Variables interactives ───────────────────────────────────────────────────
 
@@ -19,8 +20,11 @@ echo ""
 read -rp "Domaine API (ex: api.exemple.fr) [laisser vide = pas de HTTPS] : " DOMAIN
 DOMAIN="${DOMAIN:-}"
 
+read -rp "Domaine du site vitrine (ex: exemple.fr, www.* redirige dessus) [laisser vide = pas de site] : " SITE_DOMAIN
+SITE_DOMAIN="${SITE_DOMAIN:-}"
+
 CONTACT_EMAIL=""
-if [ -n "$DOMAIN" ]; then
+if [ -n "$DOMAIN" ] || [ -n "$SITE_DOMAIN" ]; then
   read -rp "Email de contact (Let's Encrypt + User-Agent scraping) : " CONTACT_EMAIL
   while [ -z "$CONTACT_EMAIL" ]; do
     echo "  L'email est requis si un domaine est configuré."
@@ -49,6 +53,7 @@ echo ""
 echo "=== Résumé ==="
 echo "  APP_DIR          : $APP_DIR"
 echo "  DOMAIN           : ${DOMAIN:-<aucun — pas de HTTPS>}"
+echo "  SITE_DOMAIN      : ${SITE_DOMAIN:-<aucun — pas de site vitrine>}"
 echo "  CONTACT_EMAIL    : ${CONTACT_EMAIL:-<aucun>}"
 echo "  POSTGRES_PASSWORD: ****"
 echo ""
@@ -234,6 +239,38 @@ else
   log "Aucun domaine défini — setup nginx/HTTPS ignoré."
 fi
 
+# ─── 6b. Site vitrine (statique) : nginx + certbot (optionnel) ───────────────
+
+if [ -n "$SITE_DOMAIN" ]; then
+  SITE_CONF="/etc/nginx/sites-available/ffhandball-site.conf"
+  SITE_LINK="/etc/nginx/sites-enabled/ffhandball-site.conf"
+
+  log "Génération de la configuration nginx du site pour $SITE_DOMAIN..."
+  TMP_SITE=$(mktemp)
+  sed \
+    -e "s|{{SITE_DOMAIN}}|${SITE_DOMAIN}|g" \
+    -e "s|{{APP_DIR}}|${APP_DIR}|g" \
+    "$APP_DIR/deploy/nginx/ffhandball-site.conf.template" > "$TMP_SITE"
+  as_root install -m 644 "$TMP_SITE" "$SITE_CONF"
+  rm -f "$TMP_SITE"
+  as_root ln -sf "$SITE_CONF" "$SITE_LINK"
+  as_root nginx -t
+  as_root systemctl reload nginx
+  log "nginx configuré pour le site $SITE_DOMAIN."
+
+  # Le DNS (A de $SITE_DOMAIN et de www) doit déjà pointer sur ce serveur, sinon certbot échoue.
+  # Non bloquant : l'API est déjà en ligne ; relancer la commande une fois le DNS en place.
+  SITE_CERTBOT=(certbot --nginx -d "$SITE_DOMAIN" -d "www.$SITE_DOMAIN" --non-interactive --agree-tos -m "$CONTACT_EMAIL" --redirect)
+  if as_root "${SITE_CERTBOT[@]}"; then
+    as_root nginx -t && as_root systemctl reload nginx
+    log "HTTPS du site configuré via Let's Encrypt."
+  else
+    echo "WARNING: certbot a échoué pour $SITE_DOMAIN (DNS pas encore en place ?). Le site reste en HTTP." >&2
+    echo "  Une fois le DNS créé : sudo ${SITE_CERTBOT[*]}" >&2
+  fi
+  log "Penser à régler baseUrl dans site/config.js sur l'URL publique de l'API."
+fi
+
 # ─── 7. Cron jobs ─────────────────────────────────────────────────────────────
 
 log "Installation des cron jobs..."
@@ -259,6 +296,9 @@ echo ""
 echo "=== Application configurée ==="
 if [ -n "$DOMAIN" ]; then
   echo "  API publique : https://$DOMAIN"
+fi
+if [ -n "$SITE_DOMAIN" ]; then
+  echo "  Site vitrine : https://$SITE_DOMAIN (fichiers : $APP_DIR/site)"
 fi
 echo "  API locale   : http://localhost:3000"
 echo "  Logs API     : journalctl -u ffhandball-api -f"
