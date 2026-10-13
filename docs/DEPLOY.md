@@ -285,60 +285,45 @@ open https://api.ton-domaine.fr/docs
 
 ### Setup cron
 
-Créer un script `scripts/cron-daily.sh` :
+Les scripts sont versionnés dans `deploy/cron/` et installés d'un coup :
 
 ```bash
-#!/usr/bin/env bash
-# /opt/ffhandball/scripts/cron-daily.sh
-# Mise à jour quotidienne : journée courante matchs + ETLs en cascade
+bash deploy/cron/install-crontab.sh
+crontab -l      # vérifier
+```
 
-set -euo pipefail
+| Fréquence | Script | Rôle |
+|---|---|---|
+| Quotidien 02:00 | `cron-daily.sh` | Matchs (journée courante), ETL, classements, FdM des 10 derniers jours, stats joueurs |
+| Quotidien 07:00 | `cron-monitor.sh` | **Récap quotidien par mail** (voir « Mails et alertes ») |
+| Toutes les 5 min | `cron-healthcheck.sh` | Sonde l'API (`/ready`), mail à la panne et au rétablissement |
+| Lundi 03:00 | `cron-weekly-fdm-recent.sh` | FdM des 30 derniers jours + ETL |
+| Dimanche 05:00 | `cron-weekly-structure.sh` | Clubs, détails, salles, compétitions, poules, équipes |
+| Dimanche 06:00 | `cron-maintenance.sh` | Purge `api_logs` / `etl_warnings`, VACUUM, rotation des logs |
+| 1er du mois 22:00 | `cron-monthly-fdm-full.sh` | Rattrapage FdM complet (30-100 h, multi-nuits) |
+| Quotidien 04:30 | `backup-daily.sh` | Sauvegarde `core.*`, rotation 14 jours |
 
+Points à connaître :
+
+- **Saison automatique** : `lib-saison.sh` bascule le 1er juillet (avant le correctif d'octobre 2026, les crons restaient codés sur la saison précédente). Surcharge possible : `SAISON=2026-2027 bash deploy/cron/cron-daily.sh`.
+- **Un seul exemplaire à la fois** : chaque script prend un verrou `flock` (évite les scrapes parallèles qui font bloquer le site).
+- **Échec = mail immédiat** : si une étape échoue, le script envoie un mail (`lib-notify.sh`) en plus de l'écrire dans son log.
+- **Lancer un cron à la main** : `bash deploy/cron/cron-monitor.sh` (le log est dans `/var/log/ffhandball/`).
+
+#### Rattrapage manuel des FdM
+
+Le serveur de FdM (`fdm.fdme.ffhandball.fr`, derrière CloudFront) répond `429` quand le débit est trop élevé : le scrape se met alors en pause (60 s, 120 s…) et reprend seul. Rien n'est mémorisé sur un blocage, donc la commande est relançable à volonté. Pour rattraper une période en tâche de fond :
+
+```bash
 cd /opt/ffhandball
+SCRAPE_FDM_RATE_LIMIT_MS=4000 nohup bash -c \
+  'pnpm scrape --entity=feuilles-match --saison=2026-2027 --days=60 && pnpm etl --entity=feuilles-match --saison=2026-2027' \
+  > /tmp/fdm-rattrapage.log 2>&1 &
 
-# Charger nvm + node pour cron (qui n'a pas le PATH normal)
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-nvm use 20 > /dev/null
-
-SAISON="${SAISON:-2025-2026}"
-LOG="/var/log/ffhandball/cron-daily-$(date +%Y-%m-%d).log"
-mkdir -p "$(dirname "$LOG")"
-
-echo "[$(date)] Starting daily scrape" >> "$LOG"
-
-# 1. Scrape journée courante matchs
-pnpm scrape --entity=matchs --saison="$SAISON" >> "$LOG" 2>&1
-
-# 2. ETLs en cascade (idempotents, ré-exécutables sans risque)
-pnpm etl --entity=matchs           --saison="$SAISON" >> "$LOG" 2>&1
-pnpm etl --entity=arbitres         --saison="$SAISON" >> "$LOG" 2>&1
-pnpm etl --entity=match_officiels  --saison="$SAISON" >> "$LOG" 2>&1
-
-echo "[$(date)] Daily scrape done" >> "$LOG"
+grep "scrape feuilles-match:" /tmp/fdm-rattrapage.log | tail -1   # progression
 ```
 
-Rendre exécutable :
-
-```bash
-chmod +x scripts/cron-daily.sh
-```
-
-Ajouter au crontab utilisateur (`crontab -e`) :
-
-```cron
-# Scrape quotidien matchs à 02:00 (nocturne, politesse + faible charge serveur ffhandball)
-0 2 * * *   /opt/ffhandball/scripts/cron-daily.sh
-
-# Mensuel : --journees=all le 1er du mois à 22:00 (étalé sur ~24h)
-0 22 1 * *  /opt/ffhandball/scripts/cron-monthly-full.sh
-```
-
-Vérifier :
-
-```bash
-crontab -l
-```
+Compter ~3-5 PDF par minute en pratique (la progression affichée « ETA » est faussée par les pauses). Les scores sont appliqués par l'ETL `feuilles-match` ; un match perdu par forfait n'a pas de FdM (404), c'est normal.
 
 ### Logs
 
@@ -394,21 +379,42 @@ SELECT entity, message, count(*) FROM core.etl_warnings
   GROUP BY entity, message ORDER BY count(*) DESC;
 ```
 
-### Alertes
+### Mails et alertes
 
-Un scrape_run échoué (`status='failed'`) doit déclencher une alerte. Exemple avec un curl vers un webhook Slack/Discord depuis le cron :
+Configuration SMTP dans `.env` (sans elle, aucun mail n'est envoyé, sans erreur) :
 
-```bash
-# Dans cron-daily.sh, après l'ETL :
-FAILED=$(docker exec ffhandball-postgres psql -U ffhandball -d ffhandball -tAc \
-  "SELECT count(*) FROM raw.scrape_runs WHERE status='failed' AND started_at > now() - interval '12 hours'")
-
-if [ "$FAILED" -gt 0 ]; then
-  curl -X POST -H 'Content-Type: application/json' \
-    -d "{\"text\": \"⚠️ ffhandball : $FAILED scrape(s) failed in last 12h\"}" \
-    "$SLACK_WEBHOOK_URL"
-fi
+```env
+MAIL_HOST=smtp.exemple.fr
+MAIL_PORT=587            # 465 = TLS direct, sinon STARTTLS
+MAIL_USER=...
+MAIL_PASSWORD=...        # Gmail : « mot de passe d'application » (validation en 2 étapes requise)
+MAIL_FROM="ffhandball <adresse@exemple.fr>"
+MAIL_TO=destinataire@exemple.fr
 ```
+
+`pnpm mail:test` vérifie la configuration et envoie un mail de test.
+
+| Mail | Quand |
+|---|---|
+| **Récap quotidien** | Tous les jours à 07:00 (`pnpm monitor --digest`) : objet = problème principal ou « tout est OK » |
+| **Cron en échec** | Immédiatement, quand une étape d'un cron échoue (`lib-notify.sh`) |
+| **API injoignable / rétablie** | Une seule fois par incident (`cron-healthcheck.sh`) |
+| **Pipeline terminé / échoué** | Fin de `pnpm pipeline` (durée totale, commande de relance exacte) |
+
+Le récap (`pnpm monitor`) vérifie : runs en échec ou partiels, fraîcheur (36 h par défaut), saison traitée = saison courante, scrape `matchs`/`competitions` réussi mais à 0 page, et matchs joués depuis plus de 10 jours sans score. Il affiche aussi l'activité des dernières 24 h et la progression des runs en cours.
+
+Pour les matchs sans score, le mail sépare :
+
+- **À surveiller** (déclenche l'alerte) : cause probable par match (code FdM absent, 404, PDF illisible, hors fenêtre des crons, rattrapage en cours…), liens vers la poule et le PDF de la FdM, requête SQL de vérification, « nouveaux depuis hier ».
+- **Bruit probable** (n'alerte pas) : tournois de détection (pas de FdM) et FdM en 404 depuis plus de `SCRAPE_FDM_MAX_AGE_DAYS` jours (forfait / non joué).
+
+Options : `pnpm monitor --saison=2026-2027 --max-age-hours=36 --stale-score-days=10 --digest`. Sans `--digest`, le mail n'est envoyé que s'il y a un problème.
+
+#### Entretien de la base
+
+- `pnpm maintenance` (dimanche 06:00) purge les `api_logs` > 90 j et les `etl_warnings` des runs > 30 j, puis `VACUUM`. `--dry-run` pour voir sans supprimer. `VACUUM` rend l'espace réutilisable mais ne réduit pas les fichiers (`VACUUM FULL` verrouille la table).
+- `pnpm prune-raw` limite la croissance du schéma `raw` (append-only). Par défaut c'est un **dry-run** ; il n'est volontairement pas planifié : choisis une rétention puis exécute par exemple `pnpm prune-raw --older-than-days=120` (puis `--apply`).
+- Le conteneur Postgres a `shm_size: 256mb` (`docker-compose.yml`) : avec les 64 Mo par défaut de Docker, les `VACUUM` parallèles échouent (« No space left on device » sur un segment de mémoire partagée). Appliqué à la prochaine recréation : `docker compose up -d postgres`.
 
 ### Disk usage
 
