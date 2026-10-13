@@ -9,7 +9,7 @@ import { parseArgs } from "node:util";
 import { closePool, query } from "@/db/client.js";
 import { canonicalizeSaison } from "@/etl/shared/parse-saison.js";
 import { sendMail } from "@/lib/mailer.js";
-import { renderEmail, emailTable, emailCallout, emailList } from "@/lib/email-template.js";
+import { renderEmail, emailTable, emailCallout, emailList, emailCodeBlock } from "@/lib/email-template.js";
 
 interface RunRow {
   name: string;
@@ -17,6 +17,89 @@ interface RunRow {
   started_at: Date;
   finished_at: Date | null;
   error_message: string | null;
+}
+
+interface NoScoreMatch {
+  id_ffhb_match: string;
+  date_heure: Date;
+  statut: string;
+  competition: string;
+  poule: string;
+  dom: string;
+  ext: string;
+}
+
+interface NoScoreDetails {
+  total: number;
+  parStatut: Array<{ statut: string; n: number }>;
+  parCompetition: Array<{ competition: string; n: number }>;
+  matchs: NoScoreMatch[];
+  sql: string;
+}
+
+const DETAIL_LIMIT = 30;
+
+const NO_SCORE_WHERE = `po.saison_code = $1
+        AND m.date_heure < now() - ($2::int * interval '1 day')
+        AND m.score_dom IS NULL`;
+
+async function noScoreDetails(saison: string, days: number): Promise<NoScoreDetails> {
+  const params = [saison, days];
+  const from = `FROM core.matchs m
+       JOIN core.poules po ON po.id = m.poule_id
+       JOIN core.phases ph ON ph.id = po.phase_id
+       JOIN core.competitions c ON c.id = ph.competition_id
+       JOIN core.equipes ed ON ed.id = m.equipe_dom_id
+       JOIN core.clubs cd ON cd.id = ed.club_id
+       JOIN core.equipes ee ON ee.id = m.equipe_ext_id
+       JOIN core.clubs ce ON ce.id = ee.club_id
+      WHERE ${NO_SCORE_WHERE}`;
+  const statut = await query<{ statut: string; n: string }>(
+    `SELECT m.statut, count(*)::bigint AS n ${from} GROUP BY m.statut ORDER BY n DESC`, params);
+  const comp = await query<{ competition: string; n: string }>(
+    `SELECT c.nom AS competition, count(*)::bigint AS n ${from} GROUP BY c.nom ORDER BY n DESC LIMIT 10`, params);
+  const matchs = await query<NoScoreMatch>(
+    `SELECT m.id_ffhb_match, m.date_heure, m.statut, c.nom AS competition, po.nom AS poule,
+            cd.nom || ' ' || ed.nom_equipe AS dom, ce.nom || ' ' || ee.nom_equipe AS ext
+       ${from} ORDER BY m.date_heure ASC LIMIT ${DETAIL_LIMIT}`, params);
+  const parStatut = statut.rows.map((r) => ({ statut: r.statut, n: Number(r.n) }));
+  const sql = [
+    "SELECT m.id_ffhb_match, m.date_heure, m.statut, po.nom AS poule",
+    "  FROM core.matchs m JOIN core.poules po ON po.id = m.poule_id",
+    ` WHERE po.saison_code = '${saison}'`,
+    `   AND m.date_heure < now() - interval '${days} days'`,
+    "   AND m.score_dom IS NULL",
+    " ORDER BY m.date_heure;",
+  ].join("\n");
+  return {
+    total: parStatut.reduce((a, r) => a + r.n, 0),
+    parStatut,
+    parCompetition: comp.rows.map((r) => ({ competition: r.competition, n: Number(r.n) })),
+    matchs: matchs.rows,
+    sql,
+  };
+}
+
+const H = (t: string): string =>
+  `<div style="height:18px;"></div><div style="font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;font-size:13px;font-weight:700;color:#0f172a;">${t}</div><div style="height:8px;"></div>`;
+
+const fmtDate = (d: Date): string => d.toISOString().slice(0, 16).replace("T", " ");
+
+function noScoreHtml(d: NoScoreDetails, days: number): string {
+  const shown = d.matchs.length;
+  return [
+    H(`Matchs sans score (&gt; ${days} j) — détail`),
+    emailTable(["Statut", "Nb"], d.parStatut.map((r) => [r.statut, String(r.n)]), ["l", "r"]),
+    H("Par compétition (top 10)"),
+    emailTable(["Compétition", "Nb"], d.parCompetition.map((r) => [r.competition, String(r.n)]), ["l", "r"]),
+    H(`Les ${shown} plus anciens${d.total > shown ? ` (sur ${d.total})` : ""}`),
+    emailTable(
+      ["Date (UTC)", "Poule", "Match", "Statut", "ID FFHB"],
+      d.matchs.map((m) => [fmtDate(m.date_heure), `${m.competition} — ${m.poule}`, `${m.dom} vs ${m.ext}`, m.statut, m.id_ffhb_match]),
+    ),
+    H("Requête pour vérifier (pnpm db:psql)"),
+    emailCodeBlock(d.sql),
+  ].join("");
 }
 
 async function latestSaison(): Promise<string | null> {
@@ -30,7 +113,13 @@ async function latestSaison(): Promise<string | null> {
   return r.rows[0]?.saison ?? null;
 }
 
-function buildHtml(saison: string, problems: string[], rejets24h: number, runs: RunRow[]): string {
+function buildHtml(
+  saison: string,
+  problems: string[],
+  rejets24h: number,
+  runs: RunRow[],
+  extraHtml: string,
+): string {
   const failed = runs.filter((r) => r.status === "failed" || r.status === "partial");
   const body = [
     problems.length
@@ -41,8 +130,15 @@ function buildHtml(saison: string, problems: string[], rejets24h: number, runs: 
     failed.length
       ? `<div style="height:16px;"></div><div style="font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;font-size:13px;font-weight:700;color:#0f172a;">Runs en échec / partiels</div><div style="height:8px;"></div>` +
         emailTable(
-          ["Entité", "Statut", "Erreur"],
-          failed.map((r) => [r.name, r.status, (r.error_message ?? "").slice(0, 140)]),
+          ["Entité", "Statut", "Début (UTC)", "Erreur"],
+          failed.map((r) => [r.name, r.status, fmtDate(r.started_at), (r.error_message ?? "").slice(0, 500)]),
+        )
+      : "",
+    extraHtml,
+    rejets24h > 0
+      ? H("Rejets ETL (24 h)") +
+        emailCodeBlock(
+          "SELECT * FROM core.etl_rejets\nWHERE created_at > now() - interval '24 hours'\nORDER BY created_at DESC;",
         )
       : "",
   ].join("");
@@ -103,17 +199,12 @@ async function main(): Promise<void> {
   }
 
   // 3. Qualité : matchs joués il y a longtemps, toujours sans score.
-  const noScore = await query<{ n: string }>(
-    `SELECT count(*)::bigint AS n
-       FROM core.matchs m JOIN core.poules po ON po.id = m.poule_id
-      WHERE po.saison_code = $1
-        AND m.date_heure < now() - ($2::int * interval '1 day')
-        AND m.score_dom IS NULL`,
-    [saison, staleScoreDays],
-  );
-  const noScoreN = Number(noScore.rows[0]!.n);
-  if (noScoreN > 0) {
-    problems.push(`${noScoreN} match(s) joué(s) il y a >${staleScoreDays} j sans score (FdM non publiée ?)`);
+  const noScore = await noScoreDetails(saison, staleScoreDays);
+  let extraHtml = "";
+  if (noScore.total > 0) {
+    const statuts = noScore.parStatut.map((r) => `${r.n} ${r.statut}`).join(", ");
+    problems.push(`${noScore.total} match(s) joué(s) il y a >${staleScoreDays} j sans score (${statuts})`);
+    extraHtml = noScoreHtml(noScore, staleScoreDays);
   }
 
   // Info : rejets ETL sur 24 h.
@@ -125,12 +216,16 @@ async function main(): Promise<void> {
   const ok = problems.length === 0;
   process.stdout.write(`${ok ? "✅" : "⚠️"} Monitoring ${saison} — ${ok ? "OK" : problems.length + " problème(s)"}\n`);
   for (const p of problems) process.stdout.write(`  - ${p}\n`);
+  for (const m of noScore.matchs.slice(0, 10)) {
+    process.stdout.write(`    · ${fmtDate(m.date_heure)} ${m.competition} — ${m.poule} : ${m.dom} vs ${m.ext} [${m.statut}] ${m.id_ffhb_match}
+`);
+  }
   if (rejets24h > 0) process.stdout.write(`  (i) ${rejets24h} rejet(s) ETL sur 24 h\n`);
 
   if (!ok || values.digest) {
     await sendMail(
       `[ffhandball] ${ok ? "✅ Monitoring OK" : "⚠️ Alerte"} — ${saison}`,
-      buildHtml(saison, problems, rejets24h, runs),
+      buildHtml(saison, problems, rejets24h, runs, extraHtml),
     );
   }
 }
