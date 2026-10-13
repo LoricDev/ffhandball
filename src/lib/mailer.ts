@@ -1,5 +1,6 @@
 // src/lib/mailer.ts — envoi de mails via SMTP (nodemailer).
 // Si les variables MAIL_* ne sont pas configurées, les envois sont silencieusement ignorés.
+import { hostname } from "node:os";
 import nodemailer from "nodemailer";
 import { env } from "@/config/env.js";
 import { logger } from "@/lib/logger.js";
@@ -40,6 +41,14 @@ export async function sendMail(subject: string, html: string): Promise<void> {
   }
 }
 
+/** Somme des durées « 12.3s » des étapes, formatée (« 4 min 05 s »). */
+function totalDuration(steps: { duration: string }[]): string {
+  const secs = Math.round(steps.reduce((a, s) => a + (parseFloat(s.duration) || 0), 0));
+  if (secs < 60) return `${secs} s`;
+  if (secs < 3600) return `${Math.floor(secs / 60)} min ${String(secs % 60).padStart(2, "0")} s`;
+  return `${Math.floor(secs / 3600)} h ${String(Math.floor((secs % 3600) / 60)).padStart(2, "0")} min`;
+}
+
 function stepsTable(steps: { label: string; duration: string }[]): string {
   return emailTable(
     ["Étape", "Statut", "Durée"],
@@ -53,15 +62,17 @@ export async function sendPipelineSuccess(saison: string, steps: { label: string
     status: "success",
     title: `Pipeline terminé — saison ${saison}`,
     preheader: `${steps.length} étapes terminées avec succès`,
-    intro: "Toutes les étapes du pipeline se sont terminées avec succès.",
+    intro: `Toutes les étapes du pipeline se sont terminées avec succès en ${totalDuration(steps)}.`,
     bodyHtml: steps.length > 0 ? stepsTable(steps) : undefined,
-    footerNote: `Pipeline ffhandball · saison ${saison}`,
+    footerNote: `Pipeline ffhandball · saison ${saison} · ${hostname()}`,
   });
-  await sendMail(`[ffhandball] ✅ Pipeline ${saison} terminé`, html);
+  await sendMail(`[ffhandball] ✅ Pipeline ${saison} terminé en ${totalDuration(steps)}`, html);
 }
 
 export async function sendPipelineFailure(saison: string, failedStep: string, error: string, completed: { label: string; duration: string }[]): Promise<void> {
-  const relance = `pnpm pipeline --saison=${saison} --from=${failedStep.split(" ").pop() ?? ""}`;
+  // Libellé complet de la 1re étape en échec (« etl clubs ») : « --from » le résout sans ambiguïté,
+  // contrairement au dernier mot seul (« clubs » reprendrait à « scrape clubs »).
+  const relance = `pnpm pipeline --saison=${saison} --from="${failedStep.split(", ")[0]}"`;
   const body = [
     emailCallout(`<strong>Étape échouée :</strong> <code style="font-family:monospace;background:rgba(0,0,0,.06);padding:1px 6px;border-radius:4px;">${escapeHtml(failedStep)}</code>`, "failure"),
     `<div style="height:14px;line-height:14px;">&nbsp;</div>`,
@@ -70,7 +81,12 @@ export async function sendPipelineFailure(saison: string, failedStep: string, er
       ? `<div style="margin-top:18px;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;font-size:13px;font-weight:700;color:#0f172a;">Étapes complétées avant l'échec</div><div style="height:8px;"></div>${stepsTable(completed)}`
       : "",
     `<div style="height:14px;"></div>`,
-    emailCallout(`Relance possible : <code style="font-family:monospace;">${escapeHtml(relance)}</code>`, "info"),
+    emailCallout(
+      `Relance possible : <code style="font-family:monospace;">${escapeHtml(relance)}</code><br>` +
+        `Sur le serveur <strong>${escapeHtml(hostname())}</strong>, dans <code style="font-family:monospace;">/opt/ffhandball</code>. ` +
+        `Voir aussi <code style="font-family:monospace;">pnpm status</code> et les logs dans <code style="font-family:monospace;">/var/log/ffhandball/</code>.`,
+      "info",
+    ),
   ].join("");
 
   const html = renderEmail({
@@ -78,7 +94,7 @@ export async function sendPipelineFailure(saison: string, failedStep: string, er
     title: `Pipeline échoué — saison ${saison}`,
     preheader: `Échec à l'étape : ${failedStep}`,
     bodyHtml: body,
-    footerNote: `Pipeline ffhandball · saison ${saison}`,
+    footerNote: `Pipeline ffhandball · saison ${saison} · ${hostname()}`,
   });
   await sendMail(`[ffhandball] ❌ Pipeline ${saison} échoué — ${failedStep}`, html);
 }
