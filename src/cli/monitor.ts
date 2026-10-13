@@ -9,7 +9,7 @@ import { parseArgs } from "node:util";
 import { closePool, query } from "@/db/client.js";
 import { canonicalizeSaison } from "@/etl/shared/parse-saison.js";
 import { sendMail } from "@/lib/mailer.js";
-import { renderEmail, emailTable, emailCallout, emailList, emailCodeBlock } from "@/lib/email-template.js";
+import { renderEmail, emailTable, emailCallout, emailList, emailCodeBlock, escapeHtml } from "@/lib/email-template.js";
 
 interface RunRow {
   name: string;
@@ -27,6 +27,8 @@ interface NoScoreMatch {
   poule: string;
   dom: string;
   ext: string;
+  /** Page de la poule (journée du match) sur ffhandball.fr, null si competition sans detail_url. */
+  url: string | null;
 }
 
 interface NoScoreDetails {
@@ -58,7 +60,9 @@ async function noScoreDetails(saison: string, days: number): Promise<NoScoreDeta
     `SELECT c.nom AS competition, count(*)::bigint AS n ${from} GROUP BY c.nom ORDER BY n DESC LIMIT 10`, params);
   const matchs = await query<NoScoreMatch>(
     `SELECT m.id_ffhb_match, m.date_heure, m.statut, c.nom AS competition, po.nom AS poule,
-            ed.nom AS dom, ee.nom AS ext
+            ed.nom AS dom, ee.nom AS ext,
+            c.detail_url || 'poule-' || po.id_ffhb || '/'
+              || CASE WHEN m.journee IS NOT NULL THEN '?numero_journee=' || m.journee ELSE '' END AS url
        ${from} ORDER BY m.date_heure ASC LIMIT ${DETAIL_LIMIT}`, params);
   const parStatut = statut.rows.map((r) => ({ statut: r.statut, n: Number(r.n) }));
   const sql = [
@@ -92,8 +96,16 @@ function noScoreHtml(d: NoScoreDetails, days: number): string {
     emailTable(["Compétition", "Nb"], d.parCompetition.map((r) => [r.competition, String(r.n)]), ["l", "r"]),
     H(`Les ${shown} plus anciens${d.total > shown ? ` (sur ${d.total})` : ""}`),
     emailTable(
-      ["Date (UTC)", "Poule", "Match", "Statut", "ID FFHB"],
-      d.matchs.map((m) => [fmtDate(m.date_heure), `${m.competition} — ${m.poule}`, `${m.dom} vs ${m.ext}`, m.statut, m.id_ffhb_match]),
+      ["Date (UTC)", "Poule", "Match", "Statut", "Lien"],
+      d.matchs.map((m) => [
+        fmtDate(m.date_heure),
+        `${m.competition} — ${m.poule}`,
+        `${m.dom} vs ${m.ext}`,
+        m.statut,
+        m.url
+          ? { html: `<a href="${escapeHtml(m.url)}" style="color:#2563eb;">${escapeHtml(m.id_ffhb_match)}</a>` }
+          : m.id_ffhb_match,
+      ]),
     ),
     H("Requête pour vérifier (pnpm db:psql)"),
     emailCodeBlock(d.sql),
@@ -215,7 +227,7 @@ async function main(): Promise<void> {
   process.stdout.write(`${ok ? "✅" : "⚠️"} Monitoring ${saison} — ${ok ? "OK" : problems.length + " problème(s)"}\n`);
   for (const p of problems) process.stdout.write(`  - ${p}\n`);
   for (const m of noScore.matchs.slice(0, 10)) {
-    process.stdout.write(`    · ${fmtDate(m.date_heure)} ${m.competition} — ${m.poule} : ${m.dom} vs ${m.ext} [${m.statut}] ${m.id_ffhb_match}
+    process.stdout.write(`    · ${fmtDate(m.date_heure)} ${m.competition} — ${m.poule} : ${m.dom} vs ${m.ext} [${m.statut}] ${m.url ?? m.id_ffhb_match}
 `);
   }
   if (rejets24h > 0) process.stdout.write(`  (i) ${rejets24h} rejet(s) ETL sur 24 h\n`);

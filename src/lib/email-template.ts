@@ -95,8 +95,13 @@ export function renderEmail(o: EmailOptions): string {
 </html>`;
 }
 
-/** Table stylée. `headers`/`rows` sont échappés. `align` optionnel par colonne ('l'|'r'). */
-export function emailTable(headers: string[], rows: string[][], align: Array<"l" | "r"> = []): string {
+/** Cellule déjà en HTML (non échappée) : l'appelant doit échapper son contenu. */
+export interface EmailHtmlCell {
+  html: string;
+}
+
+/** Table stylée (cellules `{ html }` non échappées). `headers`/`rows` sont échappés. `align` optionnel par colonne ('l'|'r'). */
+export function emailTable(headers: string[], rows: Array<Array<string | EmailHtmlCell>>, align: Array<"l" | "r"> = []): string {
   const th = headers
     .map(
       (h, i) =>
@@ -109,7 +114,7 @@ export function emailTable(headers: string[], rows: string[][], align: Array<"l"
       const tds = r
         .map(
           (cell, i) =>
-            `<td align="${align[i] === "r" ? "right" : "left"}" style="padding:9px 14px;font-family:${FONT};font-size:13px;color:#334155;border-bottom:1px solid ${BORDER};">${escapeHtml(cell)}</td>`,
+            `<td align="${align[i] === "r" ? "right" : "left"}" style="padding:9px 14px;font-family:${FONT};font-size:13px;color:#334155;border-bottom:1px solid ${BORDER};">${typeof cell === "string" ? escapeHtml(cell) : cell.html}</td>`,
         )
         .join("");
       return `<tr bgcolor="${bg}" style="background:${bg};">${tds}</tr>`;
