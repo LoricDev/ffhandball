@@ -2,9 +2,20 @@
 // Endpoints d'administration des clés API. Protégés par X-Admin-Secret (PAS par clé API).
 // Volontairement hors OpenAPI public (Hono brut) pour ne pas exposer la surface admin.
 import { Hono } from "hono";
+import { readFileSync } from "node:fs";
 import { createApiKey, renewApiKey, revokeApiKey, listApiKeys } from "@/api/lib/repositories/api-keys.repo.js";
+import { getPipelineSnapshot } from "@/api/lib/repositories/pipeline-status.repo.js";
 
 const admin = new Hono();
+
+// Page du tableau de bord : HTML statique SANS donnée (le secret est saisi dans la page et n'est
+// envoyé qu'à /admin/pipeline). Déclarée avant le garde, qui ne s'applique qu'aux routes suivantes.
+const DASHBOARD_HTML = readFileSync(new URL("../admin/dashboard.html", import.meta.url), "utf8");
+admin.get("/admin/dashboard", (c) => {
+  c.header("Cache-Control", "no-store");
+  c.header("X-Robots-Tag", "noindex");
+  return c.html(DASHBOARD_HTML);
+});
 
 // Garde : ADMIN_SECRET configuré + header X-Admin-Secret correspondant.
 // Lecture runtime de process.env.ADMIN_SECRET (validé au démarrage via env schema).
@@ -20,6 +31,11 @@ admin.use("/admin/*", async (c, next) => {
     return c.json({ error: { code: "UNAUTHORIZED" as const, message: "Secret admin invalide" } }, 401);
   }
   await next();
+});
+
+admin.get("/admin/pipeline", async (c) => {
+  c.header("Cache-Control", "no-store");
+  return c.json({ data: await getPipelineSnapshot() });
 });
 
 admin.get("/admin/api-keys", async (c) => {

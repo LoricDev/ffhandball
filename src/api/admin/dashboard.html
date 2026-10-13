@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Pipeline en direct</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --fg:#14181f; --mut:#6b7380; --bd:#e2e5ea; --ok:#15803d; --run:#1d6fd8; --warn:#b45309; --bad:#c62828; --bar:#e8ebf0; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0f1218; --card:#171b23; --fg:#e6e9ee; --mut:#8b93a1; --bd:#262c37; --ok:#4ade80; --run:#60a5fa; --warn:#fbbf24; --bad:#f87171; --bar:#262c37; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.45 system-ui,-apple-system,Segoe UI,sans-serif; }
+  header { display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid var(--bd); background:var(--card); position:sticky; top:0; z-index:2; }
+  h1 { font-size:16px; margin:0; } h2 { font-size:13px; margin:0 0 10px; text-transform:uppercase; letter-spacing:.05em; color:var(--mut); }
+  main { max-width:1200px; margin:0 auto; padding:16px; display:grid; gap:16px; }
+  .grid { display:grid; gap:12px; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); }
+  .card { background:var(--card); border:1px solid var(--bd); border-radius:10px; padding:14px; }
+  .kpi b { display:block; font-size:22px; font-variant-numeric:tabular-nums; } .kpi span { color:var(--mut); font-size:12px; }
+  .pill { display:inline-block; padding:1px 8px; border-radius:99px; font-size:12px; font-weight:600; border:1px solid currentColor; }
+  .running { color:var(--run); } .success { color:var(--ok); } .partial { color:var(--warn); } .failed { color:var(--bad); }
+  .job { padding:10px 0; border-top:1px solid var(--bd); } .job:first-child { border-top:0; padding-top:0; }
+  .row { display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+  .bar { height:8px; background:var(--bar); border-radius:4px; overflow:hidden; margin:6px 0 2px; }
+  .bar i { display:block; height:100%; background:var(--run); transition:width .6s; }
+  .bar.indet i { width:35%; animation:slide 1.4s ease-in-out infinite alternate; } @keyframes slide { from{margin-left:0} to{margin-left:65%} }
+  .mut { color:var(--mut); font-size:12px; } .err { color:var(--bad); font-size:12px; word-break:break-word; }
+  table { width:100%; border-collapse:collapse; font-size:13px; } th,td { text-align:left; padding:5px 8px; border-top:1px solid var(--bd); white-space:nowrap; } th { color:var(--mut); font-weight:500; border-top:0; }
+  .scroll { overflow-x:auto; } .num { text-align:right; font-variant-numeric:tabular-nums; }
+  .dot { width:9px; height:9px; border-radius:50%; background:var(--mut); display:inline-block; margin-right:6px; } .live .dot { background:var(--ok); animation:pulse 1.5s infinite; } .dead .dot { background:var(--bad); }
+  @keyframes pulse { 50% { opacity:.3 } }
+  #login { max-width:380px; margin:12vh auto; } input { width:100%; padding:9px; border:1px solid var(--bd); border-radius:6px; background:var(--bg); color:var(--fg); margin:8px 0; font:inherit; }
+  button { padding:8px 14px; border:0; border-radius:6px; background:var(--run); color:#fff; font:inherit; cursor:pointer; }
+  .hidden { display:none !important; } .two { display:grid; gap:16px; grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); }
+</style>
+</head>
+<body>
+<div id="login" class="card">
+  <h1>Pipeline en direct</h1>
+  <p class="mut">Saisis le secret admin (conservé uniquement pour cet onglet).</p>
+  <input id="secret" type="password" placeholder="ADMIN_SECRET" autocomplete="off">
+  <button id="go">Se connecter</button>
+  <div id="loginerr" class="err"></div>
+</div>
+
+<div id="app" class="hidden">
+<header>
+  <h1>Pipeline en direct</h1>
+  <div class="mut" id="conn"><span class="dot"></span><span id="connTxt">connexion…</span></div>
+</header>
+<main>
+  <section class="grid" id="kpis"></section>
+  <section class="card"><h2>En cours</h2><div id="running"></div></section>
+  <section class="two">
+    <div class="card"><h2>Dernier passage par tâche</h2><div class="scroll"><table id="jobs"></table></div></div>
+    <div class="card"><h2>API (1 dernière heure)</h2><div id="api"></div><h2 style="margin-top:14px">Erreurs 5xx (24 h)</h2><div id="apierr" class="scroll"></div></div>
+  </section>
+  <section class="two">
+    <div class="card"><h2>Scrapes récents</h2><div class="scroll"><table id="scrapes"></table></div></div>
+    <div class="card"><h2>ETL récents</h2><div class="scroll"><table id="etls"></table></div></div>
+  </section>
+  <section class="card"><h2>Base de données — plus grosses tables</h2><div class="scroll"><table id="tables"></table></div></section>
+</main>
+</div>
+
+<script>
+const POLL_MS = 5000;
+let secret = sessionStorage.getItem("adminSecret") || "";
+let prev = new Map();      // clé de run -> {t, n} pour le débit entre deux relevés
+let timer = null, lastOk = 0;
+
+const $ = (id) => document.getElementById(id);
+function el(tag, props, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(props || {})) { if (k === "class") e.className = v; else if (k === "style") e.style.cssText = v; else e[k] = v; }
+  for (const k of kids.flat()) if (k != null) e.append(k.nodeType ? k : document.createTextNode(String(k)));
+  return e;
+}
+const fmt = (n) => n == null ? "–" : Number(n).toLocaleString("fr-FR");
+function bytes(b) { b = Number(b); if (!isFinite(b)) return "–"; const u = ["o","Ko","Mo","Go","To"]; let i = 0; while (b >= 1024 && i < 4) { b /= 1024; i++; } return b.toFixed(i ? 1 : 0) + " " + u[i]; }
+function dur(sec) { if (sec == null || !isFinite(sec)) return "–"; sec = Math.max(0, Math.round(sec)); const d = Math.floor(sec/86400), h = Math.floor(sec%86400/3600), m = Math.floor(sec%3600/60), s = sec%60; return d ? `${d} j ${h} h` : h ? `${h} h ${String(m).padStart(2,"0")}` : m ? `${m} min ${String(s).padStart(2,"0")}` : `${s} s`; }
+function ago(iso) { if (!iso) return "jamais"; const s = (Date.now() - new Date(iso)) / 1000; return "il y a " + dur(s); }
+const hhmm = (iso) => iso ? new Date(iso).toLocaleString("fr-FR", { day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit" }) : "–";
+const pill = (st) => el("span", { class: "pill " + st }, { running: "en cours", success: "ok", partial: "partiel", failed: "échec" }[st] || st);
+
+function table(t, head, rows) {
+  t.replaceChildren(el("thead", {}, el("tr", {}, head.map((h) => el("th", { class: h.startsWith("#") ? "num" : "" }, h.replace(/^#/, ""))))),
+    el("tbody", {}, rows.map((r) => el("tr", {}, r.map((c, i) => el("td", { class: head[i].startsWith("#") ? "num" : "" }, c))))));
+}
+
+// Débit mesuré entre deux relevés successifs → ETA.
+function rate(key, n) {
+  const now = Date.now(), p = prev.get(key);
+  prev.set(key, { t: now, n, r: p && n > p.n ? (n - p.n) / ((now - p.t) / 1000) : p?.r ?? null, stalled: p && n === p.n ? (p.stalled || 0) + 1 : 0 });
+  return prev.get(key);
+}
+
+function runningCard(kind, name, saison, started, done, total, extra, key) {
+  const st = rate(key, done);
+  const pct = total ? Math.min(100, (done / total) * 100) : null;
+  const eta = pct != null && st.r ? (total - done) / st.r : null;
+  const stalled = st.stalled >= 6; // ~30 s sans progression
+  return el("div", { class: "job" },
+    el("div", { class: "row" },
+      el("div", {}, el("b", {}, `${kind} ${name}`), " ", el("span", { class: "mut" }, saison || "")),
+      el("div", { class: "mut" }, `démarré ${ago(started)}`)),
+    el("div", { class: "bar" + (pct == null ? " indet" : "") }, el("i", { style: pct != null ? `width:${pct}%` : "" })),
+    el("div", { class: "row mut" },
+      el("span", {}, pct != null ? `${pct.toFixed(1)} % — ${fmt(done)} / ${fmt(total)}` : `${fmt(done)} traités`, extra ? ` · ${extra}` : ""),
+      el("span", {}, st.r ? `${st.r.toFixed(1)}/s` : "", eta != null ? ` · reste ~${dur(eta)}` : "", stalled ? el("span", { class: "err" }, " · aucune progression depuis ~30 s") : "")));
+}
+
+function render(d) {
+  const run = [...d.scrapes.filter((r) => r.status === "running").map((r) => ({ k: "scrape", r })),
+               ...d.etls.filter((r) => r.status === "running").map((r) => ({ k: "etl", r }))];
+  const failed24 = [...d.scrapes, ...d.etls].filter((r) => r.status === "failed" && Date.now() - new Date(r.started_at) < 864e5).length;
+
+  $("kpis").replaceChildren(
+    ...[[run.length, "en cours", run.length ? "running" : ""], [failed24, "échecs (24 h)", failed24 ? "failed" : "success"],
+        [fmt(d.api.total_5m), "requêtes API / 5 min", ""], [fmt(d.api.err_5xx_1h), "erreurs 5xx / 1 h", d.api.err_5xx_1h > 0 ? "failed" : "success"],
+        [bytes(d.db.bytes), "taille de la base", ""], [d.db.connections, "connexions DB", ""]]
+      .map(([v, l, c]) => el("div", { class: "card kpi" }, el("b", { class: c }, v), el("span", {}, l))));
+
+  const live = new Set();
+  $("running").replaceChildren(...(run.length ? run.map(({ k, r }) => {
+    const key = k + (r.id ?? r.scraper_name + r.started_at); live.add(key);
+    return k === "scrape"
+      ? runningCard("Scrape", r.scraper_name, r.saison, r.started_at, r.pages_scraped, r.pages_total, "pages", key)
+      : runningCard("ETL", r.entity, r.saison, r.started_at, r.rows_read, r.rows_total, `+${fmt(r.rows_inserted)} / ~${fmt(r.rows_updated)} / ✕${fmt(r.rows_rejected)}`, key);
+  }) : [el("div", { class: "mut" }, "Rien en cours — aucun cron actif en ce moment.")]));
+  for (const k of prev.keys()) if (!live.has(k)) prev.delete(k);
+
+  table($("jobs"), ["Type", "Tâche", "Dernier lancement", "Dernier succès"],
+    d.last_by_job.map((j) => {
+      const old = j.last_success && Date.now() - new Date(j.last_success) > 7 * 864e5;
+      return [j.kind, j.name, ago(j.last_start), el("span", { class: !j.last_success || old ? "partial" : "" }, ago(j.last_success))];
+    }));
+
+  $("api").replaceChildren(el("div", { class: "grid" },
+    ...[[fmt(d.api.total_1h), "requêtes"], [fmt(d.api.keyed_1h), "avec clé API"], [fmt(d.api.rate_limited_1h), "429"], [d.api.avg_ms_1h + " ms", "moyenne"], [d.api.p95_ms_1h + " ms", "p95"]]
+      .map(([v, l]) => el("div", { class: "kpi" }, el("b", {}, v), el("span", {}, l)))));
+  $("apierr").replaceChildren(d.api.recent_errors.length
+    ? (() => { const t = el("table"); table(t, ["Heure", "Requête", "#Statut", "#ms"], d.api.recent_errors.map((e) => [hhmm(e.requested_at), `${e.method} ${e.path}`, e.status, e.duration_ms])); return t; })()
+    : el("div", { class: "mut" }, "Aucune erreur serveur."));
+
+  const dsec = (r) => r.finished_at ? (new Date(r.finished_at) - new Date(r.started_at)) / 1000 : null;
+  const errTip = (r) => r.error_message ? el("div", { class: "err", style: "white-space:normal;max-width:360px" }, r.error_message.slice(0, 160)) : null;
+  table($("scrapes"), ["Statut", "Scraper", "Saison", "Début", "#Durée", "#Pages"],
+    d.scrapes.slice(0, 20).map((r) => [el("span", {}, pill(r.status), errTip(r)), r.scraper_name, r.saison, hhmm(r.started_at), dur(dsec(r)), fmt(r.pages_scraped) + (r.pages_total ? " / " + fmt(r.pages_total) : "")]));
+  table($("etls"), ["Statut", "Entité", "Saison", "Début", "#Durée", "#Lues", "#Rejets"],
+    d.etls.slice(0, 20).map((r) => [el("span", {}, pill(r.status), errTip(r)), r.entity, r.saison || "", hhmm(r.started_at), dur(dsec(r)), fmt(r.rows_read), fmt(r.rows_rejected)]));
+  table($("tables"), ["Table", "#Lignes (est.)", "#Taille"], d.db.top_tables.map((t) => [`${t.schema}.${t.table}`, fmt(t.rows), bytes(t.bytes)]));
+}
+
+async function tick() {
+  try {
+    const res = await fetch("/admin/pipeline", { headers: { "x-admin-secret": secret }, cache: "no-store" });
+    if (res.status === 401 || res.status === 503) { logout(res.status === 401 ? "Secret invalide." : "Admin désactivé côté serveur."); return; }
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    render((await res.json()).data);
+    lastOk = Date.now();
+    $("conn").className = "mut live"; $("connTxt").textContent = "en direct · maj " + new Date().toLocaleTimeString("fr-FR");
+  } catch (e) {
+    $("conn").className = "mut dead"; $("connTxt").textContent = "hors ligne (" + e.message + ") — dernière maj " + (lastOk ? ago(new Date(lastOk).toISOString()) : "jamais");
+  }
+}
+function start() { $("login").classList.add("hidden"); $("app").classList.remove("hidden"); tick(); timer = setInterval(() => { if (!document.hidden) tick(); }, POLL_MS); }
+function logout(msg) { clearInterval(timer); sessionStorage.removeItem("adminSecret"); secret = ""; $("app").classList.add("hidden"); $("login").classList.remove("hidden"); $("loginerr").textContent = msg || ""; }
+$("go").onclick = () => { secret = $("secret").value.trim(); if (!secret) return; sessionStorage.setItem("adminSecret", secret); $("loginerr").textContent = ""; start(); };
+$("secret").onkeydown = (e) => { if (e.key === "Enter") $("go").onclick(); };
+document.addEventListener("visibilitychange", () => { if (!document.hidden && secret) tick(); });
+if (secret) start();
+</script>
+</body>
+</html>

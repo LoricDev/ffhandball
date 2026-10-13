@@ -71,3 +71,25 @@ describe("admin /admin/api-keys — garde X-Admin-Secret", () => {
     await closePool();
   });
 });
+
+describe("admin /admin/pipeline + /admin/dashboard", () => {
+  it("dashboard HTML accessible sans secret", async () => {
+    _resetBuckets();
+    process.env.ADMIN_SECRET = SECRET;
+    const res = await app.request("/admin/dashboard");
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain("Pipeline en direct");
+  });
+
+  it("pipeline: 401 sans secret, 200 avec", async () => {
+    _resetBuckets();
+    process.env.ADMIN_SECRET = SECRET;
+    expect((await app.request("/admin/pipeline")).status).toBe(401);
+    const res = await app.request("/admin/pipeline", { headers: { "x-admin-secret": SECRET } });
+    expect(res.status).toBe(200);
+    const { data } = await res.json();
+    expect(Array.isArray(data.scrapes)).toBe(true);
+    expect(Array.isArray(data.etls)).toBe(true);
+    expect(data.db.bytes).toBeDefined();
+  });
+});
