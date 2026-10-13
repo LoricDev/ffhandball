@@ -70,39 +70,4 @@ joueurs.openapi(matchsRoute, async (c) => {
   return c.json({ data: result.data, meta: { total: result.total, limit: q.limit, offset: q.offset } }, 200);
 });
 
-const matchsRoute = createRoute({
-  method: "get",
-  path: "/joueurs/{numero_licence}/matchs",
-  tags: ["joueurs"],
-  summary: "Historique complet (paginé) des matchs d'un joueur",
-  request: {
-    params: z.object({ numero_licence: z.string() }),
-    query: paginationQuerySchema,
-  },
-  responses: {
-    200: {
-      content: {
-        "application/json": {
-          schema: z.object({ data: z.array(joueurMatchItemSchema), meta: paginationMetaSchema }),
-        },
-      },
-      description: "Matchs du joueur (triés par date_heure ASC)",
-    },
-    404: { content: { "application/json": { schema: errorResponseSchema } }, description: "Joueur not found" },
-  },
-});
-
-joueurs.openapi(matchsRoute, async (c) => {
-  const { numero_licence } = c.req.valid("param");
-  const q = c.req.valid("query");
-  const result = await getJoueurMatchs(numero_licence, q.limit, q.offset);
-  if (!result) {
-    return c.json(
-      { error: { code: "NOT_FOUND" as const, message: `Joueur numero_licence=${numero_licence} introuvable` } },
-      404,
-    );
-  }
-  return c.json({ data: result.data, meta: { total: result.total, limit: q.limit, offset: q.offset } });
-});
-
 export default joueurs;
