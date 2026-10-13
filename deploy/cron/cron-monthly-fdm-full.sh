@@ -27,6 +27,7 @@ nvm use 20 > /dev/null 2>&1 || true
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG"; }
 log_err() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: $*" | tee -a "$LOG" >&2; }
 
+source "$(dirname "$0")/lib-notify.sh"
 cd "$APP_DIR"
 
 log "=== Démarrage cron-monthly-fdm-full (saison $SAISON) ==="
@@ -60,5 +61,6 @@ if [ "$ERRORS" -eq 0 ]; then
   log "=== cron-monthly-fdm-full terminé avec succès ==="
 else
   log_err "=== cron-monthly-fdm-full terminé avec $ERRORS erreur(s) — voir $LOG ==="
+  notify_failure "cron-monthly-fdm-full" "$ERRORS" "$LOG"
   exit 1
 fi
