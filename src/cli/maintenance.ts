@@ -48,7 +48,8 @@ async function main(): Promise<void> {
   // 3. VACUUM ANALYZE (hors transaction — pool.query simple).
   if (!dryRun) {
     process.stdout.write("VACUUM ANALYZE...\n");
-    await query("VACUUM ANALYZE");
+    // PARALLEL 0 : le /dev/shm de 64 Mo du conteneur Docker est trop petit pour les workers parallèles.
+    await query("VACUUM (ANALYZE, PARALLEL 0)");
     process.stdout.write("  → terminé\n");
   } else {
     process.stdout.write("(dry-run : VACUUM ANALYZE non exécuté)\n");

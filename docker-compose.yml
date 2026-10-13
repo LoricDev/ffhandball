@@ -2,6 +2,7 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: ffhandball-postgres
+    shm_size: 256mb   # /dev/shm par défaut = 64 Mo : insuffisant pour VACUUM/requêtes parallèles
     restart: unless-stopped
     environment:
       POSTGRES_USER: ffhandball
