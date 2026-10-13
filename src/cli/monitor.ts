@@ -73,6 +73,8 @@ async function noScoreDetails(saison: string, days: number): Promise<NoScoreDeta
            THEN 'FdM récupérée mais score non appliqué (ETL feuilles-match à relancer ?)'
          WHEN fs.status = 'not_found' THEN 'FdM introuvable (404)'
          WHEN fs.status = 'parse_failed' THEN 'PDF de FdM illisible (parse_failed)'
+         WHEN m.date_heure < now() - interval '30 days'
+           THEN 'FdM jamais tentée : match hors fenêtre des crons quotidien/hebdo (>30 j), attend le rattrapage mensuel'
          ELSE 'FdM pas encore tentée'
        END`;
   const causes = await query<{ cause: string; n: string }>(
@@ -119,6 +121,7 @@ function noScoreHtml(d: NoScoreDetails, days: number): string {
     emailTable(["Statut", "Nb"], d.parStatut.map((r) => [r.statut, String(r.n)]), ["l", "r"]),
     H("Cause probable (état de la FdM)"),
     emailTable(["Cause", "Nb"], d.parCause.map((r) => [r.cause, String(r.n)]), ["l", "r"]),
+    `<div style="font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;font-size:12px;color:#64748b;margin-top:6px;">Un match perdu par forfait n'a pas de FdM : le lien PDF renverra alors une erreur (404), c'est normal.</div>`,
     H("Par compétition (top 10)"),
     emailTable(["Compétition", "Nb"], d.parCompetition.map((r) => [r.competition, String(r.n)]), ["l", "r"]),
     H(`Les ${shown} plus anciens${d.total > shown ? ` (sur ${d.total})` : ""}`),
