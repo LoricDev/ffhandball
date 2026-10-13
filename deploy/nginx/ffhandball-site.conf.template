@@ -1,10 +1,18 @@
 # Site vitrine (fichiers statiques de site/). L'API est servie à part, sur son propre sous-domaine
-# (cf. ffhandball-api.conf.template). HTTPS : `certbot --nginx -d {{SITE_DOMAIN}} -d www.{{SITE_DOMAIN}}`
-# une fois le DNS en place ; certbot ajoute alors le bloc 443 et la redirection.
+# (cf. ffhandball-api.conf.template). Domaine canonique : {{SITE_DOMAIN}} ; www redirige vers lui.
+# HTTPS : `certbot --nginx -d {{SITE_DOMAIN}} -d www.{{SITE_DOMAIN}}` une fois le DNS en place ;
+# certbot ajoute alors les blocs 443 (le bloc www garde sa redirection vers le domaine canonique).
 server {
     listen 80;
     listen [::]:80;
-    server_name {{SITE_DOMAIN}} www.{{SITE_DOMAIN}};
+    server_name www.{{SITE_DOMAIN}};
+    return 301 https://{{SITE_DOMAIN}}$request_uri;
+}
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name {{SITE_DOMAIN}};
 
     root {{APP_DIR}}/site;
     index index.html;
