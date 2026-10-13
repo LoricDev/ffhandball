@@ -12,6 +12,7 @@ import { sendMail } from "@/lib/mailer.js";
 import { renderEmail, emailTable, emailCallout, emailList, emailCodeBlock, escapeHtml } from "@/lib/email-template.js";
 
 interface RunRow {
+  kind: "scrape" | "etl";
   name: string;
   status: string;
   started_at: Date;
@@ -125,7 +126,7 @@ function noScoreHtml(d: NoScoreDetails, days: number): string {
     H("Par compétition (top 10)"),
     emailTable(["Compétition", "Nb"], d.parCompetition.map((r) => [r.competition, String(r.n)]), ["l", "r"]),
     H(`Les ${shown} plus anciens${d.total > shown ? ` (sur ${d.total})` : ""}`),
-    emailTable(
+    scroll(emailTable(
       ["Date (UTC)", "Poule", "Match", "FdM / cause", "Liens"],
       d.matchs.map((m) => {
         const link = (href: string | null, label: string): string =>
@@ -142,7 +143,7 @@ function noScoreHtml(d: NoScoreDetails, days: number): string {
           { html: [link(m.url, "Poule"), pdf ? link(pdf, "PDF FdM") : ""].filter(Boolean).join(" · ") },
         ];
       }),
-    ),
+    )),
     H("Requête pour vérifier (pnpm db:psql)"),
     emailCodeBlock(d.sql),
   ].join("");
@@ -158,6 +159,43 @@ async function latestSaison(): Promise<string | null> {
   );
   return r.rows[0]?.saison ?? null;
 }
+
+const STATUS_ICON: Record<string, string> = {
+  success: "✅ ok",
+  running: "⏳ en cours",
+  partial: "⚠️ partiel",
+  failed: "❌ échec",
+};
+
+function fmtDuration(from: Date, to: Date | null): string {
+  const s = Math.max(0, Math.round(((to ?? new Date()).getTime() - from.getTime()) / 1000));
+  if (s < 60) return `${s} s`;
+  if (s < 3600) return `${Math.round(s / 60)} min`;
+  return `${Math.floor(s / 3600)} h ${String(Math.round((s % 3600) / 60)).padStart(2, "0")}`;
+}
+
+/** Tableau des dernières exécutions (une ligne par scraper / entité ETL). */
+function runsHtml(runs: RunRow[]): string {
+  const sorted = [...runs].sort((a, b) => b.started_at.getTime() - a.started_at.getTime());
+  return (
+    H("Dernières exécutions") +
+    scroll(
+      emailTable(
+        ["Étape", "Statut", "Début (UTC)", "Durée"],
+        sorted.map((r) => [
+          `${r.kind === "scrape" ? "scrape" : "etl"} · ${r.name}`,
+          STATUS_ICON[r.status] ?? r.status,
+          fmtDate(r.started_at),
+          fmtDuration(r.started_at, r.finished_at),
+        ]),
+        ["l", "l", "l", "r"],
+      ),
+    )
+  );
+}
+
+/** Évite que les tableaux larges cassent la mise en page sur mobile. */
+const scroll = (html: string): string => `<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">${html}</div>`;
 
 function buildHtml(
   saison: string,
@@ -181,6 +219,7 @@ function buildHtml(
         )
       : "",
     extraHtml,
+    runsHtml(runs),
     rejets24h > 0
       ? H("Rejets ETL (24 h)") +
         emailCodeBlock(
@@ -213,12 +252,12 @@ async function main(): Promise<void> {
 
   // Dernier run par scraper et par entité ETL.
   const scrape = await query<RunRow>(
-    `SELECT DISTINCT ON (scraper_name) scraper_name AS name, status, started_at, finished_at, error_message
+    `SELECT DISTINCT ON (scraper_name) 'scrape' AS kind, scraper_name AS name, status, started_at, finished_at, error_message
        FROM raw.scrape_runs WHERE saison = $1 ORDER BY scraper_name, started_at DESC`,
     [saison],
   );
   const etl = await query<RunRow>(
-    `SELECT DISTINCT ON (entity) entity AS name, status, started_at, finished_at, error_message
+    `SELECT DISTINCT ON (entity) 'etl' AS kind, entity AS name, status, started_at, finished_at, error_message
        FROM core.etl_runs WHERE saison = $1 ORDER BY entity, started_at DESC`,
     [saison],
   );
@@ -263,14 +302,16 @@ async function main(): Promise<void> {
   process.stdout.write(`${ok ? "✅" : "⚠️"} Monitoring ${saison} — ${ok ? "OK" : problems.length + " problème(s)"}\n`);
   for (const p of problems) process.stdout.write(`  - ${p}\n`);
   for (const m of noScore.matchs.slice(0, 10)) {
-    process.stdout.write(`    · ${fmtDate(m.date_heure)} ${m.competition} — ${m.poule} : ${m.dom} vs ${m.ext} [${m.cause}] ${m.url ?? m.id_ffhb_match}${m.fdm_code ? ` fdm=${m.fdm_code}` : ""}
-`);
+    process.stdout.write(`    · ${fmtDate(m.date_heure)} ${m.competition} — ${m.poule} : ${m.dom} vs ${m.ext} [${m.cause}] ${m.url ?? m.id_ffhb_match}${m.fdm_code ? ` fdm=${m.fdm_code}` : ""}\n`);
   }
   if (rejets24h > 0) process.stdout.write(`  (i) ${rejets24h} rejet(s) ETL sur 24 h\n`);
 
   if (!ok || values.digest) {
+    // Objet explicite : le problème lui-même quand il est unique, sinon le nombre de problèmes.
+    const headline = problems.length === 1 ? problems[0]!.split(" (")[0]! : `${problems.length} problèmes détectés`;
+    const subject = `[ffhandball] ${ok ? "✅ Monitoring OK" : "⚠️ " + headline} — ${saison}`;
     await sendMail(
-      `[ffhandball] ${ok ? "✅ Monitoring OK" : "⚠️ Alerte"} — ${saison}`,
+      subject,
       buildHtml(saison, problems, rejets24h, runs, extraHtml),
     );
   }
