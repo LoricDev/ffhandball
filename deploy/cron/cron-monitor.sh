@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # deploy/cron/cron-monitor.sh
-# Monitoring quotidien : santé des runs scrape/ETL + fraîcheur + qualité, alerte par mail.
+# Récap quotidien : un mail par jour (santé des runs scrape/ETL, activité 24 h, qualité, alertes).
 # Lancé chaque matin à 07:00 (après le cron-daily de 02:00).
 
 set -euo pipefail
@@ -22,8 +22,8 @@ log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG"; }
 cd "$APP_DIR"
 
 log "=== Démarrage cron-monitor ==="
-# pnpm monitor : saison la plus récente par défaut ; envoie un mail si problème détecté.
-if pnpm monitor >> "$LOG" 2>&1; then
+# pnpm monitor --digest : saison la plus récente par défaut ; envoie TOUJOURS le mail (alerte ou OK).
+if pnpm monitor --digest >> "$LOG" 2>&1; then
   log "=== cron-monitor terminé ==="
 else
   log "=== cron-monitor : le monitoring a échoué (voir $LOG) ==="

@@ -18,6 +18,8 @@ interface RunRow {
   started_at: Date;
   finished_at: Date | null;
   error_message: string | null;
+  pages_scraped: number | null;
+  pages_total: number | null;
 }
 
 interface NoScoreMatch {
@@ -184,7 +186,8 @@ function runsHtml(runs: RunRow[]): string {
         ["Étape", "Statut", "Début (UTC)", "Durée"],
         sorted.map((r) => [
           `${r.kind === "scrape" ? "scrape" : "etl"} · ${r.name}`,
-          STATUS_ICON[r.status] ?? r.status,
+          (STATUS_ICON[r.status] ?? r.status) +
+            (r.status === "running" && r.pages_total ? ` (${r.pages_scraped ?? 0}/${r.pages_total})` : ""),
           fmtDate(r.started_at),
           fmtDuration(r.started_at, r.finished_at),
         ]),
@@ -197,12 +200,57 @@ function runsHtml(runs: RunRow[]): string {
 /** Évite que les tableaux larges cassent la mise en page sur mobile. */
 const scroll = (html: string): string => `<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">${html}</div>`;
 
+interface Activity {
+  matchsMisAJour: number;
+  resultats: number;
+  fdmCaptees: number;
+  dbSize: string;
+}
+
+async function activity24h(saison: string): Promise<Activity> {
+  const m = await query<{ maj: string; res: string }>(
+    `SELECT count(*)::bigint AS maj,
+            count(*) FILTER (WHERE m.score_dom IS NOT NULL)::bigint AS res
+       FROM core.matchs m JOIN core.poules po ON po.id = m.poule_id
+      WHERE po.saison_code = $1 AND m.updated_at > now() - interval '24 hours'`,
+    [saison],
+  );
+  const f = await query<{ n: string }>(
+    `SELECT count(*)::bigint AS n FROM raw.feuilles_match WHERE saison = $1 AND scraped_at > now() - interval '24 hours'`,
+    [saison],
+  );
+  const d = await query<{ size: string }>(`SELECT pg_size_pretty(pg_database_size(current_database())) AS size`);
+  return {
+    matchsMisAJour: Number(m.rows[0]!.maj),
+    resultats: Number(m.rows[0]!.res),
+    fdmCaptees: Number(f.rows[0]!.n),
+    dbSize: d.rows[0]!.size,
+  };
+}
+
+function activityHtml(a: Activity): string {
+  return (
+    H("Activité des dernières 24 h") +
+    emailTable(
+      ["Indicateur", "Valeur"],
+      [
+        ["Matchs créés ou mis à jour", String(a.matchsMisAJour)],
+        ["… dont avec un résultat", String(a.resultats)],
+        ["Feuilles de match capturées", String(a.fdmCaptees)],
+        ["Taille de la base", a.dbSize],
+      ],
+      ["l", "r"],
+    )
+  );
+}
+
 function buildHtml(
   saison: string,
   problems: string[],
   rejets24h: number,
   runs: RunRow[],
   extraHtml: string,
+  act: Activity,
 ): string {
   const failed = runs.filter((r) => r.status === "failed" || r.status === "partial");
   const body = [
@@ -218,6 +266,7 @@ function buildHtml(
           failed.map((r) => [r.name, r.status, fmtDate(r.started_at), (r.error_message ?? "").slice(0, 500)]),
         )
       : "",
+    activityHtml(act),
     extraHtml,
     runsHtml(runs),
     rejets24h > 0
@@ -229,10 +278,10 @@ function buildHtml(
   ].join("");
   return renderEmail({
     status: problems.length ? "warning" : "success",
-    title: `Monitoring — saison ${saison}`,
-    preheader: problems.length ? `${problems.length} problème(s) détecté(s)` : "Tout est au vert",
+    title: `Récap quotidien — saison ${saison}`,
+    preheader: problems.length ? `${problems.length} problème(s) détecté(s)` : "Tout est au vert — récap de la nuit",
     bodyHtml: body,
-    footerNote: "Monitoring ffhandball",
+    footerNote: "Récap quotidien ffhandball",
   });
 }
 
@@ -252,12 +301,14 @@ async function main(): Promise<void> {
 
   // Dernier run par scraper et par entité ETL.
   const scrape = await query<RunRow>(
-    `SELECT DISTINCT ON (scraper_name) 'scrape' AS kind, scraper_name AS name, status, started_at, finished_at, error_message
+    `SELECT DISTINCT ON (scraper_name) 'scrape' AS kind, scraper_name AS name, status, started_at, finished_at, error_message,
+            pages_scraped, pages_total
        FROM raw.scrape_runs WHERE saison = $1 ORDER BY scraper_name, started_at DESC`,
     [saison],
   );
   const etl = await query<RunRow>(
-    `SELECT DISTINCT ON (entity) 'etl' AS kind, entity AS name, status, started_at, finished_at, error_message
+    `SELECT DISTINCT ON (entity) 'etl' AS kind, entity AS name, status, started_at, finished_at, error_message,
+            NULL::int AS pages_scraped, NULL::int AS pages_total
        FROM core.etl_runs WHERE saison = $1 ORDER BY entity, started_at DESC`,
     [saison],
   );
@@ -298,21 +349,24 @@ async function main(): Promise<void> {
   );
   const rejets24h = Number(rejets.rows[0]!.n);
 
+  const act = await activity24h(saison);
   const ok = problems.length === 0;
   process.stdout.write(`${ok ? "✅" : "⚠️"} Monitoring ${saison} — ${ok ? "OK" : problems.length + " problème(s)"}\n`);
   for (const p of problems) process.stdout.write(`  - ${p}\n`);
   for (const m of noScore.matchs.slice(0, 10)) {
     process.stdout.write(`    · ${fmtDate(m.date_heure)} ${m.competition} — ${m.poule} : ${m.dom} vs ${m.ext} [${m.cause}] ${m.url ?? m.id_ffhb_match}${m.fdm_code ? ` fdm=${m.fdm_code}` : ""}\n`);
   }
+  process.stdout.write(`  24 h : ${act.matchsMisAJour} match(s) mis à jour (${act.resultats} avec résultat), ${act.fdmCaptees} FdM captée(s), base ${act.dbSize}
+`);
   if (rejets24h > 0) process.stdout.write(`  (i) ${rejets24h} rejet(s) ETL sur 24 h\n`);
 
   if (!ok || values.digest) {
     // Objet explicite : le problème lui-même quand il est unique, sinon le nombre de problèmes.
     const headline = problems.length === 1 ? problems[0]!.split(" (")[0]! : `${problems.length} problèmes détectés`;
-    const subject = `[ffhandball] ${ok ? "✅ Monitoring OK" : "⚠️ " + headline} — ${saison}`;
+    const subject = `[ffhandball] ${ok ? "✅ Récap quotidien — tout est OK" : "⚠️ " + headline} — ${saison}`;
     await sendMail(
       subject,
-      buildHtml(saison, problems, rejets24h, runs, extraHtml),
+      buildHtml(saison, problems, rejets24h, runs, extraHtml, act),
     );
   }
 }
