@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>API Handball France</title>
+<meta name="description" content="Clubs, équipes, matchs, classements, joueurs et arbitres du handball français en JSON. Mis à jour chaque nuit.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230F4C45'/%3E%3Cpath d='M6 26V14a10 10 0 0 1 20 0v12' fill='none' stroke='%23fff' stroke-width='2.5'/%3E%3Ccircle cx='16' cy='20' r='3.2' fill='%23F0C53A'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=JetBrains+Mono:wght@400;500&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="top">
+  <a class="brand" href="#">API Handball France</a>
+  <nav aria-label="Navigation principale">
+    <a href="#donnees">Données</a>
+    <a href="#endpoints">Endpoints</a>
+    <a href="#utiliser">Utiliser l'API</a>
+    <a class="btn-link" data-docs href="/docs">Documentation interactive</a>
+  </nav>
+</header>
+
+<main>
+<section class="hero" aria-labelledby="titre">
+  <svg class="court" viewBox="0 0 800 560" aria-hidden="true" focusable="false">
+    <g fill="none" stroke="#fff" stroke-width="3" opacity=".22">
+      <rect x="20" y="20" width="760" height="520"/>
+      <line x1="20" y1="540" x2="780" y2="540"/>
+      <path d="M250 20 A150 150 0 0 0 550 20" transform="translate(0 0)"/>
+      <path d="M170 20 A230 230 0 0 0 630 20" stroke-dasharray="14 12"/>
+      <rect x="360" y="14" width="80" height="12" stroke-width="5"/>
+      <line x1="385" y1="150" x2="415" y2="150"/>
+    </g>
+    <path d="M250 20 A150 150 0 0 0 550 20 Z" fill="#F0C53A" opacity=".10"/>
+  </svg>
+
+  <div class="hero-text">
+    <h1 id="titre">Tout le handball français, en JSON.</h1>
+    <p class="lead">Clubs, équipes, matchs, classements, joueurs et arbitres de la FFHandball. Une API REST en lecture seule, mise à jour chaque nuit.</p>
+    <p class="hero-links">
+      <a class="btn" data-docs href="/docs">Ouvrir la documentation</a>
+      <a class="plain" href="#utiliser">Faire un premier appel</a>
+    </p>
+  </div>
+
+  <div class="demo" aria-label="Exemple de requête et de réponse">
+    <div class="tabs" role="tablist" aria-label="Exemple">
+      <button role="tab" id="tab-matchs" aria-selected="true" aria-controls="panel-matchs">Un match</button>
+      <button role="tab" id="tab-clubs" aria-selected="false" aria-controls="panel-clubs" tabindex="-1">Un club</button>
+    </div>
+
+    <div role="tabpanel" id="panel-matchs" aria-labelledby="tab-matchs">
+      <pre class="req"><code>curl "<span data-base></span>/matchs?statut=joue&amp;limit=1" \
+  -H "Authorization: Bearer ffhb_…"</code></pre>
+      <div class="board" role="img" aria-label="ASC Le Geldar de Kourou bat Cosma Hand 33 à 24, 3e journée de la Coupe de la Ligue prénationale masculine, le 3 octobre 2026">
+        <div class="board-meta">Coupe de la Ligue prénationale masculine · journée 3 · 3 oct. 2026</div>
+        <div class="board-row"><span class="team">ASC Le Geldar de Kourou</span><span class="score">33</span></div>
+        <div class="board-row"><span class="team">Cosma Hand</span><span class="score">24</span></div>
+      </div>
+      <details class="raw">
+        <summary>Voir le JSON</summary>
+<pre><code>{
+  "data": [{
+    "id_ffhb_match": "2667833",
+    "date_heure": "2026-10-03T19:00:00.000Z",
+    "statut": "joue",
+    "journee": 3,
+    "equipe_dom_nom": "ASC LE GELDAR DE KOUROU",
+    "equipe_ext_nom": "COSMA HAND",
+    "score_dom": 33,
+    "score_ext": 24,
+    "poule_id_ffhb": "191400",
+    "competition_nom": "COUPE DE LA LIGUE PRENATIONALE MASCULINE",
+    "fdm_url": null
+  }],
+  "meta": { "total": 144, "limit": 1, "offset": 0 }
+}</code></pre>
+      </details>
+    </div>
+
+    <div role="tabpanel" id="panel-clubs" aria-labelledby="tab-clubs" hidden>
+      <pre class="req"><code>curl "<span data-base></span>/clubs?departement=57&amp;limit=1" \
+  -H "Authorization: Bearer ffhb_…"</code></pre>
+      <div class="board club" role="img" aria-label="3mt, club de Metz, département 57">
+        <div class="board-meta">Club · département 57</div>
+        <div class="board-row"><span class="team">3mt</span><span class="score small">Metz</span></div>
+      </div>
+      <details class="raw" open>
+        <summary>Voir le JSON</summary>
+<pre><code>{
+  "data": [{
+    "id_ffhb": "12121",
+    "code_ffhb": "5657119",
+    "nom": "3mt",
+    "ville": "Metz",
+    "departement_code": "57",
+    "telephone": "674159773",
+    "email": "5657119@ffhandball.net",
+    "site_web": null
+  }],
+  "meta": { "total": 3605, "limit": 1, "offset": 0 }
+}</code></pre>
+      </details>
+    </div>
+  </div>
+</section>
+
+<section id="donnees" class="block" aria-labelledby="h-donnees">
+  <h2 id="h-donnees">Ce que contient la base</h2>
+  <p class="intro">Volumes constatés le 12 octobre 2026. Les saisons de 2023-2024 à 2026-2027 sont disponibles, et la saison en cours est rafraîchie chaque nuit à 02:00 (UTC).</p>
+  <table class="ledger">
+    <caption class="sr">Volumes de données</caption>
+    <thead><tr><th scope="col">Ressource</th><th scope="col" class="num">Enregistrements</th><th scope="col">Ce que vous y trouvez</th></tr></thead>
+    <tbody>
+      <tr><th scope="row">Clubs</th><td class="num">3 605</td><td>Coordonnées, ville, département, équipes engagées, salles</td></tr>
+      <tr><th scope="row">Compétitions</th><td class="num">3 204</td><td>Championnats et coupes, poules et classements</td></tr>
+      <tr><th scope="row">Matchs</th><td class="num">109 642</td><td>Calendrier, scores, statut, lien vers la feuille de match</td></tr>
+      <tr><th scope="row">Joueurs</th><td class="num">244 180</td><td>Fiche par numéro de licence, matchs joués, statistiques</td></tr>
+      <tr><th scope="row">Arbitres et salles</th><td class="num">–</td><td>Officiels de chaque match, adresse des salles</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="endpoints" class="block" aria-labelledby="h-endpoints">
+  <h2 id="h-endpoints">Endpoints</h2>
+  <p class="intro">Toutes les routes de données sont en <code>GET</code> et renvoient du JSON. Le détail des paramètres et des schémas de réponse est dans <a data-docs href="/docs">la documentation interactive</a> ; la spécification complète est en <a data-openapi href="/openapi.json">OpenAPI</a>.</p>
+  <table class="endpoints">
+    <caption class="sr">Liste des endpoints</caption>
+    <thead><tr><th scope="col">Chemin</th><th scope="col">Rôle</th></tr></thead>
+    <tbody>
+      <tr><td><code>/clubs</code></td><td>Rechercher des clubs (<code>q</code>, <code>departement</code>)</td></tr>
+      <tr><td><code>/clubs/{id}</code></td><td>Fiche d'un club. L'identifiant est l'id FFHB ou le code à 7 chiffres.</td></tr>
+      <tr><td><code>/clubs/{id}/matchs</code></td><td>Calendrier du club</td></tr>
+      <tr><td><code>/clubs/{id}/equipes</code></td><td>Équipes engagées</td></tr>
+      <tr><td><code>/clubs/{id}/joueurs</code></td><td>Joueurs du club</td></tr>
+      <tr><td><code>/clubs/{id}/classements</code></td><td>Classements des équipes du club</td></tr>
+      <tr><td><code>/matchs</code></td><td>Lister les matchs (<code>poule_id_ffhb</code>, <code>date_from</code>, <code>date_to</code>, <code>statut</code>)</td></tr>
+      <tr><td><code>/matchs/{id}</code></td><td>Détail d'un match</td></tr>
+      <tr><td><code>/classements</code></td><td>Classement d'une poule (<code>poule_id_ffhb</code> obligatoire)</td></tr>
+      <tr><td><code>/competitions</code>, <code>/competitions/{id}</code></td><td>Compétitions et leurs poules</td></tr>
+      <tr><td><code>/poules/{id}</code></td><td>Détail d'une poule</td></tr>
+      <tr><td><code>/equipes/{id}</code></td><td>Équipe, avec <code>/matchs</code> et <code>/joueurs</code></td></tr>
+      <tr><td><code>/joueurs/{licence}</code></td><td>Fiche d'un joueur, avec <code>/matchs</code></td></tr>
+      <tr><td><code>/stats-joueurs</code></td><td>Statistiques des joueurs</td></tr>
+      <tr><td><code>/arbitres</code>, <code>/arbitres/{id}</code></td><td>Arbitres, avec <code>/matchs</code></td></tr>
+      <tr><td><code>/salles/{id}</code></td><td>Salle, avec <code>/matchs</code></td></tr>
+      <tr><td><code>/search</code></td><td>Recherche transversale</td></tr>
+      <tr><td><code>/saisons</code>, <code>/departements</code>, <code>/ligues</code></td><td>Référentiels</td></tr>
+      <tr><td><code>/health</code>, <code>/ready</code></td><td>État de l'API et de la base, sans clé</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="utiliser" class="block" aria-labelledby="h-utiliser">
+  <h2 id="h-utiliser">Utiliser l'API</h2>
+
+  <div class="cols">
+    <div>
+      <h3>Premier appel</h3>
+      <div class="tabs small" role="tablist" aria-label="Langage">
+        <button role="tab" id="lang-curl" aria-selected="true" aria-controls="code-curl">curl</button>
+        <button role="tab" id="lang-js" aria-selected="false" aria-controls="code-js" tabindex="-1">JavaScript</button>
+        <button role="tab" id="lang-py" aria-selected="false" aria-controls="code-py" tabindex="-1">Python</button>
+      </div>
+      <div role="tabpanel" id="code-curl" aria-labelledby="lang-curl"><pre class="code"><code>curl "<span data-base></span>/clubs?q=metz&amp;limit=5" \
+  -H "Authorization: Bearer $FFHB_KEY"</code></pre><button class="copy" data-copy="code-curl">Copier</button></div>
+      <div role="tabpanel" id="code-js" aria-labelledby="lang-js" hidden><pre class="code"><code>const res = await fetch("<span data-base></span>/clubs?q=metz&amp;limit=5", {
+  headers: { Authorization: `Bearer ${process.env.FFHB_KEY}` },
+});
+const { data, meta } = await res.json();
+console.log(meta.total, data[0].nom);</code></pre><button class="copy" data-copy="code-js">Copier</button></div>
+      <div role="tabpanel" id="code-py" aria-labelledby="lang-py" hidden><pre class="code"><code>import os, requests
+
+r = requests.get(
+    "<span data-base></span>/clubs",
+    params={"q": "metz", "limit": 5},
+    headers={"Authorization": f"Bearer {os.environ['FFHB_KEY']}"},
+)
+r.raise_for_status()
+print(r.json()["meta"]["total"])</code></pre><button class="copy" data-copy="code-py">Copier</button></div>
+      <p class="note">L'API n'envoie pas d'en-têtes CORS : appelez-la depuis votre serveur, pas depuis le navigateur de vos visiteurs, pour ne pas exposer votre clé.</p>
+    </div>
+
+    <div>
+      <h3>Règles à connaître</h3>
+      <dl class="rules">
+        <dt>Clé API</dt>
+        <dd>Quand l'accès par clé est activé, envoyez-la dans <code>Authorization: Bearer ffhb_…</code> ou dans <code>X-API-Key</code>. Une clé absente, révoquée ou expirée renvoie alors <code>401</code>. <code>/health</code>, <code>/ready</code>, <code>/docs</code> et <code>/openapi.json</code> n'en demandent jamais.</dd>
+        <dt>Pagination</dt>
+        <dd>Les listes prennent <code>limit</code> (100 maximum, 20 par défaut) et <code>offset</code>. La réponse contient <code>data</code> et <code>meta</code> avec <code>total</code>, <code>limit</code> et <code>offset</code>.</dd>
+        <dt>Quota</dt>
+        <dd>120 requêtes par minute, comptées par clé, ou par adresse IP sans clé. Les en-têtes <code>X-RateLimit-Limit</code>, <code>X-RateLimit-Remaining</code> et <code>X-RateLimit-Reset</code> indiquent où vous en êtes. Au-delà, <code>429</code> et <code>Retry-After</code>.</dd>
+        <dt>Erreurs</dt>
+        <dd>Le corps est <code>{ "error": { "code", "message" } }</code>, avec les codes <code>BAD_REQUEST</code>, <code>UNAUTHORIZED</code>, <code>NOT_FOUND</code>, <code>RATE_LIMIT_EXCEEDED</code>, <code>INTERNAL_ERROR</code> et <code>SERVICE_UNAVAILABLE</code>.</dd>
+        <dt>Statut d'un match</dt>
+        <dd><code>a_jouer</code>, <code>joue</code>, <code>reporte</code>, <code>annule</code> ou <code>forfait</code>. Le score reste <code>null</code> tant que le match n'est pas joué.</dd>
+      </dl>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <p>Projet indépendant, non affilié à la Fédération Française de Handball. Les données proviennent des sites publics de la FFHandball.</p>
+  <p><a data-docs href="/docs">Documentation</a> · <a data-openapi href="/openapi.json">OpenAPI</a> · <a data-health href="/health">État de l'API</a></p>
+</footer>
+
+<script src="config.js"></script>
+<script src="main.js"></script>
+</body>
+</html>
