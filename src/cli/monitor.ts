@@ -50,9 +50,7 @@ async function noScoreDetails(saison: string, days: number): Promise<NoScoreDeta
        JOIN core.phases ph ON ph.id = po.phase_id
        JOIN core.competitions c ON c.id = ph.competition_id
        JOIN core.equipes ed ON ed.id = m.equipe_dom_id
-       JOIN core.clubs cd ON cd.id = ed.club_id
        JOIN core.equipes ee ON ee.id = m.equipe_ext_id
-       JOIN core.clubs ce ON ce.id = ee.club_id
       WHERE ${NO_SCORE_WHERE}`;
   const statut = await query<{ statut: string; n: string }>(
     `SELECT m.statut, count(*)::bigint AS n ${from} GROUP BY m.statut ORDER BY n DESC`, params);
@@ -60,7 +58,7 @@ async function noScoreDetails(saison: string, days: number): Promise<NoScoreDeta
     `SELECT c.nom AS competition, count(*)::bigint AS n ${from} GROUP BY c.nom ORDER BY n DESC LIMIT 10`, params);
   const matchs = await query<NoScoreMatch>(
     `SELECT m.id_ffhb_match, m.date_heure, m.statut, c.nom AS competition, po.nom AS poule,
-            cd.nom || ' ' || ed.nom_equipe AS dom, ce.nom || ' ' || ee.nom_equipe AS ext
+            ed.nom AS dom, ee.nom AS ext
        ${from} ORDER BY m.date_heure ASC LIMIT ${DETAIL_LIMIT}`, params);
   const parStatut = statut.rows.map((r) => ({ statut: r.statut, n: Number(r.n) }));
   const sql = [
