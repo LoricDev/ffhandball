@@ -68,8 +68,12 @@ describe("admin /admin/api-keys — garde X-Admin-Secret", () => {
     await query(`DELETE FROM core.api_keys WHERE label LIKE 'TEST-ADMIN-%'`);
     if (prevSecret === undefined) delete process.env.ADMIN_SECRET;
     else process.env.ADMIN_SECRET = prevSecret;
-    await closePool();
   });
+});
+
+// Fermeture du pool au niveau du fichier : après TOUS les describe (un afterAll de describe la ferait trop tôt).
+afterAll(async () => {
+  await closePool();
 });
 
 describe("admin /admin/pipeline + /admin/dashboard", () => {
