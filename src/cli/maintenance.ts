@@ -34,7 +34,7 @@ async function main(): Promise<void> {
   if (!(scrapeIdleHours > 0) || !(etlMaxHours > 0)) throw new Error("--scrape-idle-hours / --etl-max-hours invalides");
   const reaped = await reapOrphanRuns({ scrapeIdleHours, etlMaxHours, dryRun });
   process.stdout.write(
-    `runs orphelins ${dryRun ? "à clôturer" : "clôturés"} : ${reaped.scrapes} scrape(s) (> ${scrapeIdleHours} h sans activité), ${reaped.etls} ETL (> ${etlMaxHours} h)
+    `runs orphelins ${dryRun ? "à clôturer" : "clôturés"} : ${reaped.scrapes} scrape(s) (> ${scrapeIdleHours} h sans activité), ${reaped.etls} ETL (> ${etlMaxHours} h), ${reaped.crons} cron(s)
 `,
   );
   if (values["reap-only"]) return;

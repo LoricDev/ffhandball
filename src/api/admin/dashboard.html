@@ -67,6 +67,7 @@
 <main>
   <section class="grid" id="kpis"></section>
   <section class="card"><h2>En cours</h2><div id="running"></div></section>
+  <section class="card"><h2>Crons</h2><div class="scroll"><table id="crons"></table></div></section>
   <section class="two">
     <div class="card"><h2>Dernier passage par tâche</h2><div class="scroll"><table id="jobs"></table></div></div>
     <div class="card"><h2>API (1 dernière heure)</h2><div id="api"></div><h2 style="margin-top:14px">Erreurs 5xx (24 h)</h2><div id="apierr" class="scroll"></div></div>
@@ -99,8 +100,11 @@ function ago(iso) { if (!iso) return "jamais"; const s = (Date.now() - new Date(
 const hhmm = (iso) => iso ? new Date(iso).toLocaleString("fr-FR", { day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit" }) : "–";
 // Run « fantôme » : marqué running mais sans heartbeat (scrape) / trop ancien (ETL).
 const ORPHAN_SCRAPE_IDLE_S = 20 * 60, ORPHAN_ETL_AGE_S = 3 * 3600;
+// Cron : orphelin si aucun changement d'étape depuis 12 h (même seuil que la maintenance).
+const ORPHAN_CRON_IDLE_S = 12 * 3600;
+const isOrphanCron = (c) => c.status === "running" && c.idle_s > ORPHAN_CRON_IDLE_S;
 const isOrphan = (k, r) => r.status === "running" && (k === "scrape" ? r.idle_s > ORPHAN_SCRAPE_IDLE_S : r.age_s > ORPHAN_ETL_AGE_S);
-const pill = (st, orphan) => orphan ? el("span", { class: "pill partial", title: "processus disparu : sera clôturé par la maintenance" }, "orphelin") : el("span", { class: "pill " + st }, { running: "en cours", success: "ok", partial: "partiel", failed: "échec" }[st] || st);
+const pill = (st, orphan) => orphan ? el("span", { class: "pill partial", title: "processus disparu : sera clôturé par la maintenance" }, "orphelin") : el("span", { class: "pill " + st }, { running: "en cours", success: "ok", partial: "partiel", failed: "échec", skipped: "ignoré" }[st] || st);
 
 function table(t, head, rows) {
   t.classList.add("stack");
@@ -133,17 +137,28 @@ function runningCard(kind, name, saison, started, done, total, extra, key) {
 function render(d) {
   const all = [...d.scrapes.map((r) => ({ k: "scrape", r })), ...d.etls.map((r) => ({ k: "etl", r }))].filter(({ r }) => r.status === "running");
   const run = all.filter(({ k, r }) => !isOrphan(k, r));
-  const orphans = all.length - run.length;
+  const cronsAll = (d.crons || []).filter((c) => c.status === "running");
+  const cronsLive = cronsAll.filter((c) => !isOrphanCron(c));
+  const orphans = all.length - run.length + (cronsAll.length - cronsLive.length);
   const failed24 = [...d.scrapes, ...d.etls].filter((r) => r.status === "failed" && Date.now() - new Date(r.started_at) < 864e5).length;
 
   $("kpis").replaceChildren(
-    ...[[run.length, "en cours", run.length ? "running" : ""], ...(orphans ? [[orphans, "orphelins", "partial"]] : []), [failed24, "échecs (24 h)", failed24 ? "failed" : "success"],
+    ...[[run.length + cronsLive.length, "en cours", run.length + cronsLive.length ? "running" : ""], ...(orphans ? [[orphans, "orphelins", "partial"]] : []), [failed24, "échecs (24 h)", failed24 ? "failed" : "success"],
         [fmt(d.api.total_5m), "requêtes API / 5 min", ""], [fmt(d.api.err_5xx_1h), "erreurs 5xx / 1 h", d.api.err_5xx_1h > 0 ? "failed" : "success"],
         [bytes(d.db.bytes), "taille de la base", ""], [d.db.connections, "connexions DB", ""]]
       .map(([v, l, c]) => el("div", { class: "card kpi" }, el("b", { class: c }, v), el("span", {}, l))));
 
   const live = new Set();
-  $("running").replaceChildren(...(run.length ? run.map(({ k, r }) => {
+  const cronCards = cronsLive.map((c) => {
+    const pct = c.steps_total ? Math.min(100, (c.step_index / c.steps_total) * 100) : null;
+    return el("div", { class: "job" },
+      el("div", { class: "row" }, el("div", {}, el("b", {}, "Cron " + c.cron)), el("div", { class: "mut" }, `démarré ${ago(c.started_at)}`)),
+      el("div", { class: "bar" + (pct == null ? " indet" : "") }, el("i", { style: pct != null ? `width:${pct}%` : "" })),
+      el("div", { class: "row mut" },
+        el("span", {}, c.steps_total ? `étape ${c.step_index}/${c.steps_total}` : `étape ${c.step_index}`, c.current_step ? ` — ${c.current_step}` : ""),
+        c.errors ? el("span", { class: "err" }, `${c.errors} erreur(s)`) : null));
+  });
+  $("running").replaceChildren(...cronCards, ...(run.length || cronCards.length ? run.map(({ k, r }) => {
     const key = k + (r.id ?? r.scraper_name + r.started_at); live.add(key);
     return k === "scrape"
       ? runningCard("Scrape", r.scraper_name, r.saison, r.started_at, r.pages_scraped, r.pages_total, "pages", key)
@@ -151,6 +166,11 @@ function render(d) {
   }) : [el("div", { class: "mut" }, "Rien en cours — aucun cron actif en ce moment." + (orphans ? ` (${orphans} run(s) orphelin(s) ignoré(s))` : ""))]));
   for (const k of prev.keys()) if (!live.has(k)) prev.delete(k);
 
+  const cdur = (c) => c.finished_at ? (new Date(c.finished_at) - new Date(c.started_at)) / 1000 : null;
+  table($("crons"), ["Statut", "Cron", "Début", "#Durée", "#Étapes", "#Erreurs"],
+    (d.crons || []).slice(0, 15).map((c) => [
+      el("span", {}, pill(c.status, isOrphanCron(c)), c.error_message ? el("div", { class: "err", style: "white-space:normal;max-width:360px" }, c.error_message.slice(0, 160)) : null),
+      c.cron, hhmm(c.started_at), dur(cdur(c)), c.steps_total ? `${c.step_index}/${c.steps_total}` : c.step_index, c.errors]));
   table($("jobs"), ["Type", "Tâche", "Dernier lancement", "Dernier succès"],
     d.last_by_job.map((j) => {
       const old = j.last_success && Date.now() - new Date(j.last_success) > 7 * 864e5;

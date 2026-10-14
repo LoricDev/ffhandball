@@ -33,17 +33,23 @@ cd "$APP_DIR"
 source "$(dirname "$0")/lib-lock.sh"
 require_scrape_lock "cron-weekly-structure" 8 fail
 
+# Suivi du cron en base (tableau de bord admin) — jamais bloquant.
+source "$(dirname "$0")/lib-cron.sh"
+cron_track_start "cron-weekly-structure" 10
+
 log "=== Démarrage cron-weekly-structure (saison $SAISON) ==="
 
 ERRORS=0
 run_step() {
   local label="$1"; shift
   log ">>> $label..."
+  cron_track_step "$label"
   if "$@" >> "$LOG" 2>&1; then
     log "    $label : OK"
   else
     log_err "    $label : ECHEC (code $?)"
     ERRORS=$((ERRORS + 1))
+    cron_track_error
   fi
 }
 

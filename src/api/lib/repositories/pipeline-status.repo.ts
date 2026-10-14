@@ -11,7 +11,7 @@ const STREAMING_RAW: Record<string, string> = {
 };
 
 export async function getPipelineSnapshot() {
-  const [scrapes, etls, traffic, errors, db, tables, lastByJob] = await Promise.all([
+  const [scrapes, etls, traffic, errors, db, tables, lastByJob, crons] = await Promise.all([
     query(
       `SELECT scraper_name, saison, status, started_at, finished_at, pages_scraped, pages_total, error_message,
               last_activity_at,
@@ -59,6 +59,11 @@ export async function getPipelineSnapshot() {
          FROM core.etl_runs GROUP BY entity
        ORDER BY 1, 2`,
     ),
+    query(
+      `SELECT id, cron, status, started_at, finished_at, steps_total, step_index, current_step, errors, error_message,
+              extract(epoch FROM now() - updated_at)::int AS idle_s
+         FROM core.cron_runs ORDER BY started_at DESC LIMIT 30`,
+    ).catch(() => ({ rows: [] as Record<string, unknown>[] })), // table absente avant la migration 0024
   ]);
 
   // Progression des ETL en cours (rows_read / lignes raw distinctes de la saison).
@@ -80,6 +85,7 @@ export async function getPipelineSnapshot() {
 
   return {
     generated_at: new Date().toISOString(),
+    crons: crons.rows,
     scrapes: scrapes.rows,
     etls: etlRows,
     last_by_job: lastByJob.rows,
