@@ -78,7 +78,23 @@ async function noScoreDetails(saison: string, days: number): Promise<NoScoreDeta
       WHERE ${NO_SCORE_WHERE}`;
   // Bruit probable (n'alerte pas) : tournois de détection (pas de FdM) et FdM en 404 depuis plus
   // de SCRAPE_FDM_MAX_AGE_DAYS (forfait / match non joué : la feuille ne viendra plus).
+  // Poules où AUCUN match n'a de score : les clubs n'y saisissent pas les résultats (ni FdM), ce
+  // n'est pas un manque du pipeline. Garde-fou : si moins de la moitié des matchs passés de la
+  // saison ont un score, c'est le pipeline qui est en panne → on ne masque RIEN.
+  const health = await query<{ ratio: string | null }>(
+    `SELECT (count(*) FILTER (WHERE m.score_dom IS NOT NULL OR m.score_ext IS NOT NULL))::float
+            / NULLIF(count(*), 0) AS ratio
+       FROM core.matchs m JOIN core.poules po ON po.id = m.poule_id
+      WHERE po.saison_code = $1 AND m.date_heure < now() - ($2::int * interval '1 day')`,
+    [saison, days],
+  );
+  const pipelineOk = Number(health.rows[0]?.ratio ?? 0) >= 0.5;
+  const pouleSansSaisie = pipelineOk
+    ? `NOT EXISTS (SELECT 1 FROM core.matchs x WHERE x.poule_id = po.id
+                     AND (x.score_dom IS NOT NULL OR x.score_ext IS NOT NULL))`
+    : "false";
   const noise = `(c.nom ILIKE '%TOURNOI%'
+         OR ${pouleSansSaisie}
          OR (fs.status = 'not_found' AND m.date_heure < now() - ($3::int * interval '1 day')))`;
   const real = `${from} AND NOT ${noise}`;
   const noisy = `${from} AND ${noise}`;
@@ -110,6 +126,7 @@ async function noScoreDetails(saison: string, days: number): Promise<NoScoreDeta
     `SELECT count(*)::bigint AS n ${real} AND m.date_heure >= now() - (($2::int + 1) * interval '1 day')`, params);
   const bruit = await query<{ kind: string; n: string }>(
     `SELECT CASE WHEN c.nom ILIKE '%TOURNOI%' THEN 'Tournois (pas de FdM attendue)'
+                 WHEN ${pouleSansSaisie} THEN 'Poule sans aucun résultat saisi (les clubs ne renseignent pas les scores)'
                  ELSE 'FdM introuvable (404) depuis plus de ' || $3::int || ' j (forfait / non joué probable)' END AS kind,
             count(*)::bigint AS n ${noisy} GROUP BY 1 ORDER BY n DESC`, params);
   const parStatut = statut.rows.map((r) => ({ statut: r.statut, n: Number(r.n) }));
