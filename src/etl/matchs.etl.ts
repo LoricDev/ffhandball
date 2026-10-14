@@ -7,7 +7,7 @@ import { insertWarnings, type EtlWarning } from "@/etl/shared/etl-warnings.js";
 import { loadIdIndex } from "@/etl/shared/lookups.js";
 import { Progress } from "@/lib/progress.js";
 import { EtlCheckpoint } from "@/etl/shared/checkpoint.js";
-import { deduceStatut } from "@/etl/shared/deduce-statut.js";
+import { deduceStatut, deduceForfait } from "@/etl/shared/deduce-statut.js";
 
 export interface EtlReport {
   etl_run_id: number;
@@ -25,7 +25,7 @@ function deduceHeureEstimee(dateHeure: string): boolean {
 }
 
 // 14 valeurs par match ; lots de 500 → 7000 paramètres (< limite Postgres 65535).
-const MATCH_COLS = 14;
+const MATCH_COLS = 15;
 const MATCH_BATCH = 500;
 
 const MATCH_UPSERT_TAIL = `
@@ -40,6 +40,7 @@ const MATCH_UPSERT_TAIL = `
       score_mt_dom  = COALESCE(EXCLUDED.score_mt_dom, core.matchs.score_mt_dom),
       score_mt_ext  = COALESCE(EXCLUDED.score_mt_ext, core.matchs.score_mt_ext),
       statut        = EXCLUDED.statut,
+      forfait_equipe = EXCLUDED.forfait_equipe,
       journee       = EXCLUDED.journee,
       equipement_id = COALESCE(EXCLUDED.equipement_id, core.matchs.equipement_id),
       fdm_code      = COALESCE(EXCLUDED.fdm_code, core.matchs.fdm_code),
@@ -55,6 +56,7 @@ const MATCH_UPSERT_TAIL = `
           OR (EXCLUDED.score_mt_dom IS NOT NULL AND core.matchs.score_mt_dom IS DISTINCT FROM EXCLUDED.score_mt_dom)
           OR (EXCLUDED.score_mt_ext IS NOT NULL AND core.matchs.score_mt_ext IS DISTINCT FROM EXCLUDED.score_mt_ext)
           OR core.matchs.statut        IS DISTINCT FROM EXCLUDED.statut
+          OR core.matchs.forfait_equipe IS DISTINCT FROM EXCLUDED.forfait_equipe
           OR core.matchs.journee       IS DISTINCT FROM EXCLUDED.journee
           OR (EXCLUDED.equipement_id IS NOT NULL AND core.matchs.equipement_id IS DISTINCT FROM EXCLUDED.equipement_id)
           OR (EXCLUDED.fdm_code IS NOT NULL AND core.matchs.fdm_code IS DISTINCT FROM EXCLUDED.fdm_code)
@@ -71,7 +73,7 @@ async function flushMatchs(rows: unknown[][], report: EtlReport): Promise<void> 
   const tuples = rows
     .map((_, i) => {
       const b = i * MATCH_COLS;
-      return `($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5}::timestamptz,$${b + 6},$${b + 7},$${b + 8},$${b + 9},$${b + 10},$${b + 11},$${b + 12},$${b + 13},$${b + 14}, now())`;
+      return `($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5}::timestamptz,$${b + 6},$${b + 7},$${b + 8},$${b + 9},$${b + 10},$${b + 11},$${b + 12},$${b + 13},$${b + 14},$${b + 15}, now())`;
     })
     .join(",");
   const res = await query<{ inserted: boolean; updated: boolean }>(
@@ -79,7 +81,7 @@ async function flushMatchs(rows: unknown[][], report: EtlReport): Promise<void> 
        id_ffhb_match, poule_id, equipe_dom_id, equipe_ext_id,
        date_heure, heure_estimee,
        score_dom, score_ext, score_mt_dom, score_mt_ext,
-       statut, journee, equipement_id, fdm_code, last_seen_at
+       statut, journee, equipement_id, fdm_code, forfait_equipe, last_seen_at
      ) VALUES ${tuples}${MATCH_UPSERT_TAIL}`,
     rows.flat(),
   );
@@ -174,7 +176,8 @@ export async function runMatchsEtl(saison: string, opts: MatchsEtlOptions = {}):
         continue;
       }
 
-      const statut = deduceStatut(p.score_dom, p.score_ext);
+      const statut = deduceStatut(p);
+      const forfait_equipe = deduceForfait(p);
       const heure_estimee = deduceHeureEstimee(p.date_heure);
 
       buffer.push([
@@ -192,6 +195,7 @@ export async function runMatchsEtl(saison: string, opts: MatchsEtlOptions = {}):
         p.journee,
         p.equipement_id ?? null,
         p.fdm_code ?? null,
+        forfait_equipe,
       ]);
       if (buffer.length >= MATCH_BATCH) {
         await flushMatchs(buffer, report);

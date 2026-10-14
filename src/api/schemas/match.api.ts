@@ -5,6 +5,9 @@ export const matchListItemSchema = z.object({
   id_ffhb_match: z.string(),
   date_heure: z.union([z.string(), z.date()]).transform((v) => (v instanceof Date ? v.toISOString() : v)),
   statut: z.string(),
+  forfait_equipe: z.enum(["dom", "ext"]).nullable().openapi({
+    description: "Équipe ayant fait forfait (score affiché « FO » sur ffhandball.fr), null sinon",
+  }),
   journee: z.number().int().nullable(),
   equipe_dom_nom: z.string(),
   equipe_ext_nom: z.string(),

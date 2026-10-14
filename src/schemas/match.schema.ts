@@ -26,6 +26,9 @@ export const rawMatchPayloadSchema = z.object({
   score_ext: nullableIntFromStringOrNumber.optional(),
   score_mt_dom: nullableIntFromStringOrNumber.optional(),
   score_mt_ext: nullableIntFromStringOrNumber.optional(),
+  // Score affiché « FO » (forfait) pour l'équipe concernée : la conversion en entier le perd (→ null).
+  forfait_dom: z.boolean().optional(),
+  forfait_ext: z.boolean().optional(),
 
   journee: z.coerce.number().int().positive(),
   equipement_id: z.string().optional(),

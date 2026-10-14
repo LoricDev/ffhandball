@@ -129,4 +129,18 @@ describe("parseRencontreList", () => {
     expect(r).not.toBeNull();
     expect(r!.matchs).toEqual([]);
   });
+
+  it("conserve le marqueur « FO » (forfait) au lieu de le perdre en null", () => {
+    const html = fixture("ffhandball-poule-rencontres-journee-1.html");
+    const marqueur = "&quot;equipe1Score&quot;:&quot;33&quot;"; // 1er match : 33-18
+    expect(html).toContain(marqueur);
+    const r = parseRencontreList(html.replace(marqueur, "&quot;equipe1Score&quot;:&quot;FO&quot;"), SOURCE_URL, EXT_POULE_ID);
+    const m = r!.matchs.find((x) => x.ext_rencontre_id === "2388701");
+    expect(m).toBeDefined();
+    expect(m!.score_dom).toBeNull();
+    expect(m!.forfait_dom).toBe(true);
+    expect(m!.forfait_ext).toBeUndefined();
+    // un match normal n'a aucun marqueur
+    expect(r!.matchs.find((x) => x.ext_rencontre_id === "2388702")!.forfait_dom).toBeUndefined();
+  });
 });
