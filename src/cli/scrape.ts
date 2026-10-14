@@ -34,6 +34,8 @@ interface CliArgs {
   journees?: "all" | "courante" | "recent";
   window: DateWindow | null;
   reparseCache?: boolean;
+  /** matchs : ne re-scraper que les poules contenant au moins un match en forfait. */
+  forfaits?: boolean;
 }
 
 function parseCliArgs(): CliArgs {
@@ -57,6 +59,8 @@ function parseCliArgs(): CliArgs {
       // feuilles-match : re-parser les PDF en cache (échecs de parsing passés), SANS réseau.
       // À lancer après une amélioration du parser. Cf. raw.feuilles_match_fetch_state.
       "reparse-cache": { type: "boolean" },
+      // matchs : restreint aux poules qui contiennent un forfait (re-capture du marqueur « FO » sur l'historique).
+      forfaits: { type: "boolean" },
     },
   });
   if (!values.entity) throw new Error("--entity required");
@@ -117,6 +121,7 @@ function parseCliArgs(): CliArgs {
     journees,
     window,
     reparseCache: values["reparse-cache"] === true,
+    forfaits: values.forfaits === true,
   };
 }
 
@@ -491,6 +496,7 @@ async function selectScrapablePoules(
   saison: string,
   level: string | undefined,
   window: DateWindow | null,
+  onlyForfaits = false,
 ): Promise<ScrapablePoule[]> {
   const windowFilter = window
     ? ` AND EXISTS (
@@ -498,6 +504,9 @@ async function selectScrapablePoules(
             WHERE m.poule_id = po.id
               AND m.date_heure >= $3 AND m.date_heure < $4
          )`
+    : "";
+  const forfaitFilter = onlyForfaits
+    ? ` AND EXISTS (SELECT 1 FROM core.matchs mf WHERE mf.poule_id = po.id AND mf.statut = 'forfait')`
     : "";
   const params: unknown[] = [saison, level ?? null];
   if (window) params.push(window.from, window.to);
@@ -512,7 +521,7 @@ async function selectScrapablePoules(
        JOIN core.competitions c  ON c.id = ph.competition_id
       WHERE po.saison_code = $1
         AND ($2::text IS NULL OR c.niveau = $2)
-        AND c.detail_url IS NOT NULL${windowFilter}
+        AND c.detail_url IS NOT NULL${windowFilter}${forfaitFilter}
       ORDER BY c.niveau, c.id_ffhb, po.id_ffhb`,
     params,
   );
@@ -568,6 +577,7 @@ async function scrapeMatchs(
     journees?: "all" | "courante" | "recent";
     limit?: number;
     window?: DateWindow | null;
+    forfaits?: boolean;
   },
 ): Promise<void> {
   const run = await startScrapeRun({
@@ -579,9 +589,9 @@ async function scrapeMatchs(
 
   try {
     // 1. SELECT poules from core (with their competition's detail_url + niveau)
-    let poules = await selectScrapablePoules(saison, opts.level, opts.window ?? null);
+    let poules = await selectScrapablePoules(saison, opts.level, opts.window ?? null, opts.forfaits === true);
     if (opts.limit !== undefined) poules = poules.slice(0, opts.limit);
-    logger.info({ count: poules.length, windowed: Boolean(opts.window) }, "poules to process");
+    logger.info({ count: poules.length, windowed: Boolean(opts.window), forfaits: opts.forfaits === true }, "poules to process");
 
     let totalInserted = 0;
     let pouleSkipped = 0;
@@ -1058,6 +1068,7 @@ async function main(): Promise<void> {
       journees: args.journees as "all" | "courante" | "recent" | undefined,
       limit: args.limit,
       window: args.window,
+      forfaits: args.forfaits,
     });
   } else if (args.entity === "classements") {
     await scrapeClassements(args.saison, {
