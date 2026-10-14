@@ -296,17 +296,18 @@ crontab -l      # vérifier
 |---|---|---|
 | Quotidien 02:00 | `cron-daily.sh` | Matchs (journée courante), ETL, classements, FdM des 10 derniers jours, stats joueurs |
 | Quotidien 07:00 | `cron-monitor.sh` | **Récap quotidien par mail** (voir « Mails et alertes ») |
-| Toutes les 5 min | `cron-healthcheck.sh` | Sonde l'API (`/ready`), mail à la panne et au rétablissement |
+| Toutes les 5 min | `cron-healthcheck.sh` | Sonde l'API (`/ready`) et le disque (seuil 85 %), un mail par incident et au rétablissement |
 | Lundi 03:00 | `cron-weekly-fdm-recent.sh` | FdM des 30 derniers jours + ETL |
 | Dimanche 05:00 | `cron-weekly-structure.sh` | Clubs, détails, salles, compétitions, poules, équipes |
 | Dimanche 06:00 | `cron-maintenance.sh` | Purge `api_logs` / `etl_warnings`, VACUUM, rotation des logs |
-| 1er du mois 22:00 | `cron-monthly-fdm-full.sh` | Rattrapage FdM complet (30-100 h, multi-nuits) |
-| Quotidien 04:30 | `backup-daily.sh` | Sauvegarde `core.*`, rotation 14 jours |
+| Jours 1 à 5 du mois, 22:00 | `cron-monthly-fdm-full.sh` | Rattrapage FdM complet (30-100 h au total), **budget 4 h par nuit** puis reprise (idempotent) |
+| Quotidien 04:30 | `backup-daily.sh` | Sauvegarde `core.*` **vérifiée** (gzip -t + taille mini, mail si invalide), rotation 14 jours |
 
 Points à connaître :
 
 - **Saison automatique** : `lib-saison.sh` bascule le 1er juillet (avant le correctif d'octobre 2026, les crons restaient codés sur la saison précédente). Surcharge possible : `SAISON=2026-2027 bash deploy/cron/cron-daily.sh`.
-- **Un seul exemplaire à la fois** : chaque script prend un verrou `flock` (évite les scrapes parallèles qui font bloquer le site).
+- **Un seul exemplaire à la fois** : chaque script prend un verrou `flock` (même script deux fois).
+- **Un seul scrape à la fois, tous crons confondus** : `lib-lock.sh` ajoute un verrou global (`/tmp/ffhandball-scrape.lock`). Les crons s'attendent au lieu de se chevaucher (la source bride l'IP sinon) : le quotidien attend jusqu'à 6 h, les hebdos 8 h (mail si le verrou n'est jamais obtenu), le mensuel passe son tour s'il est occupé.
 - **Échec = mail immédiat** : si une étape échoue, le script envoie un mail (`lib-notify.sh`) en plus de l'écrire dans son log.
 - **Lancer un cron à la main** : `bash deploy/cron/cron-monitor.sh` (le log est dans `/var/log/ffhandball/`).
 

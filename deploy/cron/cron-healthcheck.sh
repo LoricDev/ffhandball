@@ -25,6 +25,25 @@ notify() {
   (cd "$APP_DIR" && pnpm notify "$1" "$2" >> "$LOG" 2>&1) || true
 }
 
+# --- Espace disque : alerte UNE FOIS quand le disque dépasse le seuil (la base fait ~11 Go et
+# grossit ; un disque plein casse les scrapes, les backups et Postgres). Rétablissement notifié.
+DISK_FLAG="${DISK_FLAG:-/tmp/ffhb-disk-high.flag}"
+DISK_MAX_PCT="${DISK_MAX_PCT:-85}"
+DISK_PCT=$(df --output=pcent / 2>/dev/null | tail -1 | tr -dc '0-9' || true)
+if [ -n "$DISK_PCT" ]; then
+  if [ "$DISK_PCT" -ge "$DISK_MAX_PCT" ]; then
+    if [ ! -f "$DISK_FLAG" ]; then
+      log "Disque à ${DISK_PCT} % (seuil ${DISK_MAX_PCT} %) — alerte envoyée"
+      notify "[ffhandball] ⚠️ Disque à ${DISK_PCT} %" "Le disque racine est rempli à ${DISK_PCT} % (seuil ${DISK_MAX_PCT} %) sur $(hostname 2>/dev/null || echo serveur). Penser à purger (pnpm prune-raw, anciens backups) ou agrandir le volume."
+      : > "$DISK_FLAG"
+    fi
+  elif [ -f "$DISK_FLAG" ] && [ "$DISK_PCT" -lt "$((DISK_MAX_PCT - 5))" ]; then
+    log "Disque revenu à ${DISK_PCT} %"
+    notify "[ffhandball] ✅ Espace disque rétabli" "Le disque racine est repassé à ${DISK_PCT} %."
+    rm -f "$DISK_FLAG"
+  fi
+fi
+
 if curl -fsS -m 5 "$URL" > /dev/null 2>&1; then
   # API OK — si elle était down, notifier le rétablissement.
   if [ -f "$FLAG" ]; then

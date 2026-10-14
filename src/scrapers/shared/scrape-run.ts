@@ -23,14 +23,15 @@ export async function startScrapeRun(input: ScrapeRunInput): Promise<ScrapeRunHa
   );
   const id = res.rows[0]!.id;
 
-  // Un kill (SIGTERM/SIGINT) ne doit pas laisser le run en 'running' : on le clôt en échec.
+  // Un kill (SIGTERM/SIGINT, ex. budget de temps d'un cron) ne doit pas laisser le run en
+  // 'running' : on le clôt en 'partial' (les pages déjà capturées restent valables, relançable).
   let closed = false;
   const onSignal = (signal: NodeJS.Signals) => {
     if (closed) return;
     closed = true;
     query(
       `UPDATE raw.scrape_runs
-          SET finished_at = now(), status = 'failed', error_message = $1
+          SET finished_at = now(), status = 'partial', error_message = $1
         WHERE id = $2 AND status = 'running'`,
       [`interrompu (${signal})`, id],
     ).finally(() => process.exit(signal === "SIGINT" ? 130 : 143));

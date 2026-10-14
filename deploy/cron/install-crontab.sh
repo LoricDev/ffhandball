@@ -23,8 +23,8 @@ CRON_BLOCK="$MARKER_START
 0 5 * * 0   $APP_DIR/deploy/cron/cron-weekly-structure.sh
 # Maintenance : purge api_logs + VACUUM + rotation logs (hebdo dimanche 06:00)
 0 6 * * 0   $APP_DIR/deploy/cron/cron-maintenance.sh
-# Rattrapage FdM complet (mensuel 1er du mois 22:00 — peut durer plusieurs nuits)
-0 22 1 * *  $APP_DIR/deploy/cron/cron-monthly-fdm-full.sh
+# Rattrapage FdM complet (nuits des jours 1 à 5 à 22:00, budget 4 h/nuit, idempotent)
+0 22 1-5 * * $APP_DIR/deploy/cron/cron-monthly-fdm-full.sh
 # Backup core.* quotidien avec rotation 14j (04:30)
 30 4 * * *  $APP_DIR/deploy/cron/backup-daily.sh
 $MARKER_END"
@@ -52,7 +52,7 @@ echo "  */5 * * * * cron-healthcheck.sh"
 echo "  0 3 * * 1   cron-weekly-fdm-recent.sh"
 echo "  0 5 * * 0   cron-weekly-structure.sh"
 echo "  0 6 * * 0   cron-maintenance.sh"
-echo "  0 22 1 * *  cron-monthly-fdm-full.sh"
+echo "  0 22 1-5 * * cron-monthly-fdm-full.sh"
 echo "  30 4 * * *  backup-daily.sh"
 echo ""
 echo "Vérifier avec : crontab -l"

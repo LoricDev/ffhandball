@@ -30,6 +30,10 @@ log_err() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: $*" | tee -a "$LOG" >&2;
 source "$(dirname "$0")/lib-notify.sh"
 cd "$APP_DIR"
 
+# Verrou global des scrapes : un seul scrape à la fois, tous crons confondus (cf. lib-lock.sh).
+source "$(dirname "$0")/lib-lock.sh"
+require_scrape_lock "cron-daily" 6 fail
+
 log "=== Démarrage cron-daily (saison $SAISON) ==="
 
 ERRORS=0
