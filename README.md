@@ -28,7 +28,7 @@ pnpm api:dev    # watch mode (dev)
 open http://localhost:3000/docs   # Swagger UI interactif
 ```
 
-Endpoints : `/health`, `/ready`, `/saisons`, `/departements`, `/ligues`, `/clubs`, `/clubs/:id_ffhb`, `/clubs/:id_ffhb/matchs`, `/clubs/:id_ffhb/equipes`, `/clubs/:id_ffhb/joueurs`, `/clubs/:id_ffhb/classements`, `/competitions`, `/competitions/:id_ffhb`, `/poules/:id_ffhb`, `/equipes/:id_ffhb`, `/equipes/:id_ffhb/matchs`, `/equipes/:id_ffhb/joueurs`, `/matchs`, `/matchs/:id`, `/classements`, `/stats-joueurs`, `/joueurs/:numero_licence`, `/joueurs/:numero_licence/matchs`, `/arbitres`, `/arbitres/:id_ffhb`, `/arbitres/:id_ffhb/matchs`, `/salles/:id_ffhb`, `/salles/:id_ffhb/matchs`, `/search`, `/openapi.json`. Les endpoints clubs acceptent `id_ffhb` (id_club monclub) **ou** le code FFHB 7 chiffres.
+Endpoints : `/health`, `/ready`, `/status` (fraîcheur des données, public), `/statut` (page de statut publique), `/saisons`, `/departements`, `/ligues`, `/clubs`, `/clubs/:id_ffhb`, `/clubs/:id_ffhb/matchs`, `/clubs/:id_ffhb/equipes`, `/clubs/:id_ffhb/joueurs`, `/clubs/:id_ffhb/classements`, `/competitions`, `/competitions/:id_ffhb`, `/poules/:id_ffhb`, `/equipes/:id_ffhb`, `/equipes/:id_ffhb/matchs`, `/equipes/:id_ffhb/joueurs`, `/matchs`, `/matchs/:id`, `/classements`, `/stats-joueurs`, `/joueurs/:numero_licence`, `/joueurs/:numero_licence/matchs`, `/arbitres`, `/arbitres/:id_ffhb`, `/arbitres/:id_ffhb/matchs`, `/salles/:id_ffhb`, `/salles/:id_ffhb/matchs`, `/search`, `/openapi.json`. Les endpoints clubs acceptent `id_ffhb` (id_club monclub) **ou** le code FFHB 7 chiffres.
 
 Détails complets (options, rate-limit, format réponse) : [docs/runbook.md#api-http-publique](docs/runbook.md#api-http-publique).
 
@@ -39,7 +39,7 @@ Détails complets (options, rate-limit, format réponse) : [docs/runbook.md#api-
 - **Scraping** : Cheerio (HTML), p-retry (résilience)
 - **Validation** : Zod
 - **API** : Hono 4 + @hono/zod-openapi + @hono/swagger-ui
-- **Tests** : Vitest (~320 tests passants)
+- **Tests** : Vitest (~440 tests), exécutés sur GitHub Actions (typecheck + migrations + tests sur Postgres)
 - **Logs** : pino
 
 ## Déploiement en production
@@ -74,6 +74,7 @@ pnpm etl --entity=engagements  --saison=2025-2026
 | **`docs/INSTALL.md`** | Installation pas-à-pas, troubleshooting |
 | **`docs/DEPLOY.md`** | Déploiement production (VPS, cron nocturne, backup, monitoring) |
 | **`docs/runbook.md`** | Toutes les commandes opérationnelles par entité + API |
+| **`docs/webhooks.md`** | Webhooks de résultats : abonnement, format, signature HMAC, reprises |
 | **`docs/billing-integration.md`** | Intégration site de paiement ↔ clés API (Stripe → admin) |
 | **`docs/superpowers/specs/`** | Specs design (1 par feature livrée) |
 | **`docs/superpowers/plans/`** | Plans d'implémentation TDD (1 par feature) |
