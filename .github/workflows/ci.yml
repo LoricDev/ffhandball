@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ffhandball
+          POSTGRES_PASSWORD: ffhandball
+          POSTGRES_DB: ffhandball
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ffhandball -d ffhandball"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://ffhandball:ffhandball@localhost:5432/ffhandball
+      SCRAPE_USER_AGENT: "ffhandball-ci/1.0 (contact: ci@example.com)"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Un doublon de route (merge raté) fait échouer ici, pas au redémarrage de la prod.
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Scripts shell (syntaxe)
+        run: for f in deploy/*.sh deploy/cron/*.sh; do bash -n "$f"; done
+
+      - name: Migrations + seeds
+        run: |
+          node --import tsx src/cli/migrate.ts
+          for f in db/seeds/*.sql; do psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"; done
+
+      # Séquentiel : les tests d'intégration partagent la même base (risque de deadlocks sinon).
+      - name: Tests
+        run: pnpm exec vitest run --no-file-parallelism
