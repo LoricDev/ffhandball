@@ -41,7 +41,7 @@ describe("equipes + engagements end-to-end", () => {
   beforeEach(async () => {
     await query(`DELETE FROM raw.engagements; DELETE FROM raw.equipes; DELETE FROM raw.poules; DELETE FROM raw.phases; DELETE FROM raw.competitions;`);
     await query(`DELETE FROM raw.scrape_runs WHERE scraper_name='competitions'`);
-    await query(`TRUNCATE core.engagements, core.equipes, core.poules, core.phases, core.competitions, core.etl_runs, core.etl_warnings, core.etl_rejets RESTART IDENTITY CASCADE`);
+    await query(`TRUNCATE core.engagements, core.equipes, core.clubs, core.poules, core.phases, core.competitions, core.etl_runs, core.etl_warnings, core.etl_rejets RESTART IDENTITY CASCADE`);
     await setup();
   });
 

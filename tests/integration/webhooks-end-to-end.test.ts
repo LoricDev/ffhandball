@@ -30,7 +30,7 @@ async function playMatch(scoreDom: number | null, scoreExt: number | null, statu
 const fetchWith = (status: number, onCall?: (url: string, init: RequestInit) => void) =>
   (async (url: string, init: RequestInit) => {
     onCall?.(url, init);
-    return new Response("x", { status });
+    return new Response(status === 204 ? null : "x", { status });
   }) as unknown as typeof fetch;
 
 beforeEach(async () => {
