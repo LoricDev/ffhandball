@@ -33,3 +33,30 @@ describe("rate-limit middleware", () => {
     expect(res.headers.get("X-RateLimit-Reset")).toBeDefined();
   });
 });
+
+describe("rate-limit — IP du client derrière nginx", () => {
+  beforeEach(() => _resetBuckets());
+
+  it("ignore une première entrée X-Forwarded-For falsifiée (contournement impossible)", async () => {
+    const app = buildApp();
+    let last = 0;
+    // Le client change d'IP « annoncée » à chaque requête ; nginx ajoute sa vraie IP en dernier.
+    for (let i = 0; i < 70; i++) {
+      const res = await app.request("/health", { headers: { "x-forwarded-for": `10.0.0.${i}, 9.9.9.9` } });
+      last = res.status;
+    }
+    expect(last).toBe(429);
+  });
+
+  it("X-Real-IP prime sur X-Forwarded-For", async () => {
+    const app = buildApp();
+    let last = 0;
+    for (let i = 0; i < 70; i++) {
+      const res = await app.request("/health", {
+        headers: { "x-real-ip": "8.8.8.8", "x-forwarded-for": `1.2.3.${i}` },
+      });
+      last = res.status;
+    }
+    expect(last).toBe(429);
+  });
+});

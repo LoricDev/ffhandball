@@ -2,6 +2,7 @@
 import type { MiddlewareHandler } from "hono";
 import { logger } from "@/lib/logger.js";
 import { query } from "@/db/client.js";
+import { clientIp } from "@/api/lib/client-ip.js";
 
 export function requestLoggerMiddleware(): MiddlewareHandler {
   return async (c, next) => {
@@ -11,7 +12,7 @@ export function requestLoggerMiddleware(): MiddlewareHandler {
     const status = c.res.status;
     const method = c.req.method;
     const path = c.req.path;
-    const ip = c.req.header("x-forwarded-for") ?? c.req.header("x-real-ip") ?? null;
+    const ip = clientIp(c);
     const key_prefix = (c.get("apiKey") as { key_prefix?: string } | undefined)?.key_prefix ?? null;
 
     const level = status >= 500 ? "error" : status >= 400 ? "warn" : "info";

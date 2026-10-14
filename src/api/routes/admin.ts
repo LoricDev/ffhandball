@@ -3,10 +3,18 @@
 // Volontairement hors OpenAPI public (Hono brut) pour ne pas exposer la surface admin.
 import { Hono } from "hono";
 import { readFileSync } from "node:fs";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { createApiKey, renewApiKey, revokeApiKey, listApiKeys } from "@/api/lib/repositories/api-keys.repo.js";
 import { getPipelineSnapshot } from "@/api/lib/repositories/pipeline-status.repo.js";
 
 const admin = new Hono();
+
+// Comparaison à temps constant (hash des deux côtés : longueurs égales, pas de fuite par timing).
+function safeEqual(a: string, b: string): boolean {
+  const ha = createHash("sha256").update(a).digest();
+  const hb = createHash("sha256").update(b).digest();
+  return timingSafeEqual(ha, hb);
+}
 
 // Page du tableau de bord : HTML statique SANS donnée (le secret est saisi dans la page et n'est
 // envoyé qu'à /admin/pipeline). Déclarée avant le garde, qui ne s'applique qu'aux routes suivantes.
@@ -27,7 +35,7 @@ admin.use("/admin/*", async (c, next) => {
       503,
     );
   }
-  if (c.req.header("x-admin-secret") !== secret) {
+  if (!safeEqual(c.req.header("x-admin-secret") ?? "", secret)) {
     return c.json({ error: { code: "UNAUTHORIZED" as const, message: "Secret admin invalide" } }, 401);
   }
   await next();
