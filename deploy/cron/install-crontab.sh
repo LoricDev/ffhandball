@@ -27,6 +27,8 @@ CRON_BLOCK="$MARKER_START
 0 22 1-5 * * $APP_DIR/deploy/cron/cron-monthly-fdm-full.sh
 # Backup core.* quotidien avec rotation 14j (04:30)
 30 4 * * *  $APP_DIR/deploy/cron/backup-daily.sh
+# Webhooks de résultats : envoie les livraisons dues (chaque minute ; sort aussitôt s'il n'y en a pas)
+* * * * *   $APP_DIR/deploy/cron/webhooks-deliver.sh
 # Test de restauration du dernier backup dans une base temporaire (le 9 du mois 08:00)
 0 8 9 * *   $APP_DIR/deploy/cron/test-restore.sh
 $MARKER_END"
@@ -56,6 +58,7 @@ echo "  0 5 * * 0   cron-weekly-structure.sh"
 echo "  0 6 * * 0   cron-maintenance.sh"
 echo "  0 22 1-5 * * cron-monthly-fdm-full.sh"
 echo "  30 4 * * *  backup-daily.sh"
+echo "  * * * * *   webhooks-deliver.sh"
 echo "  0 8 9 * *   test-restore.sh"
 echo ""
 echo "Vérifier avec : crontab -l"

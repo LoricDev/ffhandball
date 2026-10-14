@@ -61,6 +61,18 @@ async function main(): Promise<void> {
     process.stdout.write(`  → ${wn} ligne(s) supprimée(s)\n`);
   }
 
+  // 2 bis. Purge des événements webhook (et de leurs livraisons, par cascade) de plus de 30 jours.
+  const evWhere = `created_at < now() - interval '30 days'`;
+  const ecnt = await query<{ n: string }>(`SELECT count(*)::bigint AS n FROM core.match_events WHERE ${evWhere}`);
+  const en = Number(ecnt.rows[0]!.n);
+  process.stdout.write(`événements webhook à purger (> 30 j) : ${en}
+`);
+  if (en > 0 && !dryRun) {
+    await query(`DELETE FROM core.match_events WHERE ${evWhere}`);
+    process.stdout.write(`  → ${en} ligne(s) supprimée(s)
+`);
+  }
+
   // 3. VACUUM ANALYZE (hors transaction — pool.query simple).
   if (!dryRun) {
     process.stdout.write("VACUUM ANALYZE...\n");

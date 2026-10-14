@@ -301,6 +301,8 @@ crontab -l      # vérifier
 | Dimanche 05:00 | `cron-weekly-structure.sh` | Clubs, détails, salles, compétitions, poules, équipes |
 | Dimanche 06:00 | `cron-maintenance.sh` | Purge `api_logs` / `etl_warnings`, VACUUM, rotation des logs |
 | Jours 1 à 5 du mois, 22:00 | `cron-monthly-fdm-full.sh` | Rattrapage FdM complet (30-100 h au total), **budget 4 h par nuit** puis reprise (idempotent) |
+| Chaque minute | `webhooks-deliver.sh` | Envoie les webhooks de résultats dus (voir `docs/webhooks.md`) ; sort aussitôt s'il n'y en a pas |
+| Le 9 du mois 08:00 | `test-restore.sh` | Restaure le dernier backup dans une base temporaire, compare les volumes, supprime la base (mail si échec) |
 | Quotidien 04:30 | `backup-daily.sh` | Sauvegarde `core.*` **vérifiée** (gzip -t + taille mini, mail si invalide), rotation 14 jours |
 
 Points à connaître :
