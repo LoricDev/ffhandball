@@ -16,6 +16,7 @@ import arbitresRoutes from "@/api/routes/arbitres.js";
 import sallesRoutes from "@/api/routes/salles.js";
 import referentielsRoutes from "@/api/routes/referentiels.js";
 import adminRoutes from "@/api/routes/admin.js";
+import statusRoutes from "@/api/routes/status.js";
 import { env } from "@/config/env.js";
 import { logger } from "@/lib/logger.js";
 import { requestLoggerMiddleware } from "@/api/middleware/request-logger.js";
@@ -57,6 +58,7 @@ export function buildApp(opts: BuildAppOptions = {}): OpenAPIHono {
 
   app.route("/", adminRoutes);
   app.route("/", healthRoutes);
+  app.route("/", statusRoutes);
   app.route("/", clubsRoutes);
   app.route("/", matchsRoutes);
   app.route("/", classementsRoutes);

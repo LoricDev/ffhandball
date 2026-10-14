@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>État du service</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --fg:#14181f; --mut:#6b7380; --bd:#e2e5ea; --ok:#15803d; --warn:#b45309; --bad:#c62828; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0f1218; --card:#171b23; --fg:#e6e9ee; --mut:#8b93a1; --bd:#262c37; --ok:#4ade80; --warn:#fbbf24; --bad:#f87171; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif; padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+  main { max-width:720px; margin:0 auto; padding:24px 16px 48px; }
+  h1 { font-size:20px; margin:0 0 4px; } .sub { color:var(--mut); font-size:13px; margin:0 0 20px; }
+  .card { background:var(--card); border:1px solid var(--bd); border-radius:12px; padding:16px; margin-bottom:16px; }
+  .global { display:flex; align-items:center; gap:12px; font-size:18px; font-weight:600; }
+  .dot { width:14px; height:14px; border-radius:50%; background:var(--mut); flex:none; }
+  .ok .dot { background:var(--ok); } .retard .dot, .degrade .dot { background:var(--warn); } .panne .dot, .bad .dot { background:var(--bad); }
+  .operationnel { color:var(--ok); } .degrade { color:var(--warn); } .panne { color:var(--bad); }
+  ul { list-style:none; margin:0; padding:0; } li { display:flex; align-items:center; gap:10px; padding:10px 0; border-top:1px solid var(--bd); }
+  li:first-child { border-top:0; } li .dot { width:10px; height:10px; } li .name { flex:1; min-width:0; }
+  li .age { color:var(--mut); font-size:13px; text-align:right; } li.retard .age { color:var(--warn); }
+  .foot { color:var(--mut); font-size:12px; text-align:center; } a { color:inherit; }
+  .err { color:var(--bad); font-size:13px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>État du service</h1>
+  <p class="sub">Disponibilité de l'API et fraîcheur des données.</p>
+
+  <div class="card"><div class="global" id="global"><span class="dot"></span><span id="globalTxt">Vérification…</span></div></div>
+
+  <div class="card"><ul id="list"></ul><div class="err" id="err"></div></div>
+
+  <p class="foot"><span id="checked"></span> · actualisation automatique · <a href="/docs">Documentation de l'API</a></p>
+</main>
+
+<script>
+const LABELS = { operationnel: "Tous les systèmes sont opérationnels", degrade: "Fonctionnement dégradé — certaines données ont du retard", panne: "Service indisponible" };
+const $ = (id) => document.getElementById(id);
+
+function age(h) {
+  if (h == null) return "jamais mis à jour";
+  if (h < 1) return "à l'instant";
+  if (h < 48) return "il y a " + Math.round(h) + " h";
+  return "il y a " + Math.round(h / 24) + " j";
+}
+
+function render(s) {
+  $("global").className = "global " + s.statut;
+  $("globalTxt").textContent = LABELS[s.statut] || s.statut;
+  const ul = $("list");
+  ul.replaceChildren(...s.donnees.map((d) => {
+    const li = document.createElement("li");
+    li.className = d.etat;
+    const dot = document.createElement("span"); dot.className = "dot";
+    const name = document.createElement("span"); name.className = "name"; name.textContent = d.label;
+    const a = document.createElement("span"); a.className = "age"; a.textContent = age(d.age_heures);
+    li.append(dot, name, a);
+    return li;
+  }));
+  $("checked").textContent = "Vérifié à " + new Date(s.verifie_le).toLocaleTimeString("fr-FR");
+  $("err").textContent = "";
+}
+
+async function tick() {
+  try {
+    const res = await fetch("/status", { cache: "no-store" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    render(await res.json());
+  } catch (e) {
+    $("global").className = "global panne";
+    $("globalTxt").textContent = "Impossible de joindre le service";
+    $("err").textContent = String(e.message || e);
+  }
+}
+tick();
+setInterval(() => { if (!document.hidden) tick(); }, 30000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) tick(); });
+</script>
+</body>
+</html>
