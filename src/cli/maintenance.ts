@@ -1,11 +1,13 @@
 // src/cli/maintenance.ts — entretien DB : purge des logs API et des warnings ETL anciens + VACUUM ANALYZE.
 // Usage : pnpm maintenance [--api-logs-days=90] [--etl-warnings-days=30] [--dry-run]
+//         pnpm maintenance --reap-only [--dry-run]   (seulement clôturer les runs orphelins)
 //
 // core.api_logs grossit à chaque requête HTTP et core.etl_warnings à chaque ETL (des dizaines de
 // milliers de lignes par run) : on purge les entrées plus vieilles que N jours, puis on lance
 // VACUUM ANALYZE pour réutiliser l'espace et rafraîchir les stats du planner.
 import { parseArgs } from "node:util";
 import { closePool, query } from "@/db/client.js";
+import { reapOrphanRuns } from "@/db/reap-orphans.js";
 
 async function main(): Promise<void> {
   const { values } = parseArgs({
@@ -13,6 +15,9 @@ async function main(): Promise<void> {
       "api-logs-days": { type: "string" },
       "etl-warnings-days": { type: "string" },
       "dry-run": { type: "boolean" },
+      "reap-only": { type: "boolean" },
+      "scrape-idle-hours": { type: "string" },
+      "etl-max-hours": { type: "string" },
     },
   });
   const days = Number(values["api-logs-days"] ?? 90);
@@ -22,6 +27,17 @@ async function main(): Promise<void> {
     throw new Error(`--etl-warnings-days invalide : ${values["etl-warnings-days"]}`);
   }
   const dryRun = values["dry-run"] === true;
+
+  // 0. Runs fantômes (processus tué : statut resté running).
+  const scrapeIdleHours = Number(values["scrape-idle-hours"] ?? 3);
+  const etlMaxHours = Number(values["etl-max-hours"] ?? 6);
+  if (!(scrapeIdleHours > 0) || !(etlMaxHours > 0)) throw new Error("--scrape-idle-hours / --etl-max-hours invalides");
+  const reaped = await reapOrphanRuns({ scrapeIdleHours, etlMaxHours, dryRun });
+  process.stdout.write(
+    `runs orphelins ${dryRun ? "à clôturer" : "clôturés"} : ${reaped.scrapes} scrape(s) (> ${scrapeIdleHours} h sans activité), ${reaped.etls} ETL (> ${etlMaxHours} h)
+`,
+  );
+  if (values["reap-only"]) return;
 
   // 1. Purge api_logs.
   const cnt = await query<{ n: string }>(

@@ -13,12 +13,15 @@ const STREAMING_RAW: Record<string, string> = {
 export async function getPipelineSnapshot() {
   const [scrapes, etls, traffic, errors, db, tables, lastByJob] = await Promise.all([
     query(
-      `SELECT scraper_name, saison, status, started_at, finished_at, pages_scraped, pages_total, error_message
+      `SELECT scraper_name, saison, status, started_at, finished_at, pages_scraped, pages_total, error_message,
+              last_activity_at,
+              extract(epoch FROM now() - COALESCE(last_activity_at, started_at))::int AS idle_s
          FROM raw.scrape_runs ORDER BY started_at DESC LIMIT 40`,
     ),
     query(
       `SELECT id, entity, saison, status, started_at, finished_at, rows_read, rows_inserted, rows_updated,
-              rows_rejected, warnings_count, error_message
+              rows_rejected, warnings_count, error_message,
+              extract(epoch FROM now() - started_at)::int AS age_s
          FROM core.etl_runs ORDER BY started_at DESC LIMIT 40`,
     ),
     query(
