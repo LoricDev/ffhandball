@@ -5,6 +5,7 @@ import { Hono } from "hono";
 import { readFileSync } from "node:fs";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { createApiKey, renewApiKey, revokeApiKey, listApiKeys } from "@/api/lib/repositories/api-keys.repo.js";
+import adminWebhooks from "@/api/routes/admin-webhooks.js";
 import { getPipelineSnapshot } from "@/api/lib/repositories/pipeline-status.repo.js";
 
 const admin = new Hono();
@@ -76,5 +77,8 @@ admin.post("/admin/api-keys/:key_prefix/revoke", async (c) => {
   if (!ok) return c.json({ error: { code: "NOT_FOUND" as const, message: "Clé introuvable" } }, 404);
   return c.json({ data: { key_prefix: prefix, active: false } });
 });
+
+// Webhooks de résultats : monté après le garde ci-dessus, donc protégé par X-Admin-Secret.
+admin.route("/", adminWebhooks);
 
 export default admin;
