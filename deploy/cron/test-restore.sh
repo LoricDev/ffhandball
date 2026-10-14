@@ -45,7 +45,8 @@ fail() {
   notify_failure "test-restore" 1 "$LOG"
   exit 1
 }
-trap 'cleanup' EXIT
+# Remplace le trap EXIT posé par cron_track_start : on le réenchaîne pour que le statut final soit bien enregistré.
+trap 'rc=$?; cleanup; _cron_track_exit "$rc"' EXIT
 
 log "=== Démarrage test-restore ==="
 
