@@ -63,7 +63,8 @@ const DETAIL_LIMIT = 30;
 
 const NO_SCORE_WHERE = `po.saison_code = $1
         AND m.date_heure < now() - ($2::int * interval '1 day')
-        AND m.score_dom IS NULL`;
+        AND m.score_dom IS NULL
+        AND m.statut <> 'forfait'`;
 
 async function noScoreDetails(saison: string, days: number): Promise<NoScoreDetails> {
   const params = [saison, days, env.SCRAPE_FDM_MAX_AGE_DAYS];
@@ -118,6 +119,7 @@ async function noScoreDetails(saison: string, days: number): Promise<NoScoreDeta
     ` WHERE po.saison_code = '${saison}'`,
     `   AND m.date_heure < now() - interval '${days} days'`,
     "   AND m.score_dom IS NULL",
+    "   AND m.statut <> 'forfait'",
     " ORDER BY m.date_heure;",
   ].join("\n");
   return {

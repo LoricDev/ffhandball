@@ -7,6 +7,7 @@ import { insertWarnings, type EtlWarning } from "@/etl/shared/etl-warnings.js";
 import { loadIdIndex } from "@/etl/shared/lookups.js";
 import { Progress } from "@/lib/progress.js";
 import { EtlCheckpoint } from "@/etl/shared/checkpoint.js";
+import { deduceStatut } from "@/etl/shared/deduce-statut.js";
 
 export interface EtlReport {
   etl_run_id: number;
@@ -17,13 +18,6 @@ export interface EtlReport {
   rows_updated: number;
   rows_noop: number;
   warnings_count: number;
-}
-
-function deduceStatut(scoreDom: number | null | undefined, scoreExt: number | null | undefined): "a_jouer" | "joue" {
-  return scoreDom !== null && scoreDom !== undefined &&
-         scoreExt !== null && scoreExt !== undefined
-    ? "joue"
-    : "a_jouer";
 }
 
 function deduceHeureEstimee(dateHeure: string): boolean {
