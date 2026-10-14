@@ -97,3 +97,43 @@ describe("admin /admin/pipeline + /admin/dashboard", () => {
     expect(data.db.bytes).toBeDefined();
   });
 });
+
+describe("admin : validation, trafic, webhooks", () => {
+  const h = { "content-type": "application/json", "x-admin-secret": SECRET };
+
+  it("refuse un corps invalide à la création de clé (400)", async () => {
+    _resetBuckets();
+    process.env.ADMIN_SECRET = SECRET;
+    for (const body of [{ months: -1 }, { months: "3" }, { rate_limit_per_min: 0 }, { label: "x".repeat(300) }]) {
+      const res = await app.request("/admin/api-keys", { method: "POST", headers: h, body: JSON.stringify(body) });
+      expect(res.status).toBe(400);
+    }
+  });
+
+  it("/admin/traffic : structure complète, fenêtre inconnue → 24 h", async () => {
+    _resetBuckets();
+    process.env.ADMIN_SECRET = SECRET;
+    expect((await app.request("/admin/traffic")).status).toBe(401);
+    const res = await app.request("/admin/traffic?hours=999", { headers: h });
+    expect(res.status).toBe(200);
+    const { data } = await res.json();
+    expect(data.hours).toBe(24);
+    expect(data.series).toHaveLength(24);
+    expect(data.totals).toHaveProperty("p95_ms");
+    expect(Array.isArray(data.top_routes)).toBe(true);
+    expect(Array.isArray(data.top_keys)).toBe(true);
+  });
+
+  it("webhooks : protégés par le secret, URL non HTTPS refusée, liste accessible", async () => {
+    _resetBuckets();
+    process.env.ADMIN_SECRET = SECRET;
+    expect((await app.request("/admin/webhooks")).status).toBe(401);
+    const bad = await app.request("/admin/webhooks", { method: "POST", headers: h, body: JSON.stringify({ url: "http://exemple.fr/hook" }) });
+    expect(bad.status).toBe(400);
+    const internal = await app.request("/admin/webhooks", { method: "POST", headers: h, body: JSON.stringify({ url: "https://127.0.0.1/hook" }) });
+    expect(internal.status).toBe(400);
+    const list = await app.request("/admin/webhooks", { headers: h });
+    expect(list.status).toBe(200);
+    expect(Array.isArray((await list.json()).data)).toBe(true);
+  });
+});
