@@ -82,7 +82,7 @@ describe("admin /admin/pipeline + /admin/dashboard", () => {
     process.env.ADMIN_SECRET = SECRET;
     const res = await app.request("/admin/dashboard");
     expect(res.status).toBe(200);
-    expect(await res.text()).toContain("Pipeline en direct");
+    expect(await res.text()).toContain("Administration");
   });
 
   it("pipeline: 401 sans secret, 200 avec", async () => {
