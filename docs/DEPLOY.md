@@ -98,7 +98,7 @@ Adapter les variables :
 DATABASE_URL=postgresql://ffhandball:CHANGE_ME@localhost:5432/ffhandball
 
 # IMPORTANT : User-Agent identifiable avec contact réel
-SCRAPE_USER_AGENT=ffhandball-data-bot/1.0 (contact: admin@ton-domaine.fr)
+SCRAPE_USER_AGENT="ffhandball-data-bot/1.0 (contact: admin@ton-domaine.fr)"
 
 # Production : rate-limit plus généreux (anti-bannissement)
 SCRAPE_RATE_LIMIT_MS=2000

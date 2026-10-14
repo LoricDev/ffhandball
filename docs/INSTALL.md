@@ -41,7 +41,7 @@ cp .env.example .env
 DATABASE_URL=postgresql://ffhandball:ffhandball@localhost:5432/ffhandball
 
 # User-Agent identifiable pour le scraping (recommandé : adresse de contact)
-SCRAPE_USER_AGENT=ffhandball-data-bot/0.1 (contact: ton.email@example.com)
+SCRAPE_USER_AGENT="ffhandball-data-bot/0.1 (contact: ton.email@example.com)"
 
 # Rate-limit entre requêtes HTTP (ms). 1500 = 1.5 s/req (poli)
 SCRAPE_RATE_LIMIT_MS=1500
