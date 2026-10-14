@@ -80,7 +80,10 @@ function bytes(b) { b = Number(b); if (!isFinite(b)) return "–"; const u = ["o
 function dur(sec) { if (sec == null || !isFinite(sec)) return "–"; sec = Math.max(0, Math.round(sec)); const d = Math.floor(sec/86400), h = Math.floor(sec%86400/3600), m = Math.floor(sec%3600/60), s = sec%60; return d ? `${d} j ${h} h` : h ? `${h} h ${String(m).padStart(2,"0")}` : m ? `${m} min ${String(s).padStart(2,"0")}` : `${s} s`; }
 function ago(iso) { if (!iso) return "jamais"; const s = (Date.now() - new Date(iso)) / 1000; return "il y a " + dur(s); }
 const hhmm = (iso) => iso ? new Date(iso).toLocaleString("fr-FR", { day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit" }) : "–";
-const pill = (st) => el("span", { class: "pill " + st }, { running: "en cours", success: "ok", partial: "partiel", failed: "échec" }[st] || st);
+// Run « fantôme » : marqué running mais sans heartbeat (scrape) / trop ancien (ETL).
+const ORPHAN_SCRAPE_IDLE_S = 20 * 60, ORPHAN_ETL_AGE_S = 3 * 3600;
+const isOrphan = (k, r) => r.status === "running" && (k === "scrape" ? r.idle_s > ORPHAN_SCRAPE_IDLE_S : r.age_s > ORPHAN_ETL_AGE_S);
+const pill = (st, orphan) => orphan ? el("span", { class: "pill partial", title: "processus disparu : sera clôturé par la maintenance" }, "orphelin") : el("span", { class: "pill " + st }, { running: "en cours", success: "ok", partial: "partiel", failed: "échec" }[st] || st);
 
 function table(t, head, rows) {
   t.replaceChildren(el("thead", {}, el("tr", {}, head.map((h) => el("th", { class: h.startsWith("#") ? "num" : "" }, h.replace(/^#/, ""))))),
@@ -110,12 +113,13 @@ function runningCard(kind, name, saison, started, done, total, extra, key) {
 }
 
 function render(d) {
-  const run = [...d.scrapes.filter((r) => r.status === "running").map((r) => ({ k: "scrape", r })),
-               ...d.etls.filter((r) => r.status === "running").map((r) => ({ k: "etl", r }))];
+  const all = [...d.scrapes.map((r) => ({ k: "scrape", r })), ...d.etls.map((r) => ({ k: "etl", r }))].filter(({ r }) => r.status === "running");
+  const run = all.filter(({ k, r }) => !isOrphan(k, r));
+  const orphans = all.length - run.length;
   const failed24 = [...d.scrapes, ...d.etls].filter((r) => r.status === "failed" && Date.now() - new Date(r.started_at) < 864e5).length;
 
   $("kpis").replaceChildren(
-    ...[[run.length, "en cours", run.length ? "running" : ""], [failed24, "échecs (24 h)", failed24 ? "failed" : "success"],
+    ...[[run.length, "en cours", run.length ? "running" : ""], ...(orphans ? [[orphans, "orphelins", "partial"]] : []), [failed24, "échecs (24 h)", failed24 ? "failed" : "success"],
         [fmt(d.api.total_5m), "requêtes API / 5 min", ""], [fmt(d.api.err_5xx_1h), "erreurs 5xx / 1 h", d.api.err_5xx_1h > 0 ? "failed" : "success"],
         [bytes(d.db.bytes), "taille de la base", ""], [d.db.connections, "connexions DB", ""]]
       .map(([v, l, c]) => el("div", { class: "card kpi" }, el("b", { class: c }, v), el("span", {}, l))));
@@ -126,7 +130,7 @@ function render(d) {
     return k === "scrape"
       ? runningCard("Scrape", r.scraper_name, r.saison, r.started_at, r.pages_scraped, r.pages_total, "pages", key)
       : runningCard("ETL", r.entity, r.saison, r.started_at, r.rows_read, r.rows_total, `+${fmt(r.rows_inserted)} / ~${fmt(r.rows_updated)} / ✕${fmt(r.rows_rejected)}`, key);
-  }) : [el("div", { class: "mut" }, "Rien en cours — aucun cron actif en ce moment.")]));
+  }) : [el("div", { class: "mut" }, "Rien en cours — aucun cron actif en ce moment." + (orphans ? ` (${orphans} run(s) orphelin(s) ignoré(s))` : ""))]));
   for (const k of prev.keys()) if (!live.has(k)) prev.delete(k);
 
   table($("jobs"), ["Type", "Tâche", "Dernier lancement", "Dernier succès"],
@@ -145,9 +149,9 @@ function render(d) {
   const dsec = (r) => r.finished_at ? (new Date(r.finished_at) - new Date(r.started_at)) / 1000 : null;
   const errTip = (r) => r.error_message ? el("div", { class: "err", style: "white-space:normal;max-width:360px" }, r.error_message.slice(0, 160)) : null;
   table($("scrapes"), ["Statut", "Scraper", "Saison", "Début", "#Durée", "#Pages"],
-    d.scrapes.slice(0, 20).map((r) => [el("span", {}, pill(r.status), errTip(r)), r.scraper_name, r.saison, hhmm(r.started_at), dur(dsec(r)), fmt(r.pages_scraped) + (r.pages_total ? " / " + fmt(r.pages_total) : "")]));
+    d.scrapes.slice(0, 20).map((r) => [el("span", {}, pill(r.status, isOrphan("scrape", r)), errTip(r)), r.scraper_name, r.saison, hhmm(r.started_at), dur(dsec(r)), fmt(r.pages_scraped) + (r.pages_total ? " / " + fmt(r.pages_total) : "")]));
   table($("etls"), ["Statut", "Entité", "Saison", "Début", "#Durée", "#Lues", "#Rejets"],
-    d.etls.slice(0, 20).map((r) => [el("span", {}, pill(r.status), errTip(r)), r.entity, r.saison || "", hhmm(r.started_at), dur(dsec(r)), fmt(r.rows_read), fmt(r.rows_rejected)]));
+    d.etls.slice(0, 20).map((r) => [el("span", {}, pill(r.status, isOrphan("etl", r)), errTip(r)), r.entity, r.saison || "", hhmm(r.started_at), dur(dsec(r)), fmt(r.rows_read), fmt(r.rows_rejected)]));
   table($("tables"), ["Table", "#Lignes (est.)", "#Taille"], d.db.top_tables.map((t) => [`${t.schema}.${t.table}`, fmt(t.rows), bytes(t.bytes)]));
 }
 
