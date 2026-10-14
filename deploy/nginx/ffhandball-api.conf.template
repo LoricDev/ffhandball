@@ -23,6 +23,13 @@ server {
         limit_req zone=ffhandball_api burst=20 nodelay;
     }
 
+    # Compression des réponses JSON (gzip est actif globalement mais ne couvre que text/html par défaut).
+    gzip on;
+    gzip_types application/json;
+    gzip_min_length 1024;
+    gzip_proxied any;
+    gzip_vary on;
+
     # Logs séparés pour cette app
     access_log /var/log/nginx/ffhandball-api.access.log;
     error_log /var/log/nginx/ffhandball-api.error.log;

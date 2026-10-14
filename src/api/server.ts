@@ -22,6 +22,7 @@ import { requestLoggerMiddleware } from "@/api/middleware/request-logger.js";
 import { errorHandlerMiddleware } from "@/api/middleware/error-handler.js";
 import { rateLimitMiddleware } from "@/api/middleware/rate-limit.js";
 import { apiKeyAuthMiddleware } from "@/api/middleware/auth.js";
+import { httpCacheMiddleware } from "@/api/middleware/http-cache.js";
 
 export interface BuildAppOptions {
   /** Active l'auth par clé API. Défaut : env.API_AUTH_ENABLED. */
@@ -52,6 +53,7 @@ export function buildApp(opts: BuildAppOptions = {}): OpenAPIHono {
   app.use("*", errorHandlerMiddleware());
   if (authEnabled) app.use("*", apiKeyAuthMiddleware());
   app.use("*", rateLimitMiddleware());
+  app.use("*", httpCacheMiddleware({ authEnabled }));
 
   app.route("/", adminRoutes);
   app.route("/", healthRoutes);
