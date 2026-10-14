@@ -35,6 +35,10 @@ cd "$APP_DIR"
 source "$(dirname "$0")/lib-lock.sh"
 require_scrape_lock "cron-monthly-fdm-full" 2 skip
 
+# Suivi du cron en base (tableau de bord admin) — jamais bloquant.
+source "$(dirname "$0")/lib-cron.sh"
+cron_track_start "cron-monthly-fdm-full" 2
+
 log "=== Démarrage cron-monthly-fdm-full (saison $SAISON) ==="
 log "    Rattrapage borné à ${FDM_MONTHLY_BUDGET_H:-4} h par nuit, relancé les nuits suivantes (idempotent)."
 
@@ -44,11 +48,13 @@ run_step() {
   local label="$1"
   shift
   log ">>> $label..."
+  cron_track_step "$label"
   if "$@" >> "$LOG" 2>&1; then
     log "    $label : OK"
   else
     log_err "    $label : ECHEC (code $?)"
     ERRORS=$((ERRORS + 1))
+    cron_track_error
   fi
 }
 
@@ -59,6 +65,7 @@ run_step() {
 # borne pour qu'il rende le verrou global avant le cron-daily de 02:00 ; il est relancé les nuits
 # suivantes (crontab : jours 1 à 5) et reprend là où il s'est arrêté (idempotent).
 BUDGET_H="${FDM_MONTHLY_BUDGET_H:-4}"
+cron_track_step "scrape feuilles-match (complet, budget ${BUDGET_H} h)"
 log ">>> scrape feuilles-match (complet, jusqu'à aujourd'hui) — budget ${BUDGET_H} h..."
 set +e
 timeout -k 120 "${BUDGET_H}h" pnpm scrape --entity=feuilles-match --saison="$SAISON" >> "$LOG" 2>&1
@@ -71,6 +78,7 @@ elif [ "$RC" -eq 124 ] || [ "$RC" -eq 137 ]; then
 else
   log_err "    scrape feuilles-match : ECHEC (code $RC)"
   ERRORS=$((ERRORS + 1))
+  cron_track_error
 fi
 
 # ETL cascade : joueurs + match_compositions + match_actions + match_officiels arbitres

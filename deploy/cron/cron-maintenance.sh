@@ -23,19 +23,26 @@ log_err() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: $*" | tee -a "$LOG" >&2;
 source "$(dirname "$0")/lib-notify.sh"
 cd "$APP_DIR"
 
+# Suivi du cron en base (tableau de bord admin) — jamais bloquant.
+source "$(dirname "$0")/lib-cron.sh"
+cron_track_start "cron-maintenance" 2
+
 log "=== Démarrage cron-maintenance ==="
 
 ERRORS=0
 
 # 1. Purge api_logs (>90j) + VACUUM ANALYZE
+cron_track_step "maintenance DB (purges, runs orphelins, VACUUM)"
 if pnpm maintenance >> "$LOG" 2>&1; then
   log "    maintenance DB : OK"
 else
   log_err "    maintenance DB : ECHEC"
   ERRORS=$((ERRORS + 1))
+  cron_track_error
 fi
 
 # 2. Rotation : supprimer les logs cron de plus de 30 jours
+cron_track_step "rotation des logs"
 DELETED=$(find "$LOG_DIR" -name "cron-*.log" -mtime +30 -print -delete 2>/dev/null | wc -l | tr -d ' ')
 log "    rotation logs : $DELETED fichier(s) >30j supprimé(s)"
 

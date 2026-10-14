@@ -22,6 +22,7 @@
     "poules:actives": "node --env-file=.env --import tsx src/cli/poules-actives.ts",
     "monitor": "node --env-file=.env --import tsx src/cli/monitor.ts",
     "maintenance": "node --env-file=.env --import tsx src/cli/maintenance.ts",
+    "cron-run": "node --env-file=.env --import tsx src/cli/cron-run.ts",
     "notify": "node --env-file=.env --import tsx src/cli/notify.ts",
     "pipeline": "node --env-file=.env --import tsx src/cli/pipeline.ts",
     "mail:test": "node --env-file=.env --import tsx src/cli/mail-test.ts",
