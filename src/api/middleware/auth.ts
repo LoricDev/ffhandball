@@ -3,7 +3,7 @@ import type { MiddlewareHandler } from "hono";
 import { findActiveKeyByToken } from "@/api/lib/repositories/api-keys.repo.js";
 
 /** Chemins accessibles sans clé API. `/admin` a son propre garde (X-Admin-Secret). */
-const PUBLIC_EXACT = new Set(["/health", "/ready", "/openapi.json"]);
+const PUBLIC_EXACT = new Set(["/health", "/ready", "/status", "/statut", "/openapi.json"]);
 function isPublicPath(path: string): boolean {
   if (PUBLIC_EXACT.has(path)) return true;
   if (path === "/docs" || path.startsWith("/docs/")) return true;
