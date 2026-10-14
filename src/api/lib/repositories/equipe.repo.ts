@@ -19,6 +19,7 @@ export interface EquipeMatchItem {
   id_ffhb_match: string;
   date_heure: Date;
   statut: string;
+  forfait_equipe: "dom" | "ext" | null;
   journee: number | null;
   equipe_dom_nom: string;
   equipe_ext_nom: string;
@@ -140,7 +141,7 @@ export async function getEquipeMatchs(
   params.push(opts.limit);
   params.push(opts.offset);
   const dataRes = await query<EquipeMatchItem>(
-    `SELECT m.id_ffhb_match, m.date_heure, m.statut, m.journee,
+    `SELECT m.id_ffhb_match, m.date_heure, m.statut, m.forfait_equipe, m.journee,
             ed.nom AS equipe_dom_nom, ee.nom AS equipe_ext_nom,
             m.score_dom, m.score_ext, po.id_ffhb AS poule_id_ffhb,
             c.nom AS competition_nom, m.fdm_url

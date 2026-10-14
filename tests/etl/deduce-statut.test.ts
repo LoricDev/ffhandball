@@ -1,22 +1,29 @@
 import { describe, it, expect } from "vitest";
-import { deduceStatut } from "@/etl/shared/deduce-statut.js";
+import { deduceForfait, deduceStatut } from "@/etl/shared/deduce-statut.js";
 
-describe("deduceStatut", () => {
+describe("deduceStatut / deduceForfait", () => {
   it("deux scores → joue (y compris 0)", () => {
-    expect(deduceStatut(33, 18)).toBe("joue");
-    expect(deduceStatut(20, 0)).toBe("joue");
+    expect(deduceStatut({ score_dom: 33, score_ext: 18 })).toBe("joue");
+    expect(deduceStatut({ score_dom: 20, score_ext: 0 })).toBe("joue");
+    expect(deduceForfait({ score_dom: 20, score_ext: 0 })).toBeNull();
   });
-  it("un seul score 10 ou 20 → forfait (domicile ou extérieur)", () => {
-    expect(deduceStatut(null, 20)).toBe("forfait");
-    expect(deduceStatut(10, null)).toBe("forfait");
-    expect(deduceStatut(undefined, 10)).toBe("forfait");
+  it("marqueur FO explicite → forfait + côté", () => {
+    expect(deduceForfait({ forfait_dom: true, score_ext: 20 })).toBe("dom");
+    expect(deduceForfait({ forfait_ext: true, score_dom: 10 })).toBe("ext");
+    expect(deduceStatut({ forfait_ext: true })).toBe("forfait"); // même sans score de l'adversaire
+    expect(deduceStatut({ forfait_dom: true, forfait_ext: true })).toBe("forfait");
+  });
+  it("repli (anciennes captures) : score isolé 10/20 → forfait de l'équipe sans score", () => {
+    expect(deduceForfait({ score_dom: null, score_ext: 20 })).toBe("dom");
+    expect(deduceForfait({ score_dom: 10, score_ext: null })).toBe("ext");
+    expect(deduceStatut({ score_dom: undefined, score_ext: 10 })).toBe("forfait");
   });
   it("aucun score → a_jouer", () => {
-    expect(deduceStatut(null, null)).toBe("a_jouer");
-    expect(deduceStatut(undefined, undefined)).toBe("a_jouer");
+    expect(deduceStatut({})).toBe("a_jouer");
+    expect(deduceStatut({ score_dom: null, score_ext: null })).toBe("a_jouer");
   });
-  it("score isolé atypique → a_jouer (resté visible dans le monitor)", () => {
-    expect(deduceStatut(7, null)).toBe("a_jouer");
-    expect(deduceStatut(null, 1)).toBe("a_jouer");
+  it("score isolé atypique → a_jouer (reste visible dans le monitor)", () => {
+    expect(deduceStatut({ score_dom: 7, score_ext: null })).toBe("a_jouer");
+    expect(deduceStatut({ score_dom: null, score_ext: 1 })).toBe("a_jouer");
   });
 });

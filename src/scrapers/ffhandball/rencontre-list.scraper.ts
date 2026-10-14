@@ -139,6 +139,8 @@ export function parseRencontreList(
     if (!extEquipeDom || !extEquipeExt) continue;
     if (extEquipeDom === extEquipeExt) continue;
 
+    // « FO » = forfait de l'équipe : à conserver explicitement (le score numérique devient null).
+    const isForfait = (v: unknown) => typeof v === "string" && v.trim().toUpperCase() === "FO";
     const candidate = {
       ext_rencontre_id: r.ext_rencontreId,
       ext_poule_id: extPouleId,
@@ -149,6 +151,8 @@ export function parseRencontreList(
       score_ext: r.equipe2Score,
       score_mt_dom: r.equipe1ScoreMT,
       score_mt_ext: r.equipe2ScoreMT,
+      ...(isForfait(r.equipe1Score) ? { forfait_dom: true } : {}),
+      ...(isForfait(r.equipe2Score) ? { forfait_ext: true } : {}),
       journee: r.journeeNumero,
       equipement_id: typeof r.equipementId === "string" ? r.equipementId : undefined,
       fdm_code: typeof r.fdmCode === "string" ? r.fdmCode : undefined,
