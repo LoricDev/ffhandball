@@ -1,13 +1,24 @@
 // src/api/middleware/rate-limit.ts
 import type { MiddlewareHandler } from "hono";
 import { env } from "@/config/env.js";
+import { clientIp } from "@/api/lib/client-ip.js";
 
 interface Bucket { count: number; resetAt: number; }
 const buckets = new Map<string, Bucket>();
 
+// Purge des fenêtres expirées : sans cela la Map grossit d'une entrée par IP/clé vue, à vie.
+const PURGE_EVERY_MS = 60 * 1000;
+let lastPurge = 0;
+function purgeExpired(now: number): void {
+  if (now - lastPurge < PURGE_EVERY_MS) return;
+  lastPurge = now;
+  for (const [k, b] of buckets) if (now > b.resetAt) buckets.delete(k);
+}
+
 export function rateLimitMiddleware(): MiddlewareHandler {
   return async (c, next) => {
     const now = Date.now();
+    purgeExpired(now);
     const windowMs = 60 * 1000;
 
     // Requête authentifiée par clé → limite par clé ; sinon par IP (comportement historique).
@@ -18,10 +29,7 @@ export function rateLimitMiddleware(): MiddlewareHandler {
       bucketKey = `key:${apiKey.id}`;
       limit = apiKey.rate_limit_per_min;
     } else {
-      const ip = c.req.header("x-forwarded-for")?.split(",")[0]?.trim()
-              ?? c.req.header("x-real-ip")
-              ?? "unknown";
-      bucketKey = `ip:${ip}`;
+      bucketKey = `ip:${clientIp(c) ?? "unknown"}`;
       limit = env.API_RATE_LIMIT_PER_MIN;
     }
 
@@ -50,4 +58,5 @@ export function rateLimitMiddleware(): MiddlewareHandler {
 }
 
 // For tests
-export function _resetBuckets(): void { buckets.clear(); }
+export function _resetBuckets(): void { buckets.clear(); lastPurge = 0; }
+export function _bucketCount(): number { return buckets.size; }
