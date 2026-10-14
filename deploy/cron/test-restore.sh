@@ -62,6 +62,8 @@ cron_track_step "restauration dans $TMP_DB"
 cleanup
 docker exec "$CONTAINER" psql -U "$PG_USER" -d "$LIVE_DB" -q -c "CREATE DATABASE $TMP_DB" >> "$LOG" 2>&1 \
   || fail "impossible de créer la base temporaire $TMP_DB"
+# Le dump ne contient que le schéma core : l'extension pg_trgm (index gin_trgm_ops) doit exister AVANT.
+psql_tmp -c "CREATE EXTENSION IF NOT EXISTS pg_trgm" >> "$LOG" 2>&1 || fail "impossible de créer l'extension pg_trgm"
 START=$(date +%s)
 if ! gunzip -c "$BACKUP" | docker exec -i "$CONTAINER" psql -U "$PG_USER" -d "$TMP_DB" -q -v ON_ERROR_STOP=1 >> "$LOG" 2>&1; then
   fail "la restauration a échoué (voir le log) — le backup n'est PAS exploitable"

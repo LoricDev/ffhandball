@@ -496,10 +496,16 @@ docker compose down
 docker compose up -d postgres
 sleep 5
 
+# L'extension pg_trgm doit exister AVANT la restauration (le dump ne contient que le schéma core,
+# or des index utilisent gin_trgm_ops : sans elle la restauration échoue à cet index)
+docker exec ffhandball-postgres psql -U ffhandball -d ffhandball -c "CREATE EXTENSION IF NOT EXISTS pg_trgm"
+
 # Restaurer
 gunzip -c /var/backups/ffhandball/core-20260527-0330.sql.gz \
   | docker exec -i ffhandball-postgres psql -U ffhandball -d ffhandball
 ```
+
+> ⚠️ Le backup quotidien ne couvre que le schéma `core.*`. Le schéma `raw.*` (captures brutes, ~6 Go) n'est **pas** sauvegardé : il se reconstitue en re-scrapant. `deploy/cron/test-restore.sh` (le 9 du mois) vérifie que le dernier backup se restaure réellement.
 
 ## Sécurité
 
