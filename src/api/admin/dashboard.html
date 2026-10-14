@@ -4,17 +4,21 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex">
-<title>Pipeline en direct</title>
+<title>Administration</title>
 <style>
-  :root { --bg:#f6f7f9; --card:#fff; --fg:#14181f; --mut:#6b7380; --bd:#e2e5ea; --ok:#15803d; --run:#1d6fd8; --warn:#b45309; --bad:#c62828; --bar:#e8ebf0; }
-  @media (prefers-color-scheme: dark) { :root { --bg:#0f1218; --card:#171b23; --fg:#e6e9ee; --mut:#8b93a1; --bd:#262c37; --ok:#4ade80; --run:#60a5fa; --warn:#fbbf24; --bad:#f87171; --bar:#262c37; } }
+  :root { --bg:#f6f7f9; --card:#fff; --fg:#14181f; --mut:#6b7380; --bd:#e2e5ea; --ok:#15803d; --run:#1d6fd8; --warn:#b45309; --bad:#c62828; --bar:#e8ebf0; --acc:#1d6fd8; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0f1218; --card:#171b23; --fg:#e6e9ee; --mut:#8b93a1; --bd:#262c37; --ok:#4ade80; --run:#60a5fa; --warn:#fbbf24; --bad:#f87171; --bar:#262c37; --acc:#3b82f6; } }
   * { box-sizing: border-box; }
   body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.45 system-ui,-apple-system,Segoe UI,sans-serif; }
-  header { display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid var(--bd); background:var(--card); position:sticky; top:0; z-index:2; }
+  header { display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center; justify-content:space-between; padding:10px 16px; border-bottom:1px solid var(--bd); background:var(--card); position:sticky; top:0; z-index:5; padding-left:max(16px,env(safe-area-inset-left)); padding-right:max(16px,env(safe-area-inset-right)); }
   h1 { font-size:16px; margin:0; } h2 { font-size:13px; margin:0 0 10px; text-transform:uppercase; letter-spacing:.05em; color:var(--mut); }
+  nav { display:flex; gap:4px; overflow-x:auto; max-width:100%; } nav button { background:transparent; color:var(--mut); border:0; border-radius:6px; padding:7px 12px; font:inherit; font-weight:600; cursor:pointer; white-space:nowrap; min-height:36px; }
+  nav button[aria-selected="true"] { background:var(--acc); color:#fff; } nav button:hover:not([aria-selected="true"]) { background:var(--bar); color:var(--fg); }
+  .tools { display:flex; align-items:center; gap:10px; }
   main { max-width:1200px; margin:0 auto; padding:16px; display:grid; gap:16px; }
+  .tab { display:grid; gap:16px; } .tab.hidden { display:none !important; }
   .grid { display:grid; gap:12px; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); }
-  .card { background:var(--card); border:1px solid var(--bd); border-radius:10px; padding:14px; }
+  .card { background:var(--card); border:1px solid var(--bd); border-radius:10px; padding:14px; min-width:0; }
   .kpi b { display:block; font-size:22px; font-variant-numeric:tabular-nums; } .kpi span { color:var(--mut); font-size:12px; }
   .pill { display:inline-block; padding:1px 8px; border-radius:99px; font-size:12px; font-weight:600; border:1px solid currentColor; }
   .running { color:var(--run); } .success { color:var(--ok); } .partial { color:var(--warn); } .failed { color:var(--bad); }
@@ -23,74 +27,137 @@
   .bar { height:8px; background:var(--bar); border-radius:4px; overflow:hidden; margin:6px 0 2px; }
   .bar i { display:block; height:100%; background:var(--run); transition:width .6s; }
   .bar.indet i { width:35%; animation:slide 1.4s ease-in-out infinite alternate; } @keyframes slide { from{margin-left:0} to{margin-left:65%} }
-  .mut { color:var(--mut); font-size:12px; } .err { color:var(--bad); font-size:12px; word-break:break-word; }
-  table { width:100%; border-collapse:collapse; font-size:13px; } th,td { text-align:left; padding:5px 8px; border-top:1px solid var(--bd); white-space:nowrap; } th { color:var(--mut); font-weight:500; border-top:0; }
+  .mut { color:var(--mut); font-size:12px; } .err { color:var(--bad); font-size:12px; word-break:break-word; } .mono { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; }
+  table { width:100%; border-collapse:collapse; font-size:13px; } th,td { text-align:left; padding:6px 8px; border-top:1px solid var(--bd); white-space:nowrap; vertical-align:middle; } th { color:var(--mut); font-weight:500; border-top:0; }
   .scroll { overflow-x:auto; } .num { text-align:right; font-variant-numeric:tabular-nums; }
-  .dot { width:9px; height:9px; border-radius:50%; background:var(--mut); display:inline-block; margin-right:6px; } .live .dot { background:var(--ok); animation:pulse 1.5s infinite; } .dead .dot { background:var(--bad); }
+  .dot { width:9px; height:9px; border-radius:50%; background:var(--mut); display:inline-block; margin-right:6px; } .live .dot { background:var(--ok); animation:pulse 1.5s infinite; } .dead .dot { background:var(--bad); } .paused .dot { background:var(--warn); animation:none; }
   @keyframes pulse { 50% { opacity:.3 } }
-  #login { max-width:380px; margin:12vh auto; } input { width:100%; padding:9px; border:1px solid var(--bd); border-radius:6px; background:var(--bg); color:var(--fg); margin:8px 0; font:inherit; }
-  button { padding:8px 14px; border:0; border-radius:6px; background:var(--run); color:#fff; font:inherit; cursor:pointer; }
+  #login { max-width:380px; margin:12vh auto; } input, select { width:100%; padding:9px; border:1px solid var(--bd); border-radius:6px; background:var(--bg); color:var(--fg); margin:4px 0 10px; font:inherit; font-size:16px; }
+  button.btn { padding:8px 14px; border:0; border-radius:6px; background:var(--acc); color:#fff; font:inherit; cursor:pointer; min-height:36px; }
+  button.btn.sec { background:transparent; color:var(--fg); border:1px solid var(--bd); } button.btn.dng { background:var(--bad); color:#fff; } button.btn.sm { padding:4px 10px; min-height:30px; font-size:12px; }
+  .acts { display:flex; gap:6px; flex-wrap:wrap; }
   .hidden { display:none !important; } .two { display:grid; gap:16px; grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr)); }
-  .card { min-width:0; } header { padding-left:max(16px,env(safe-area-inset-left)); padding-right:max(16px,env(safe-area-inset-right)); }
-  button { min-height:40px; } input { font-size:16px; }
+  .toolbar { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
+  .seg { display:inline-flex; border:1px solid var(--bd); border-radius:6px; overflow:hidden; } .seg button { background:transparent; border:0; color:var(--mut); padding:5px 12px; cursor:pointer; font:inherit; } .seg button[aria-pressed="true"] { background:var(--acc); color:#fff; }
+  dialog { border:1px solid var(--bd); border-radius:12px; background:var(--card); color:var(--fg); padding:18px; width:min(520px,calc(100vw - 24px)); } dialog::backdrop { background:rgba(0,0,0,.55); }
+  dialog h3 { margin:0 0 10px; font-size:16px; } dialog .foot { display:flex; justify-content:flex-end; gap:8px; margin-top:8px; flex-wrap:wrap; } dialog label { font-size:12px; color:var(--mut); display:block; }
+  .secretbox { background:var(--bg); border:1px dashed var(--warn); border-radius:8px; padding:10px; word-break:break-all; user-select:all; }
+  #toast { position:fixed; bottom:16px; left:50%; transform:translateX(-50%); background:var(--fg); color:var(--bg); padding:9px 16px; border-radius:8px; font-size:13px; z-index:20; max-width:calc(100vw - 32px); }
+  svg.chart { width:100%; height:auto; display:block; } svg.chart text { fill:var(--mut); font-size:10px; } .legend { display:flex; gap:14px; font-size:12px; color:var(--mut); margin-top:6px; flex-wrap:wrap; } .legend i { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:5px; vertical-align:-1px; }
   @media (max-width:640px) {
-    body { font-size:15px; } main { padding:12px; gap:12px; } .card { padding:12px; }
-    header { padding-top:10px; padding-bottom:10px; } h1 { font-size:15px; } #conn { font-size:12px; }
-    .grid { grid-template-columns:repeat(2,1fr); gap:8px; } .kpi b { font-size:19px; }
-    .job .row { flex-direction:column; gap:2px; }
-    /* tableaux -> cartes empilées : une ligne = un bloc, libellé de colonne à gauche */
+    header { position:static; }
+    body { font-size:15px; } main { padding:12px; gap:12px; } .card { padding:12px; } h1 { font-size:15px; } .tools { width:100%; justify-content:space-between; }
+    .grid { grid-template-columns:repeat(2,1fr); gap:8px; } .kpi b { font-size:19px; } .job .row { flex-direction:column; gap:2px; }
     table.stack, table.stack tbody { display:block; } table.stack thead { display:none; }
     table.stack tr { display:flex; flex-wrap:wrap; gap:2px 14px; padding:9px 0; border-top:1px solid var(--bd); } table.stack tr:first-child { border-top:0; }
     table.stack td { display:block; border:0; padding:0; white-space:normal; text-align:left; word-break:break-word; }
     table.stack td::before { content:attr(data-label) " "; color:var(--mut); font-size:12px; }
     table.stack td:first-child { flex-basis:100%; font-weight:600; } table.stack td:first-child::before { content:none; }
+    table.stack td.actcell { flex-basis:100%; margin-top:4px; } table.stack td.actcell::before { content:none; }
     table.stack td .err { max-width:none !important; font-weight:400; }
     #login { margin:6vh 12px; max-width:none; }
   }
-  @media (max-width:360px) { .grid { grid-template-columns:1fr 1fr; } .kpi b { font-size:17px; } }
 </style>
 </head>
 <body>
 <div id="login" class="card">
-  <h1>Pipeline en direct</h1>
+  <h1>Administration</h1>
   <p class="mut">Saisis le secret admin (conservé uniquement pour cet onglet).</p>
   <input id="secret" type="password" placeholder="ADMIN_SECRET" autocomplete="off">
-  <button id="go">Se connecter</button>
+  <button class="btn" id="go">Se connecter</button>
   <div id="loginerr" class="err"></div>
 </div>
 
 <div id="app" class="hidden">
 <header>
-  <h1>Pipeline en direct</h1>
-  <div class="mut" id="conn"><span class="dot"></span><span id="connTxt">connexion…</span></div>
+  <h1>Administration</h1>
+  <nav id="nav" role="tablist">
+    <button data-tab="pipeline" role="tab">Pipeline</button>
+    <button data-tab="keys" role="tab">Clés API</button>
+    <button data-tab="hooks" role="tab">Webhooks</button>
+    <button data-tab="traffic" role="tab">Trafic</button>
+  </nav>
+  <div class="tools">
+    <div class="mut" id="conn"><span class="dot"></span><span id="connTxt">connexion…</span></div>
+    <button class="btn sec sm" id="pause" title="Suspendre l'actualisation automatique">⏸ Pause</button>
+    <button class="btn sec sm" id="logout">Déconnexion</button>
+  </div>
 </header>
+
 <main>
-  <section class="grid" id="kpis"></section>
-  <section class="card"><h2>En cours</h2><div id="running"></div></section>
-  <section class="card"><h2>Crons</h2><div class="scroll"><table id="crons"></table></div></section>
-  <section class="two">
-    <div class="card"><h2>Dernier passage par tâche</h2><div class="scroll"><table id="jobs"></table></div></div>
-    <div class="card"><h2>API (1 dernière heure)</h2><div id="api"></div><h2 style="margin-top:14px">Erreurs 5xx (24 h)</h2><div id="apierr" class="scroll"></div></div>
-  </section>
-  <section class="two">
-    <div class="card"><h2>Scrapes récents</h2><div class="scroll"><table id="scrapes"></table></div></div>
-    <div class="card"><h2>ETL récents</h2><div class="scroll"><table id="etls"></table></div></div>
-  </section>
-  <section class="card"><h2>Base de données — plus grosses tables</h2><div class="scroll"><table id="tables"></table></div></section>
+  <!-- ============ PIPELINE ============ -->
+  <div class="tab" id="tab-pipeline">
+    <section class="grid" id="kpis"></section>
+    <section class="card"><h2>En cours</h2><div id="running"></div></section>
+    <section class="card"><h2>Crons</h2><div class="scroll"><table id="crons"></table></div></section>
+    <section class="two">
+      <div class="card"><h2>Dernier passage par tâche</h2><div class="scroll"><table id="jobs"></table></div></div>
+      <div class="card"><h2>API (1 dernière heure)</h2><div id="api"></div><h2 style="margin-top:14px">Erreurs 5xx (24 h)</h2><div id="apierr" class="scroll"></div></div>
+    </section>
+    <section class="two">
+      <div class="card"><h2>Scrapes récents</h2><div class="scroll"><table id="scrapes"></table></div></div>
+      <div class="card"><h2>ETL récents</h2><div class="scroll"><table id="etls"></table></div></div>
+    </section>
+    <section class="card"><h2>Base de données — plus grosses tables</h2><div class="scroll"><table id="tables"></table></div></section>
+  </div>
+
+  <!-- ============ CLÉS API ============ -->
+  <div class="tab hidden" id="tab-keys">
+    <section class="card">
+      <div class="toolbar"><h2 style="margin:0">Clés API</h2><button class="btn" id="newKey">+ Nouvelle clé</button></div>
+      <div class="mut" id="keysSummary" style="margin:8px 0"></div>
+      <div class="scroll"><table id="keys"></table></div>
+    </section>
+  </div>
+
+  <!-- ============ WEBHOOKS ============ -->
+  <div class="tab hidden" id="tab-hooks">
+    <section class="card">
+      <div class="toolbar"><h2 style="margin:0">Webhooks de résultats</h2><button class="btn" id="newHook">+ Nouveau webhook</button></div>
+      <p class="mut">Un POST signé est envoyé à chaque résultat (match joué ou forfait). Voir <code>docs/webhooks.md</code>.</p>
+      <div class="scroll"><table id="hooks"></table></div>
+    </section>
+  </div>
+
+  <!-- ============ TRAFIC ============ -->
+  <div class="tab hidden" id="tab-traffic">
+    <section class="toolbar">
+      <h2 style="margin:0">Trafic de l'API</h2>
+      <div class="seg" id="win"><button data-h="24">24 h</button><button data-h="72">3 j</button><button data-h="168">7 j</button></div>
+    </section>
+    <section class="grid" id="tkpis"></section>
+    <section class="card"><h2>Requêtes par heure</h2><div id="chart"></div>
+      <div class="legend"><span><i style="background:var(--run)"></i>Requêtes</span><span><i style="background:var(--warn)"></i>4xx</span><span><i style="background:var(--bad)"></i>5xx</span></div></section>
+    <section class="card"><h2>Routes les plus appelées</h2><div class="scroll"><table id="routes"></table></div></section>
+    <section class="two">
+      <div class="card"><h2>Clés API les plus actives</h2><div class="scroll"><table id="tkeys"></table></div></div>
+      <div class="card"><h2>IP anonymes les plus actives</h2><div class="scroll"><table id="tips"></table></div></div>
+    </section>
+  </div>
 </main>
 </div>
 
-<script>
-const POLL_MS = 5000;
-let secret = sessionStorage.getItem("adminSecret") || "";
-let prev = new Map();      // clé de run -> {t, n} pour le débit entre deux relevés
-let timer = null, lastOk = 0;
+<dialog id="dlg"><h3 id="dlgTitle"></h3><div id="dlgBody"></div><div class="foot" id="dlgFoot"></div></dialog>
+<div id="toast" class="hidden"></div>
 
+<script>
+let secret = sessionStorage.getItem("adminSecret") || "";
+let tab = "pipeline";
+let paused = sessionStorage.getItem("adminPaused") === "1";
+let trafficHours = 24;
+let timer = null, lastOk = 0;
+const prev = new Map();   // clé de run -> mesure précédente (débit / ETA)
+const POLL = { pipeline: 5000, keys: 20000, hooks: 15000, traffic: 30000 };
+
+// ───────────── utilitaires ─────────────
 const $ = (id) => document.getElementById(id);
 function el(tag, props, ...kids) {
   const e = document.createElement(tag);
-  for (const [k, v] of Object.entries(props || {})) { if (k === "class") e.className = v; else if (k === "style") e.style.cssText = v; else if (k.startsWith("data-")) e.setAttribute(k, v); else e[k] = v; }
-  for (const k of kids.flat()) if (k != null) e.append(k.nodeType ? k : document.createTextNode(String(k)));
+  for (const [k, v] of Object.entries(props || {})) {
+    if (k === "class") e.className = v; else if (k === "style") e.style.cssText = v;
+    else if (k.startsWith("data-")) e.setAttribute(k, v); else if (k.startsWith("on")) e[k] = v; else e[k] = v;
+  }
+  for (const k of kids.flat()) if (k != null && k !== false) e.append(k.nodeType ? k : document.createTextNode(String(k)));
   return e;
 }
 const fmt = (n) => n == null ? "–" : Number(n).toLocaleString("fr-FR");
@@ -98,21 +165,59 @@ function bytes(b) { b = Number(b); if (!isFinite(b)) return "–"; const u = ["o
 function dur(sec) { if (sec == null || !isFinite(sec)) return "–"; sec = Math.max(0, Math.round(sec)); const d = Math.floor(sec/86400), h = Math.floor(sec%86400/3600), m = Math.floor(sec%3600/60), s = sec%60; return d ? `${d} j ${h} h` : h ? `${h} h ${String(m).padStart(2,"0")}` : m ? `${m} min ${String(s).padStart(2,"0")}` : `${s} s`; }
 function ago(iso) { if (!iso) return "jamais"; const s = (Date.now() - new Date(iso)) / 1000; return "il y a " + dur(s); }
 const hhmm = (iso) => iso ? new Date(iso).toLocaleString("fr-FR", { day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit" }) : "–";
-// Run « fantôme » : marqué running mais sans heartbeat (scrape) / trop ancien (ETL).
-const ORPHAN_SCRAPE_IDLE_S = 20 * 60, ORPHAN_ETL_AGE_S = 3 * 3600;
-// Cron : orphelin si aucun changement d'étape depuis 12 h (même seuil que la maintenance).
-const ORPHAN_CRON_IDLE_S = 12 * 3600;
+const dateOnly = (iso) => iso ? new Date(iso).toLocaleDateString("fr-FR", { day:"2-digit", month:"2-digit", year:"numeric" }) : "–";
+
+function table(t, head, rows, emptyMsg) {
+  t.classList.add("stack");
+  if (!rows.length && emptyMsg) { t.replaceChildren(el("tbody", {}, el("tr", {}, el("td", { class: "mut", colSpan: head.length }, emptyMsg)))); return; }
+  t.replaceChildren(
+    el("thead", {}, el("tr", {}, head.map((h) => el("th", { class: h.startsWith("#") ? "num" : "" }, h.replace(/^[#@]/, ""))))),
+    el("tbody", {}, rows.map((r) => el("tr", {}, r.map((c, i) => el("td", {
+      class: (head[i].startsWith("#") ? "num " : "") + (head[i].startsWith("@") ? "actcell" : ""),
+      "data-label": head[i].replace(/^[#@]/, ""),
+    }, c))))));
+}
+
+let toastTimer = null;
+function toast(msg, bad) { const t = $("toast"); t.textContent = msg; t.style.background = bad ? "var(--bad)" : ""; t.style.color = bad ? "#fff" : ""; t.classList.remove("hidden"); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.add("hidden"), 3500); }
+
+// ───────────── appel API ─────────────
+async function api(path, opts = {}) {
+  const res = await fetch(path, {
+    method: opts.method || "GET", cache: "no-store",
+    headers: { "x-admin-secret": secret, ...(opts.body ? { "content-type": "application/json" } : {}) },
+    body: opts.body ? JSON.stringify(opts.body) : undefined,
+  });
+  if (res.status === 401 || res.status === 503) { logout(res.status === 401 ? "Secret invalide." : "Admin désactivé côté serveur."); throw new Error("non autorisé"); }
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json?.error?.message || "HTTP " + res.status);
+  return json.data;
+}
+
+// ───────────── fenêtre de dialogue ─────────────
+function dialog(title, body, buttons) {
+  $("dlgTitle").textContent = title;
+  $("dlgBody").replaceChildren(...[].concat(body));
+  $("dlgFoot").replaceChildren(...buttons.map((b) => el("button", { class: "btn " + (b.cls || ""), type: "button", onclick: async () => { if (await b.run?.() !== false) $("dlg").close(); } }, b.label)));
+  if (!$("dlg").open) $("dlg").showModal();
+}
+const closeBtn = (label = "Fermer") => ({ label, cls: "sec" });
+const field = (label, input) => el("div", {}, el("label", {}, label), input);
+
+function showSecret(title, rows, secretValue) {
+  dialog(title, [
+    el("p", { class: "mut" }, "Copie-le maintenant : il ne sera ", el("b", {}, "plus jamais affiché"), "."),
+    el("div", { class: "secretbox mono" }, secretValue),
+    ...rows.map(([k, v]) => el("div", { class: "mut" }, k + " : ", el("span", { class: "mono" }, v))),
+  ], [{ label: "Copier", run: async () => { try { await navigator.clipboard.writeText(secretValue); toast("Copié"); } catch { toast("Copie impossible : sélectionne le texte à la main", true); } return false; } }, closeBtn("J'ai copié, fermer")]);
+}
+
+// ───────────── PIPELINE ─────────────
+const ORPHAN_SCRAPE_IDLE_S = 20 * 60, ORPHAN_ETL_AGE_S = 3 * 3600, ORPHAN_CRON_IDLE_S = 12 * 3600;
 const isOrphanCron = (c) => c.status === "running" && c.idle_s > ORPHAN_CRON_IDLE_S;
 const isOrphan = (k, r) => r.status === "running" && (k === "scrape" ? r.idle_s > ORPHAN_SCRAPE_IDLE_S : r.age_s > ORPHAN_ETL_AGE_S);
 const pill = (st, orphan) => orphan ? el("span", { class: "pill partial", title: "processus disparu : sera clôturé par la maintenance" }, "orphelin") : el("span", { class: "pill " + st }, { running: "en cours", success: "ok", partial: "partiel", failed: "échec", skipped: "ignoré" }[st] || st);
 
-function table(t, head, rows) {
-  t.classList.add("stack");
-  t.replaceChildren(el("thead", {}, el("tr", {}, head.map((h) => el("th", { class: h.startsWith("#") ? "num" : "" }, h.replace(/^#/, ""))))),
-    el("tbody", {}, rows.map((r) => el("tr", {}, r.map((c, i) => el("td", { class: head[i].startsWith("#") ? "num" : "", "data-label": head[i].replace(/^#/, "") }, c))))));
-}
-
-// Débit mesuré entre deux relevés successifs → ETA.
 function rate(key, n) {
   const now = Date.now(), p = prev.get(key);
   prev.set(key, { t: now, n, r: p && n > p.n ? (n - p.n) / ((now - p.t) / 1000) : p?.r ?? null, stalled: p && n === p.n ? (p.stalled || 0) + 1 : 0 });
@@ -123,18 +228,16 @@ function runningCard(kind, name, saison, started, done, total, extra, key) {
   const st = rate(key, done);
   const pct = total ? Math.min(100, (done / total) * 100) : null;
   const eta = pct != null && st.r ? (total - done) / st.r : null;
-  const stalled = st.stalled >= 6; // ~30 s sans progression
+  const stalled = st.stalled >= 6;
   return el("div", { class: "job" },
-    el("div", { class: "row" },
-      el("div", {}, el("b", {}, `${kind} ${name}`), " ", el("span", { class: "mut" }, saison || "")),
-      el("div", { class: "mut" }, `démarré ${ago(started)}`)),
+    el("div", { class: "row" }, el("div", {}, el("b", {}, `${kind} ${name}`), " ", el("span", { class: "mut" }, saison || "")), el("div", { class: "mut" }, `démarré ${ago(started)}`)),
     el("div", { class: "bar" + (pct == null ? " indet" : "") }, el("i", { style: pct != null ? `width:${pct}%` : "" })),
     el("div", { class: "row mut" },
       el("span", {}, pct != null ? `${pct.toFixed(1)} % — ${fmt(done)} / ${fmt(total)}` : `${fmt(done)} traités`, extra ? ` · ${extra}` : ""),
       el("span", {}, st.r ? `${st.r.toFixed(1)}/s` : "", eta != null ? ` · reste ~${dur(eta)}` : "", stalled ? el("span", { class: "err" }, " · aucune progression depuis ~30 s") : "")));
 }
 
-function render(d) {
+function renderPipeline(d) {
   const all = [...d.scrapes.map((r) => ({ k: "scrape", r })), ...d.etls.map((r) => ({ k: "etl", r }))].filter(({ r }) => r.status === "running");
   const run = all.filter(({ k, r }) => !isOrphan(k, r));
   const cronsAll = (d.crons || []).filter((c) => c.status === "running");
@@ -154,9 +257,7 @@ function render(d) {
     return el("div", { class: "job" },
       el("div", { class: "row" }, el("div", {}, el("b", {}, "Cron " + c.cron)), el("div", { class: "mut" }, `démarré ${ago(c.started_at)}`)),
       el("div", { class: "bar" + (pct == null ? " indet" : "") }, el("i", { style: pct != null ? `width:${pct}%` : "" })),
-      el("div", { class: "row mut" },
-        el("span", {}, c.steps_total ? `étape ${c.step_index}/${c.steps_total}` : `étape ${c.step_index}`, c.current_step ? ` — ${c.current_step}` : ""),
-        c.errors ? el("span", { class: "err" }, `${c.errors} erreur(s)`) : null));
+      el("div", { class: "row mut" }, el("span", {}, c.steps_total ? `étape ${c.step_index}/${c.steps_total}` : `étape ${c.step_index}`, c.current_step ? ` — ${c.current_step}` : ""), c.errors ? el("span", { class: "err" }, `${c.errors} erreur(s)`) : null));
   });
   $("running").replaceChildren(...cronCards, ...(run.length || cronCards.length ? run.map(({ k, r }) => {
     const key = k + (r.id ?? r.scraper_name + r.started_at); live.add(key);
@@ -193,23 +294,214 @@ function render(d) {
   table($("tables"), ["Table", "#Lignes (est.)", "#Taille"], d.db.top_tables.map((t) => [`${t.schema}.${t.table}`, fmt(t.rows), bytes(t.bytes)]));
 }
 
-async function tick() {
+// ───────────── CLÉS API ─────────────
+const keyState = (k) => !k.active ? ["revoked", "révoquée"] : (k.valid_until && new Date(k.valid_until) < new Date()) ? ["failed", "expirée"] : ["success", "active"];
+
+async function renderKeys() {
+  const [keys, traffic] = await Promise.all([api("/admin/api-keys"), api("/admin/traffic?hours=24").catch(() => null)]);
+  const usage = new Map((traffic?.top_keys || []).map((k) => [k.key_prefix, k]));
+  const actives = keys.filter((k) => keyState(k)[1] === "active").length;
+  $("keysSummary").textContent = `${keys.length} clé(s) — ${actives} active(s), ${keys.length - actives} révoquée(s) ou expirée(s).`;
+  table($("keys"), ["Statut", "Préfixe", "Label", "Expire", "#Limite/min", "#Req. 24 h", "Dernière utilisation", "@Actions"],
+    keys.map((k) => {
+      const [cls, txt] = keyState(k);
+      const u = usage.get(k.key_prefix);
+      const isActive = k.active;
+      return [
+        el("span", { class: "pill " + (cls === "revoked" ? "" : cls), style: cls === "revoked" ? "color:var(--mut)" : "" }, txt),
+        el("span", { class: "mono" }, k.key_prefix), k.label || el("span", { class: "mut" }, "—"),
+        k.valid_until ? dateOnly(k.valid_until) : "jamais", fmt(k.rate_limit_per_min), u ? fmt(u.hits) : "0",
+        k.last_used_at ? ago(k.last_used_at) : "jamais",
+        el("div", { class: "acts" },
+          el("button", { class: "btn sec sm", onclick: () => renewKeyDialog(k) }, "Renouveler"),
+          isActive ? el("button", { class: "btn dng sm", onclick: () => revokeKeyDialog(k) }, "Révoquer") : null),
+      ];
+    }), "Aucune clé API pour l'instant.");
+}
+
+function newKeyDialog() {
+  const label = el("input", { placeholder: "ex. Site du club de Bouzonville", maxLength: 200 });
+  const months = el("select", {}, ...[["1", "1 mois"], ["3", "3 mois"], ["6", "6 mois"], ["12", "12 mois"], ["0", "Sans expiration"]].map(([v, t]) => el("option", { value: v }, t)));
+  const rate = el("input", { type: "number", min: 1, max: 100000, placeholder: "défaut du serveur (120)" });
+  dialog("Nouvelle clé API", [field("Label (à qui est-elle ?)", label), field("Validité", months), field("Limite de requêtes par minute", rate)], [
+    closeBtn("Annuler"),
+    { label: "Créer", run: async () => {
+      try {
+        const body = { label: label.value.trim() || undefined };
+        if (months.value === "0") body.noExpiry = true; else body.months = Number(months.value);
+        if (rate.value) body.rate_limit_per_min = Number(rate.value);
+        const k = await api("/admin/api-keys", { method: "POST", body });
+        setTimeout(() => showSecret("Clé créée", [["Préfixe", k.key_prefix], ["Limite", k.rate_limit_per_min + " req/min"], ["Expire", k.valid_until ? dateOnly(k.valid_until) : "jamais"]], k.token), 50);
+        refreshTab();
+      } catch (e) { toast(e.message, true); return false; }
+    } },
+  ]);
+}
+
+function renewKeyDialog(k) {
+  const months = el("select", {}, ...[["1", "1 mois"], ["3", "3 mois"], ["6", "6 mois"], ["12", "12 mois"]].map(([v, t]) => el("option", { value: v }, t)));
+  dialog("Renouveler " + k.key_prefix, [el("p", { class: "mut" }, "Prolonge la validité à partir de la date d'expiration actuelle (ou d'aujourd'hui si déjà expirée)."), field("Durée ajoutée", months)], [
+    closeBtn("Annuler"),
+    { label: "Renouveler", run: async () => {
+      try { const r = await api(`/admin/api-keys/${encodeURIComponent(k.key_prefix)}/renew`, { method: "POST", body: { months: Number(months.value) } }); toast("Valable jusqu'au " + dateOnly(r.valid_until)); refreshTab(); }
+      catch (e) { toast(e.message, true); return false; }
+    } },
+  ]);
+}
+
+function revokeKeyDialog(k) {
+  dialog("Révoquer " + k.key_prefix + " ?", [el("p", {}, "La clé ", el("b", {}, k.label || k.key_prefix), " cessera immédiatement de fonctionner. ", el("b", {}, "Action irréversible"), " (il faudra en créer une nouvelle).")], [
+    closeBtn("Annuler"),
+    { label: "Révoquer", cls: "dng", run: async () => {
+      try { await api(`/admin/api-keys/${encodeURIComponent(k.key_prefix)}/revoke`, { method: "POST" }); toast("Clé révoquée"); refreshTab(); }
+      catch (e) { toast(e.message, true); return false; }
+    } },
+  ]);
+}
+
+// ───────────── WEBHOOKS ─────────────
+async function renderHooks() {
+  const hooks = await api("/admin/webhooks");
+  table($("hooks"), ["Statut", "URL", "Label", "Club", "#Livrés", "#En attente", "#Abandonnés", "#Échecs de suite", "@Actions"],
+    hooks.map((h) => [
+      el("span", {}, el("span", { class: "pill " + (h.active ? "success" : "failed") }, h.active ? "actif" : "désactivé"), h.disabled_reason ? el("div", { class: "err", style: "white-space:normal;max-width:300px" }, h.disabled_reason) : null),
+      el("span", { class: "mono" }, h.url), h.label || el("span", { class: "mut" }, "—"), h.club_id_ffhb || el("span", { class: "mut" }, "tous"),
+      fmt(h.delivered), fmt(h.pending), h.failed ? el("span", { class: "err" }, fmt(h.failed)) : "0", h.consecutive_failures,
+      el("div", { class: "acts" },
+        el("button", { class: "btn sec sm", onclick: () => testHook(h) }, "Tester"),
+        el("button", { class: "btn sec sm", onclick: () => deliveriesDialog(h) }, "Historique"),
+        el("button", { class: "btn sec sm", onclick: () => toggleHook(h) }, h.active ? "Désactiver" : "Réactiver"),
+        el("button", { class: "btn dng sm", onclick: () => deleteHookDialog(h) }, "Supprimer")),
+    ]), "Aucun webhook. Crée-en un avec le bouton ci-dessus.");
+}
+
+function newHookDialog() {
+  const url = el("input", { type: "url", placeholder: "https://exemple.fr/hooks/handball", maxLength: 2000 });
+  const label = el("input", { placeholder: "ex. Site du club", maxLength: 200 });
+  const club = el("input", { placeholder: "id FFHB du club (vide = tous les matchs)", maxLength: 50 });
+  dialog("Nouveau webhook", [field("URL (HTTPS, publique)", url), field("Label", label), field("Filtrer sur un club (optionnel)", club)], [
+    closeBtn("Annuler"),
+    { label: "Créer", run: async () => {
+      try {
+        const body = { url: url.value.trim() }; if (label.value.trim()) body.label = label.value.trim(); if (club.value.trim()) body.club_id_ffhb = club.value.trim();
+        const h = await api("/admin/webhooks", { method: "POST", body });
+        setTimeout(() => showSecret("Webhook créé", [["URL", h.url]], h.secret), 50);
+        refreshTab();
+      } catch (e) { toast(e.message, true); return false; }
+    } },
+  ]);
+}
+
+async function testHook(h) { try { await api(`/admin/webhooks/${h.id}/test`, { method: "POST" }); toast("Test en file : livré en moins d'une minute (voir Historique)"); } catch (e) { toast(e.message, true); } }
+async function toggleHook(h) { try { await api(`/admin/webhooks/${h.id}/${h.active ? "disable" : "enable"}`, { method: "POST" }); toast(h.active ? "Webhook désactivé" : "Webhook réactivé"); refreshTab(); } catch (e) { toast(e.message, true); } }
+
+function deleteHookDialog(h) {
+  dialog("Supprimer ce webhook ?", [el("p", {}, el("span", { class: "mono" }, h.url)), el("p", { class: "mut" }, "L'abonnement et son historique de livraisons seront supprimés définitivement.")], [
+    closeBtn("Annuler"),
+    { label: "Supprimer", cls: "dng", run: async () => { try { await api(`/admin/webhooks/${h.id}`, { method: "DELETE" }); toast("Webhook supprimé"); refreshTab(); } catch (e) { toast(e.message, true); return false; } } },
+  ]);
+}
+
+async function deliveriesDialog(h) {
+  let rows;
+  try { rows = await api(`/admin/webhooks/${h.id}/deliveries`); } catch (e) { toast(e.message, true); return; }
+  const t = el("table");
+  table(t, ["Statut", "Événement", "#Tentatives", "#HTTP", "Date", "Erreur"], rows.map((r) => [
+    el("span", { class: "pill " + ({ delivered: "success", pending: "running", failed: "failed" }[r.status]) }, { delivered: "livré", pending: "en attente", failed: "abandonné" }[r.status] || r.status),
+    r.event, r.attempts, r.last_status ?? "–", hhmm(r.delivered_at || r.created_at), r.last_error ? el("span", { class: "err" }, r.last_error.slice(0, 80)) : "",
+  ]), "Aucune livraison pour l'instant.");
+  dialog("Livraisons — " + (h.label || h.url), [el("div", { class: "scroll", style: "max-height:55vh;overflow:auto" }, t)], [closeBtn()]);
+}
+
+// ───────────── TRAFIC ─────────────
+function drawChart(series, hours) {
+  const W = 800, H = 170, pad = { l: 34, r: 6, t: 8, b: 20 };
+  const max = Math.max(1, ...series.map((s) => s.total));
+  const bw = (W - pad.l - pad.r) / series.length;
+  const y = (v) => pad.t + (H - pad.t - pad.b) * (1 - v / max);
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg"); svg.setAttribute("viewBox", `0 0 ${W} ${H}`); svg.setAttribute("class", "chart");
+  const add = (tag, attrs, text) => { const e = document.createElementNS(ns, tag); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); if (text != null) e.textContent = text; svg.append(e); return e; };
+  for (const f of [0, 0.5, 1]) { const v = Math.round(max * f); add("line", { x1: pad.l, x2: W - pad.r, y1: y(v), y2: y(v), stroke: "var(--bd)", "stroke-width": 1 }); add("text", { x: pad.l - 4, y: y(v) + 3, "text-anchor": "end" }, fmt(v)); }
+  series.forEach((s, i) => {
+    const x = pad.l + i * bw + bw * 0.12, w = Math.max(1, bw * 0.76);
+    const g = add("g", {}); const title = document.createElementNS(ns, "title"); title.textContent = `${hhmm(s.t)} — ${fmt(s.total)} req, ${s.err_4xx} 4xx, ${s.err_5xx} 5xx`; g.append(title);
+    const bar = (v, color, base) => { const h = (H - pad.t - pad.b) * (v / max); if (h <= 0) return; const r = document.createElementNS(ns, "rect"); r.setAttribute("x", x); r.setAttribute("width", w); r.setAttribute("y", y(base + v)); r.setAttribute("height", h); r.setAttribute("fill", color); g.append(r); };
+    const okV = Math.max(0, s.total - s.err_4xx - s.err_5xx);
+    bar(okV, "var(--run)", 0); bar(s.err_4xx, "var(--warn)", okV); bar(s.err_5xx, "var(--bad)", okV + s.err_4xx);
+  });
+  const step = Math.ceil(series.length / 8);
+  series.forEach((s, i) => { if (i % step === 0) add("text", { x: pad.l + i * bw + bw / 2, y: H - 5, "text-anchor": "middle" }, hours <= 24 ? new Date(s.t).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) : new Date(s.t).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" })); });
+  return svg;
+}
+
+async function renderTraffic() {
+  const d = await api(`/admin/traffic?hours=${trafficHours}`);
+  for (const b of $("win").children) b.setAttribute("aria-pressed", String(Number(b.dataset.h) === d.hours));
+  const t = d.totals;
+  const pct = (n) => t.total ? (100 * n / t.total).toFixed(1) + " %" : "–";
+  $("tkpis").replaceChildren(...[[fmt(t.total), "requêtes", ""], [pct(t.ok), "réussies (2xx/3xx)", "success"], [fmt(t.err_4xx), "erreurs 4xx", t.err_4xx ? "partial" : ""], [fmt(t.rate_limited), "429 (limitées)", t.rate_limited ? "partial" : ""], [fmt(t.err_5xx), "erreurs 5xx", t.err_5xx ? "failed" : "success"], [fmt(t.with_key), "avec clé API", ""], [fmt(t.distinct_ips), "IP distinctes", ""], [t.avg_ms + " ms", "temps moyen", ""], [t.p95_ms + " ms", "p95", ""]]
+    .map(([v, l, c]) => el("div", { class: "card kpi" }, el("b", { class: c }, v), el("span", {}, l))));
+  $("chart").replaceChildren(drawChart(d.series, d.hours));
+  table($("routes"), ["Route", "#Appels", "#Moy. (ms)", "#p95 (ms)", "#5xx"], d.top_routes.map((r) => [el("span", { class: "mono" }, r.route), fmt(r.hits), r.avg_ms, r.p95_ms, r.err_5xx ? el("span", { class: "err" }, r.err_5xx) : "0"]), "Aucun appel sur la période.");
+  table($("tkeys"), ["Clé", "Label", "#Appels", "#429", "#5xx"], d.top_keys.map((k) => [el("span", { class: "mono" }, k.key_prefix), k.label || "—", fmt(k.hits), k.rate_limited, k.err_5xx]), "Aucun appel authentifié.");
+  table($("tips"), ["IP", "#Appels", "#429"], d.top_anonymous_ips.map((i) => [el("span", { class: "mono" }, i.ip), fmt(i.hits), i.rate_limited ? el("span", { class: "partial" }, i.rate_limited) : "0"]), "Aucun appel anonyme.");
+}
+
+// ───────────── navigation / boucle de rafraîchissement ─────────────
+const RENDER = {
+  pipeline: async () => renderPipeline(await api("/admin/pipeline")),
+  keys: renderKeys, hooks: renderHooks, traffic: renderTraffic,
+};
+
+async function refreshTab() {
+  if (!secret) return;
   try {
-    const res = await fetch("/admin/pipeline", { headers: { "x-admin-secret": secret }, cache: "no-store" });
-    if (res.status === 401 || res.status === 503) { logout(res.status === 401 ? "Secret invalide." : "Admin désactivé côté serveur."); return; }
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    render((await res.json()).data);
+    await RENDER[tab]();
     lastOk = Date.now();
-    $("conn").className = "mut live"; $("connTxt").textContent = "en direct · maj " + new Date().toLocaleTimeString("fr-FR");
+    setConn(paused ? "paused" : "live", (paused ? "en pause · " : "en direct · ") + "maj " + new Date().toLocaleTimeString("fr-FR"));
   } catch (e) {
-    $("conn").className = "mut dead"; $("connTxt").textContent = "hors ligne (" + e.message + ") — dernière maj " + (lastOk ? ago(new Date(lastOk).toISOString()) : "jamais");
+    if (e.message !== "non autorisé") setConn("dead", "hors ligne (" + e.message + ") — dernière maj " + (lastOk ? ago(new Date(lastOk).toISOString()) : "jamais"));
   }
 }
-function start() { $("login").classList.add("hidden"); $("app").classList.remove("hidden"); tick(); timer = setInterval(() => { if (!document.hidden) tick(); }, POLL_MS); }
-function logout(msg) { clearInterval(timer); sessionStorage.removeItem("adminSecret"); secret = ""; $("app").classList.add("hidden"); $("login").classList.remove("hidden"); $("loginerr").textContent = msg || ""; }
+function setConn(cls, txt) { $("conn").className = "mut " + cls; $("connTxt").textContent = txt; }
+
+function schedule() {
+  clearInterval(timer);
+  timer = setInterval(() => { if (!document.hidden && !paused && !$("dlg").open) refreshTab(); }, POLL[tab]);
+}
+
+function switchTab(name) {
+  if (!RENDER[name]) name = "pipeline";
+  tab = name;
+  for (const b of $("nav").children) b.setAttribute("aria-selected", String(b.dataset.tab === name));
+  for (const id of Object.keys(RENDER)) $("tab-" + id).classList.toggle("hidden", id !== name);
+  if (location.hash !== "#" + name) history.replaceState(null, "", "#" + name);
+  refreshTab(); schedule();
+}
+
+function setPaused(p) { paused = p; sessionStorage.setItem("adminPaused", p ? "1" : "0"); $("pause").textContent = p ? "▶ Reprendre" : "⏸ Pause"; if (!p) refreshTab(); else setConn("paused", "en pause"); }
+
+function start() {
+  $("login").classList.add("hidden"); $("app").classList.remove("hidden");
+  setPaused(paused);
+  switchTab((location.hash || "#pipeline").slice(1));
+}
+function logout(msg) {
+  clearInterval(timer); sessionStorage.removeItem("adminSecret"); secret = "";
+  $("app").classList.add("hidden"); $("login").classList.remove("hidden"); $("loginerr").textContent = msg || "";
+  if ($("dlg").open) $("dlg").close();
+}
+
+$("nav").onclick = (e) => { const b = e.target.closest("button[data-tab]"); if (b) switchTab(b.dataset.tab); };
+$("win").onclick = (e) => { const b = e.target.closest("button[data-h]"); if (b) { trafficHours = Number(b.dataset.h); refreshTab(); } };
+$("newKey").onclick = newKeyDialog; $("newHook").onclick = newHookDialog;
+$("pause").onclick = () => setPaused(!paused);
+$("logout").onclick = () => logout("");
 $("go").onclick = () => { secret = $("secret").value.trim(); if (!secret) return; sessionStorage.setItem("adminSecret", secret); $("loginerr").textContent = ""; start(); };
 $("secret").onkeydown = (e) => { if (e.key === "Enter") $("go").onclick(); };
-document.addEventListener("visibilitychange", () => { if (!document.hidden && secret) tick(); });
+document.addEventListener("visibilitychange", () => { if (!document.hidden && secret && !paused) refreshTab(); });
+window.addEventListener("hashchange", () => { if (secret) switchTab((location.hash || "#pipeline").slice(1)); });
 if (secret) start();
 </script>
 </body>
