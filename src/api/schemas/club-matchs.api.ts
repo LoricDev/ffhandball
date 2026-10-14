@@ -36,6 +36,10 @@ export const clubMatchItemSchema = z
     statut: z
       .string()
       .openapi({ example: "joue", description: "Statut du match : joue, a_jouer, reporte, annule, forfait" }),
+    forfait_equipe: z
+      .enum(["dom", "ext"])
+      .nullable()
+      .openapi({ example: null, description: "Équipe ayant fait forfait (score « FO » sur ffhandball.fr), null sinon" }),
     journee: z.number().int().nullable().openapi({ example: 1, description: "Numéro de journée" }),
     equipe_dom_nom: z.string().openapi({ example: "BREST BRETAGNE HANDBALL", description: "Équipe domicile" }),
     equipe_ext_nom: z.string().openapi({ example: "PARIS 92", description: "Équipe extérieure" }),

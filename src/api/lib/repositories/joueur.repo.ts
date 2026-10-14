@@ -107,6 +107,8 @@ export interface JoueurMatchItem {
   id_ffhb_match: string;
   date_heure: Date;
   statut: string;
+  /** Forfait vu du joueur : son équipe ('equipe') ou l'adversaire ('adversaire'), null sinon. */
+  forfait: "equipe" | "adversaire" | null;
   equipe_nom: string;
   adversaire_nom: string;
   score_equipe: number | null;
@@ -137,6 +139,9 @@ export async function getJoueurMatchs(
 
   const dataRes = await query<JoueurMatchItem>(
     `SELECT m.id_ffhb_match, m.date_heure, m.statut,
+            CASE WHEN m.forfait_equipe IS NULL THEN NULL
+                 WHEN (m.forfait_equipe = 'dom') = (m.equipe_dom_id = mc.equipe_id) THEN 'equipe'
+                 ELSE 'adversaire' END AS forfait,
             ep.nom AS equipe_nom,
             CASE WHEN m.equipe_dom_id = mc.equipe_id THEN ee.nom ELSE ed.nom END AS adversaire_nom,
             CASE WHEN m.equipe_dom_id = mc.equipe_id THEN m.score_dom ELSE m.score_ext END AS score_equipe,

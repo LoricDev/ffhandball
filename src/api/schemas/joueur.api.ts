@@ -38,6 +38,10 @@ export const joueurMatchItemSchema = z
     id_ffhb_match: z.string(),
     date_heure: z.union([z.string(), z.date()]).transform((v) => (v instanceof Date ? v.toISOString() : v)),
     statut: z.string(),
+    forfait: z
+      .enum(["equipe", "adversaire"])
+      .nullable()
+      .openapi({ description: "Forfait vu du joueur : son équipe ou l'adversaire, null sinon" }),
     equipe_nom: z.string(),
     adversaire_nom: z.string(),
     score_equipe: z.number().int().nullable(),

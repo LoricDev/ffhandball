@@ -24,6 +24,7 @@ export interface ClubMatchItem {
   id_ffhb_match: string;
   date_heure: Date;
   statut: string;
+  forfait_equipe: "dom" | "ext" | null;
   journee: number | null;
   equipe_dom_nom: string;
   equipe_ext_nom: string;
@@ -122,6 +123,7 @@ export async function getClubMatchsCalendar(opts: ClubMatchsOptions): Promise<Cl
     id_ffhb_match: string;
     date_heure: Date;
     statut: string;
+    forfait_equipe: "dom" | "ext" | null;
     journee: number | null;
     equipe_dom_nom: string;
     equipe_ext_nom: string;
@@ -133,7 +135,7 @@ export async function getClubMatchsCalendar(opts: ClubMatchsOptions): Promise<Cl
     competition_nom: string;
     fdm_url: string | null;
   }>(
-    `SELECT m.id_ffhb_match, m.date_heure, m.statut, m.journee,
+    `SELECT m.id_ffhb_match, m.date_heure, m.statut, m.forfait_equipe, m.journee,
             ed.nom AS equipe_dom_nom, ee.nom AS equipe_ext_nom,
             m.equipe_dom_id, m.equipe_ext_id,
             m.score_dom, m.score_ext,
@@ -165,6 +167,7 @@ export async function getClubMatchsCalendar(opts: ClubMatchsOptions): Promise<Cl
       id_ffhb_match: row.id_ffhb_match,
       date_heure: row.date_heure,
       statut: row.statut,
+      forfait_equipe: row.forfait_equipe ?? null,
       journee: row.journee,
       equipe_dom_nom: row.equipe_dom_nom,
       equipe_ext_nom: row.equipe_ext_nom,
