@@ -193,6 +193,16 @@ log "Service ffhandball-api démarré."
 
 # ─── 6. nginx + certbot (optionnel) ──────────────────────────────────────────
 
+# Règles anti-scanners, incluses par les blocs server (API et site). Installées dans tous les cas :
+# un nginx qui les référence sans le fichier ne démarre pas.
+if [ -n "$DOMAIN" ] || [ -n "${SITE_DOMAIN:-}" ]; then
+  if [ "$(id -u)" -eq 0 ]; then
+    install -D -m 644 "$APP_DIR/deploy/nginx/ffhandball-block-scanners.conf" /etc/nginx/snippets/ffhandball-block-scanners.conf
+  else
+    sudo install -D -m 644 "$APP_DIR/deploy/nginx/ffhandball-block-scanners.conf" /etc/nginx/snippets/ffhandball-block-scanners.conf
+  fi
+fi
+
 if [ -n "$DOMAIN" ]; then
   NGINX_TEMPLATE="$APP_DIR/deploy/nginx/ffhandball-api.conf.template"
   NGINX_CONF="/etc/nginx/sites-available/ffhandball-api.conf"

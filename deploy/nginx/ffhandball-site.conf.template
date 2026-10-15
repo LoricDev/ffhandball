@@ -14,6 +14,9 @@ server {
     listen [::]:80;
     server_name {{SITE_DOMAIN}};
 
+    # Sondes de scanners coupées sans réponse (.env, .git, PHP, WordPress…)
+    include snippets/ffhandball-block-scanners.conf;
+
     root {{APP_DIR}}/site;
     index index.html;
 
