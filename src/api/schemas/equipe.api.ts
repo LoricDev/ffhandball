@@ -70,7 +70,7 @@ export const clubEquipesQuerySchema = saisonQuerySchema.extend({
 export const groupeEquipesSchema = z
   .object({
     cle: z.string().openapi({ example: "-13|M|1|entente", description: "Clé stable du groupe : catégorie|sexe|rang|club ou entente" }),
-    categorie: z.enum(["Seniors", "-20", "-18", "-17", "-15", "-13", "-11", "-9", "-7", "Loisir", "Autre"]),
+    categorie: z.enum(["Seniors", "-20", "-19", "-18", "-17", "-15", "-13", "-11", "-9", "-7", "Loisir", "Autre"]),
     sexe: z.enum(["M", "F", "mixte"]),
     rang: z.number().int().positive().openapi({ description: "1 = équipe première ; 2, 3… = équipes réserves (chiffre ou lettre finale du nom)" }),
     entente: z.boolean().openapi({ description: "true si l'équipe est une entente ou une convention entre clubs" }),
