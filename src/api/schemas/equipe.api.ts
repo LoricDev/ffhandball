@@ -31,9 +31,9 @@ export const clubEquipeSchema = z
     engagements: z.array(engagementRefSchema),
     lien: z
       .object({
-        methode: z.enum(["licence", "structure", "nom_exact", "nom_reserve", "nom_entente"]).openapi({
+        methode: z.enum(["licence", "structure", "nom_exact", "nom_reserve", "nom_entente", "groupe"]).openapi({
           description:
-            "Signal qui rattache l'équipe au club : structure (le club est porteur), licence (≥ 3 de ses licenciés y jouent), nom_*",
+            "Signal qui rattache l'équipe au club : structure (le club est porteur), licence (≥ 3 de ses licenciés y jouent), nom_*, groupe (hérité d'une autre inscription de la même équipe réelle, quand celle-ci n'a pas encore de feuille de match)",
         }),
         confiance: z.enum(["haute", "moyenne", "basse"]),
       })

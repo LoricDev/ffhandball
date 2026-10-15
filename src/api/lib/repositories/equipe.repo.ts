@@ -1,7 +1,9 @@
 // src/api/lib/repositories/equipe.repo.ts
 import { query } from "@/db/client.js";
 import { resolveLinkedTeams } from "@/api/lib/repositories/club-matchs.repo.js";
-import type { Confidence, MatchMethod } from "@/api/lib/club-matching.js";
+import { RANK_BY_CONFIDENCE, type Confidence, type MatchMethod } from "@/api/lib/club-matching.js";
+import { heriterLiens } from "@/api/lib/equipe-groupes.js";
+import { getOverrides } from "@/api/lib/repositories/equipe-overrides.repo.js";
 
 export interface EngagementRef {
   poule: { id_ffhb: string; nom: string };
@@ -37,7 +39,7 @@ export interface ClubEquipe {
   nom: string;
   engagements: EngagementRef[];
   /** Comment l'équipe a été rattachée au club (absent pour la liste « équipes propres » historique). */
-  lien?: { methode: MatchMethod; confiance: Confidence };
+  lien?: { methode: MatchMethod | "groupe"; confiance: Confidence };
 }
 
 async function engagementsByEquipeIds(equipeIds: bigint[]): Promise<Map<string, EngagementRef[]>> {
@@ -204,14 +206,19 @@ export async function listClubEquipesAvecPartenaires(
   saison: string,
   opts: { include_ententes: boolean; min_confidence?: Confidence },
 ): Promise<ClubEquipe[]> {
-  const linked = await resolveLinkedTeams(club, saison, opts.include_ententes, opts.min_confidence);
+  // Pas de filtre de confiance ici : l'héritage de lien (heriterLiens) doit voir les « basse » avant qu'on les écarte.
+  const linked = await resolveLinkedTeams(club, saison, opts.include_ententes);
   const engMap = await engagementsByEquipeIds(linked.map((l) => l.id));
-  return linked.map((l) => ({
+  const equipes: ClubEquipe[] = linked.map((l) => ({
     id_ffhb: l.id_ffhb,
     nom: l.nom,
     engagements: engMap.get(l.id.toString()) ?? [],
     lien: { methode: l.match_method, confiance: l.confidence },
   }));
+  const avecLiens = heriterLiens(equipes, await getOverrides(equipes.map((e) => e.id_ffhb)));
+  if (!opts.min_confidence) return avecLiens;
+  const minRank = RANK_BY_CONFIDENCE[opts.min_confidence];
+  return avecLiens.filter((e) => RANK_BY_CONFIDENCE[e.lien!.confiance] >= minRank);
 }
 
 /** Équipes propres d'un club (pont autoritatif ext_structure_id = clubs.id_ffhb). */
