@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { createApiKey, renewApiKey, revokeApiKey, listApiKeys } from "@/api/lib/repositories/api-keys.repo.js";
 import adminWebhooks from "@/api/routes/admin-webhooks.js";
+import adminEquipes from "@/api/routes/admin-equipes.js";
 import { getTraffic } from "@/api/lib/repositories/traffic.repo.js";
 import { getPipelineSnapshot } from "@/api/lib/repositories/pipeline-status.repo.js";
 
@@ -95,5 +96,6 @@ admin.post("/admin/api-keys/:key_prefix/revoke", async (c) => {
 
 // Webhooks de résultats : monté après le garde ci-dessus, donc protégé par X-Admin-Secret.
 admin.route("/", adminWebhooks);
+admin.route("/", adminEquipes);
 
 export default admin;

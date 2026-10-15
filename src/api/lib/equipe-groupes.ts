@@ -115,28 +115,45 @@ function libelle(cat: Categorie, sx: Sexe, rg: number, ent: boolean): string {
   return `${base}${rg > 1 ? ` (équipe ${rg})` : ""}${ent ? " — entente" : ""}`;
 }
 
-export function grouperEquipes<T extends EquipeEntree>(equipes: T[]): Array<GroupeEquipes<T>> {
+/** Correction manuelle d'une inscription (table core.equipe_overrides). `null`/absent = garder l'heuristique. */
+export interface EquipeOverride {
+  categorie: string | null;
+  sexe: string | null;
+  rang: number | null;
+  entente: boolean | null;
+  exclu: boolean;
+}
+
+export function grouperEquipes<T extends EquipeEntree>(
+  equipes: T[],
+  overrides: ReadonlyMap<string, EquipeOverride> = new Map(),
+): Array<GroupeEquipes<T>> {
   const groupes = new Map<string, GroupeEquipes<T>>();
 
   // Inscriptions seniors dont le nom ne donne aucun rang : si elles couvrent deux niveaux de jeu
   // (régional + départemental), ce sont deux équipes — le niveau fait office de rang.
   const sansRang = new Map<string, Set<number>>();
-  const infos = equipes.map((eq) => {
+  const infos = equipes.flatMap((eq) => {
+    const ov = overrides.get(eq.id_ffhb);
+    if (ov?.exclu) return [];
     const premiere = eq.engagements[0];
     const texteCompetition = premiere ? `${premiere.competition.nom} ${premiere.phase.nom}` : "";
     let cat = categorie(texteCompetition);
     if (cat === "Autre") cat = categorie(eq.nom);
     let sx = sexe(texteCompetition);
     if (sx === "mixte") sx = sexe(eq.nom);
-    const explicite = rangExplicite(eq.nom);
-    const ent = estEntente(eq.nom);
+    if (ov?.categorie) cat = ov.categorie as Categorie;
+    if (ov?.sexe) sx = ov.sexe as Sexe;
+    // Un rang corrigé à la main est « explicite » : il échappe au départage par niveau.
+    const explicite = ov?.rang ?? rangExplicite(eq.nom);
+    const ent = ov?.entente ?? estEntente(eq.nom);
     const tier = premiere ? tierCompetition(texteCompetition, premiere.competition.niveau) : null;
     if (cat === "Seniors" && explicite === null && tier !== null) {
       const k = `${sx}|${ent}`;
       if (!sansRang.has(k)) sansRang.set(k, new Set());
       sansRang.get(k)!.add(tier);
     }
-    return { eq, cat, sx, explicite, ent, tier };
+    return [{ eq, cat, sx, explicite, ent, tier }];
   });
 
   for (const { eq, cat, sx, explicite, ent, tier } of infos) {

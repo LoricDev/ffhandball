@@ -75,6 +75,7 @@
     <button data-tab="pipeline" role="tab">Pipeline</button>
     <button data-tab="keys" role="tab">Clés API</button>
     <button data-tab="hooks" role="tab">Webhooks</button>
+    <button data-tab="teams" role="tab">Équipes</button>
     <button data-tab="traffic" role="tab">Trafic</button>
   </nav>
   <div class="tools">
@@ -119,6 +120,16 @@
     </section>
   </div>
 
+  <!-- ============ ÉQUIPES ============ -->
+  <div class="tab hidden" id="tab-teams">
+    <section class="card">
+      <h2>Regroupement des équipes d'un club</h2>
+      <p class="mut">Le regroupement (<code>?grouper=true</code>) est déduit des noms. Corrige ici une inscription mal rangée : la correction s'applique tout de suite à l'API publique.</p>
+      <div class="toolbar"><input id="teamClub" placeholder="id ou code FFHB du club (ex. 5657013)" style="max-width:320px"><button class="btn" id="teamLoad">Afficher</button></div>
+    </section>
+    <div id="teamOut"></div>
+  </div>
+
   <!-- ============ TRAFIC ============ -->
   <div class="tab hidden" id="tab-traffic">
     <section class="toolbar">
@@ -147,7 +158,7 @@ let paused = sessionStorage.getItem("adminPaused") === "1";
 let trafficHours = 24;
 let timer = null, lastOk = 0;
 const prev = new Map();   // clé de run -> mesure précédente (débit / ETA)
-const POLL = { pipeline: 5000, keys: 20000, hooks: 15000, traffic: 30000 };
+const POLL = { pipeline: 5000, keys: 20000, hooks: 15000, teams: 60000, traffic: 30000 };
 
 // ───────────── utilitaires ─────────────
 const $ = (id) => document.getElementById(id);
@@ -413,6 +424,62 @@ async function deliveriesDialog(h) {
   dialog("Livraisons — " + (h.label || h.url), [el("div", { class: "scroll", style: "max-height:55vh;overflow:auto" }, t)], [closeBtn()]);
 }
 
+// ───────────── ÉQUIPES ─────────────
+const LIEN_TXT = { haute: "lien sûr", moyenne: "lien probable", basse: "lien incertain" };
+
+async function renderTeams() {
+  const id = ($("teamClub").value || sessionStorage.getItem("teamClub") || "").trim();
+  if (!id) { $("teamOut").replaceChildren(); return; }
+  $("teamClub").value = id;
+  let d;
+  try { d = await api("/admin/clubs/" + encodeURIComponent(id) + "/groupes"); }
+  catch (e) { if (e.message !== "non autorisé") $("teamOut").replaceChildren(el("section", { class: "card err" }, e.message)); return; }
+  sessionStorage.setItem("teamClub", id);
+  const ov = new Map(d.overrides.map((o) => [o.equipe_id_ffhb, o]));
+  const insc = (e) => {
+    const o = ov.get(e.id_ffhb);
+    return el("div", { class: "toolbar", style: "padding:6px 0;border-top:1px solid var(--bd)" },
+      el("div", {},
+        el("b", {}, e.nom), " ",
+        o ? el("span", { class: "pill partial" }, o.exclu ? "exclue" : "corrigée") : null, " ",
+        e.lien ? el("span", { class: "mut" }, LIEN_TXT[e.lien.confiance] || "") : null,
+        el("div", { class: "mut" }, e.engagements.map((g) => g.competition.nom).join(" · ") + " — #" + e.id_ffhb)),
+      el("button", { class: "btn sec sm", onclick: () => overrideDialog(e, o, id) }, "Corriger"));
+  };
+  const nodes = d.groupes.map((g) => el("section", { class: "card" },
+    el("h2", {}, g.libelle, " ", el("span", { class: "mut" }, g.equipes.length + " inscription(s)")),
+    g.equipes.map(insc)));
+  const exclues = d.inscriptions.filter((e) => ov.get(e.id_ffhb)?.exclu);
+  if (exclues.length) nodes.push(el("section", { class: "card" }, el("h2", {}, "Exclues du regroupement"), exclues.map(insc)));
+  $("teamOut").replaceChildren(el("div", { class: "mut", style: "margin:8px 0" }, d.club.nom + " — saison " + d.saison + " : " + d.inscriptions.length + " inscription(s), " + d.groupes.length + " équipe(s)"), ...nodes);
+}
+
+function overrideDialog(e, o, clubId) {
+  const sel = (opts, cur) => el("select", {}, ...opts.map(([v, t]) => el("option", { value: v, selected: String(cur ?? "") === v }, t)));
+  const cat = sel([["", "automatique"], ...["Seniors", "-20", "-19", "-18", "-17", "-15", "-13", "-11", "-9", "-7", "Loisir", "Autre"].map((c) => [c, c])], o?.categorie);
+  const sexe = sel([["", "automatique"], ["M", "Masculin"], ["F", "Féminin"], ["mixte", "Mixte"]], o?.sexe);
+  const rang = sel([["", "automatique"], ...[1, 2, 3, 4, 5].map((n) => [String(n), n === 1 ? "1 (équipe première)" : "équipe " + n])], o?.rang);
+  const ent = sel([["", "automatique"], ["true", "Entente / convention"], ["false", "Club seul"]], o?.entente);
+  const excl = el("input", { type: "checkbox", checked: !!o?.exclu });
+  const note = el("input", { placeholder: "pourquoi (facultatif)", maxLength: 500, value: o?.note || "" });
+  const buttons = [closeBtn("Annuler"), { label: "Enregistrer", run: async () => {
+    try {
+      await api("/admin/equipe-overrides/" + encodeURIComponent(e.id_ffhb), { method: "PUT", body: {
+        categorie: cat.value || null, sexe: sexe.value || null, rang: rang.value ? Number(rang.value) : null,
+        entente: ent.value === "" ? null : ent.value === "true", exclu: excl.checked, note: note.value.trim() || null } });
+      toast("Correction enregistrée"); refreshTab();
+    } catch (err) { toast(err.message, true); return false; }
+  } }];
+  if (o) buttons.splice(1, 0, { label: "Supprimer la correction", cls: "dng", run: async () => {
+    try { await api("/admin/equipe-overrides/" + encodeURIComponent(e.id_ffhb), { method: "DELETE" }); toast("Correction supprimée"); refreshTab(); }
+    catch (err) { toast(err.message, true); return false; }
+  } });
+  dialog("Corriger " + e.nom, [
+    el("p", { class: "mut" }, e.engagements.map((g) => g.competition.nom).join(" · ")),
+    field("Catégorie", cat), field("Sexe", sexe), field("Rang dans le club", rang), field("Entente", ent),
+    el("label", {}, excl, " Exclure du regroupement (reste visible dans data)"), field("Note", note)], buttons);
+}
+
 // ───────────── TRAFIC ─────────────
 function drawChart(series, hours) {
   const W = 800, H = 170, pad = { l: 34, r: 6, t: 8, b: 20 };
@@ -453,7 +520,7 @@ async function renderTraffic() {
 // ───────────── navigation / boucle de rafraîchissement ─────────────
 const RENDER = {
   pipeline: async () => renderPipeline(await api("/admin/pipeline")),
-  keys: renderKeys, hooks: renderHooks, traffic: renderTraffic,
+  keys: renderKeys, hooks: renderHooks, teams: renderTeams, traffic: renderTraffic,
 };
 
 async function refreshTab() {
@@ -497,6 +564,8 @@ function logout(msg) {
 
 $("nav").onclick = (e) => { const b = e.target.closest("button[data-tab]"); if (b) switchTab(b.dataset.tab); };
 $("win").onclick = (e) => { const b = e.target.closest("button[data-h]"); if (b) { trafficHours = Number(b.dataset.h); refreshTab(); } };
+$("teamLoad").onclick = () => { sessionStorage.setItem("teamClub", $("teamClub").value.trim()); refreshTab(); };
+$("teamClub").onkeydown = (e) => { if (e.key === "Enter") $("teamLoad").onclick(); };
 $("newKey").onclick = newKeyDialog; $("newHook").onclick = newHookDialog;
 $("pause").onclick = () => setPaused(!paused);
 $("logout").onclick = () => logout("");

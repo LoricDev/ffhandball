@@ -13,6 +13,7 @@ import { getClubMatchsCalendar } from "@/api/lib/repositories/club-matchs.repo.j
 import { clubEquipeSchema, clubEquipesQuerySchema, groupeEquipesSchema } from "@/api/schemas/equipe.api.js";
 import { saisonQuerySchema } from "@/api/schemas/competition.api.js";
 import { grouperEquipes } from "@/api/lib/equipe-groupes.js";
+import { getOverrides } from "@/api/lib/repositories/equipe-overrides.repo.js";
 import { listClubEquipesAvecPartenaires } from "@/api/lib/repositories/equipe.repo.js";
 
 const clubs = new OpenAPIHono();
@@ -208,7 +209,7 @@ clubs.openapi(clubEquipesRoute, async (c) => {
     return c.json({ error: { code: "NOT_FOUND" as const, message: `Club id_ffhb=${id_ffhb} introuvable` } }, 404);
   }
   const data = await listClubEquipesAvecPartenaires(club, saison, { include_ententes, min_confidence });
-  const groupes = grouper ? { groupes: grouperEquipes(data) } : {};
+  const groupes = grouper ? { groupes: grouperEquipes(data, await getOverrides(data.map((e) => e.id_ffhb))) } : {};
   return c.json({ data, ...groupes, meta: { saison, club: { id_ffhb: club.id_ffhb, code_ffhb: club.code_ffhb, nom: club.nom } } }, 200);
 });
 
