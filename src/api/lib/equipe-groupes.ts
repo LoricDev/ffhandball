@@ -28,7 +28,7 @@ export function categorie(libelle: string): Categorie {
   if (age && AGES.includes(Number(age[1]))) return `-${age[1]}` as Categorie;
   if (/LOISIR/.test(n)) return "Loisir";
   if (
-    /SENIOR|\bSM\b|\bSF\b|HONNEUR|EXCELLENCE|PRE.?NATIONAL|PRE.?REGION|NATIONAL|DIVISION|BUTAGAZ|STARLIGUE|PROLIGUE|\+ ?16/.test(n)
+    /SENIOR|\bSM\b|\bSF\b|HONNEUR|EXCELLENCE|PRE.?NATIONAL|PRE.?REGION|NATIONAL|DIVISION|BUTAGAZ|STARLIGUE|PROLIGUE|COUPE DE FRANCE|\+ ?16/.test(n)
   ) {
     return "Seniors";
   }

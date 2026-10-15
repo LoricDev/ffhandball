@@ -25,10 +25,37 @@ export const equipeDetailSchema = z
   .openapi("EquipeDetail");
 
 export const clubEquipeSchema = z
-  .object({ id_ffhb: z.string(), nom: z.string(), engagements: z.array(engagementRefSchema) })
+  .object({
+    id_ffhb: z.string(),
+    nom: z.string(),
+    engagements: z.array(engagementRefSchema),
+    lien: z
+      .object({
+        methode: z.enum(["licence", "structure", "nom_exact", "nom_reserve", "nom_entente"]).openapi({
+          description:
+            "Signal qui rattache l'équipe au club : structure (le club est porteur), licence (≥ 3 de ses licenciés y jouent), nom_*",
+        }),
+        confiance: z.enum(["haute", "moyenne", "basse"]),
+      })
+      .optional()
+      .openapi({ description: "Comment l'équipe est rattachée au club (ententes où il est partenaire incluses)" }),
+  })
   .openapi("ClubEquipe");
 
 export const clubEquipesQuerySchema = saisonQuerySchema.extend({
+  include_ententes: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((v) => v === "true")
+    .openapi({
+      description:
+        "Inclure les ententes et conventions où le club est partenaire (rattachées à un autre club côté FFHB). Défaut true.",
+      example: "true",
+    }),
+  min_confidence: z
+    .enum(["haute", "moyenne", "basse"])
+    .optional()
+    .openapi({ description: "Confiance minimale du rattachement (absent = toutes)", example: "moyenne" }),
   grouper: z
     .enum(["true", "false"])
     .default("false")

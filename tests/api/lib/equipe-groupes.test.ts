@@ -27,6 +27,9 @@ describe("categorie", () => {
     ["NATIONALE 1 FEMININE 2026-2027", "Seniors"],
     ["LIGUE BUTAGAZ ENERGIE 2026-2027", "Seniors"],
     ["CHAMPIONNAT LOISIR", "Loisir"],
+    ["COUPE DE FRANCE REGIONALE MASCULINE 2026-2027", "Seniors"],
+    ["COUPE DE FRANCE DEPARTEMENTALE FEMININE 2026-2027", "Seniors"],
+    ["COUPE DE FRANCE U18M", "-18"],
     ["TOURNOI DE NOEL", "Autre"],
   ])("%s → %s", (libelle, attendu) => expect(categorie(libelle)).toBe(attendu));
 
@@ -137,5 +140,21 @@ describe("grouperEquipes — JDA Dijon (cas d'ententes, conventions et équipes 
     const g = groupes.find((x) => x.cle === "Seniors|F|1|club")!;
     expect(g.equipes.map((e) => e.id_ffhb).sort()).toEqual(["2118502", "2127844"]);
     expect(g.competitions).toHaveLength(2);
+  });
+});
+
+describe("grouperEquipes — seniors de Bouzonville : championnat + coupes + Coupe de France (ententes partenaires incluses)", () => {
+  const groupes = grouperEquipes([
+    eq("2128182", "ENT BOUZONVILLE/BOULAY SM HON", "56-03 CHAMPIONNAT HONNEUR MASCULIN", "HONNEUR MASCULIN", "regional"),
+    // Entente dont Boulay est le porteur côté FFHB : « ENTENTE BOULAY/BOUZONVILLE SM »
+    eq("2133862", "ENTENTE BOULAY/BOUZONVILLE SM", "57- 20 COUPE ECHO'SPORT SM", "57-COUPE ECHO'SPORT  SM 1° TOUR"),
+    eq("2169469", "ENT BOUZONVILLE/BOULAY", "COUPE DE FRANCE REGIONALE MASCULINE 2026-2027", "CDF REG MAS (1° TOUR)", "national"),
+  ]);
+
+  it("les trois inscriptions forment UNE équipe réelle « Seniors M — entente »", () => {
+    expect(groupes).toHaveLength(1);
+    expect(groupes[0]!.libelle).toBe("Seniors M — entente");
+    expect(groupes[0]!.equipes.map((e) => e.id_ffhb).sort()).toEqual(["2128182", "2133862", "2169469"]);
+    expect(groupes[0]!.competitions).toHaveLength(3);
   });
 });
