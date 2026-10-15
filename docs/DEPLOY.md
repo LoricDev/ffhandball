@@ -408,6 +408,7 @@ Le récap (`pnpm monitor`) vérifie : runs en échec ou partiels, fraîcheur (36
 
 Pour les matchs sans score, le mail sépare :
 
+- **Couverture du site** (déclenche l'alerte) : à chaque scrape complet des compétitions, le scraper lit les sections que ffhandball.fr annonce (`available_types` : national, régional, départemental, **coupe-de-france**…), les visite toutes, et journalise ce qu'il a lu dans `raw.site_sections`. Le récap alerte si une section annoncée n'a pas été lue, si une section est organisée par structures (non gérée), si des compétitions vues sur le site manquent en base, ou si la structure n'a pas été relue depuis plus de 3 jours. Une nouvelle section du site est donc prise automatiquement, et son absence est détectée.
 - **À surveiller** (déclenche l'alerte) : cause probable par match (code FdM absent, 404, PDF illisible, hors fenêtre des crons, rattrapage en cours…), liens vers la poule et le PDF de la FdM, requête SQL de vérification, « nouveaux depuis hier ».
 - **Bruit probable** (n'alerte pas) : tournois de détection (pas de FdM) et FdM en 404 depuis plus de `SCRAPE_FDM_MAX_AGE_DAYS` jours (forfait / non joué).
 
