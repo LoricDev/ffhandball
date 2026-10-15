@@ -56,6 +56,9 @@ export function buildApp(opts: BuildAppOptions = {}): OpenAPIHono {
   app.use("*", rateLimitMiddleware());
   app.use("*", httpCacheMiddleware({ authEnabled }));
 
+  // La racine renvoyait un 404 aux visiteurs et aux scanners : on les oriente vers la documentation.
+  app.get("/", (c) => c.redirect("/docs", 302));
+
   app.route("/", adminRoutes);
   app.route("/", healthRoutes);
   app.route("/", statusRoutes);

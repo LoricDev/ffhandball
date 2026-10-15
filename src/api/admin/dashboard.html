@@ -127,7 +127,7 @@
     </section>
     <section class="grid" id="tkpis"></section>
     <section class="card"><h2>Requêtes par heure</h2><div id="chart"></div>
-      <div class="legend"><span><i style="background:var(--run)"></i>Requêtes</span><span><i style="background:var(--warn)"></i>4xx</span><span><i style="background:var(--bad)"></i>5xx</span></div></section>
+      <div class="legend"><span><i style="background:var(--run)"></i>Requêtes</span><span><i style="background:var(--mut)"></i>404 (scanners)</span><span><i style="background:var(--warn)"></i>autres 4xx</span><span><i style="background:var(--bad)"></i>5xx</span></div></section>
     <section class="card"><h2>Routes les plus appelées</h2><div class="scroll"><table id="routes"></table></div></section>
     <section class="two">
       <div class="card"><h2>Clés API les plus actives</h2><div class="scroll"><table id="tkeys"></table></div></div>
@@ -425,10 +425,10 @@ function drawChart(series, hours) {
   for (const f of [0, 0.5, 1]) { const v = Math.round(max * f); add("line", { x1: pad.l, x2: W - pad.r, y1: y(v), y2: y(v), stroke: "var(--bd)", "stroke-width": 1 }); add("text", { x: pad.l - 4, y: y(v) + 3, "text-anchor": "end" }, fmt(v)); }
   series.forEach((s, i) => {
     const x = pad.l + i * bw + bw * 0.12, w = Math.max(1, bw * 0.76);
-    const g = add("g", {}); const title = document.createElementNS(ns, "title"); title.textContent = `${hhmm(s.t)} — ${fmt(s.total)} req, ${s.err_4xx} 4xx, ${s.err_5xx} 5xx`; g.append(title);
+    const g = add("g", {}); const title = document.createElementNS(ns, "title"); title.textContent = `${hhmm(s.t)} — ${fmt(s.total)} req, ${s.not_found} 404, ${s.err_4xx} 4xx, ${s.err_5xx} 5xx`; g.append(title);
     const bar = (v, color, base) => { const h = (H - pad.t - pad.b) * (v / max); if (h <= 0) return; const r = document.createElementNS(ns, "rect"); r.setAttribute("x", x); r.setAttribute("width", w); r.setAttribute("y", y(base + v)); r.setAttribute("height", h); r.setAttribute("fill", color); g.append(r); };
-    const okV = Math.max(0, s.total - s.err_4xx - s.err_5xx);
-    bar(okV, "var(--run)", 0); bar(s.err_4xx, "var(--warn)", okV); bar(s.err_5xx, "var(--bad)", okV + s.err_4xx);
+    const okV = Math.max(0, s.total - s.not_found - s.err_4xx - s.err_5xx);
+    bar(okV, "var(--run)", 0); bar(s.not_found, "var(--mut)", okV); bar(s.err_4xx, "var(--warn)", okV + s.not_found); bar(s.err_5xx, "var(--bad)", okV + s.not_found + s.err_4xx);
   });
   const step = Math.ceil(series.length / 8);
   series.forEach((s, i) => { if (i % step === 0) add("text", { x: pad.l + i * bw + bw / 2, y: H - 5, "text-anchor": "middle" }, hours <= 24 ? new Date(s.t).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) : new Date(s.t).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" })); });
@@ -439,8 +439,10 @@ async function renderTraffic() {
   const d = await api(`/admin/traffic?hours=${trafficHours}`);
   for (const b of $("win").children) b.setAttribute("aria-pressed", String(Number(b.dataset.h) === d.hours));
   const t = d.totals;
-  const pct = (n) => t.total ? (100 * n / t.total).toFixed(1) + " %" : "–";
-  $("tkpis").replaceChildren(...[[fmt(t.total), "requêtes", ""], [pct(t.ok), "réussies (2xx/3xx)", "success"], [fmt(t.err_4xx), "erreurs 4xx", t.err_4xx ? "partial" : ""], [fmt(t.rate_limited), "429 (limitées)", t.rate_limited ? "partial" : ""], [fmt(t.err_5xx), "erreurs 5xx", t.err_5xx ? "failed" : "success"], [fmt(t.with_key), "avec clé API", ""], [fmt(t.distinct_ips), "IP distinctes", ""], [t.avg_ms + " ms", "temps moyen", ""], [t.p95_ms + " ms", "p95", ""]]
+  // Taux de réussite calculé HORS 404 : les scanners qui sondent /.env ne sont pas des échecs de service.
+  const useful = t.total - t.not_found;
+  const pct = (n) => useful > 0 ? (100 * n / useful).toFixed(1) + " %" : "–";
+  $("tkpis").replaceChildren(...[[fmt(t.total), "requêtes", ""], [pct(t.ok), "réussies (hors 404)", "success"], [fmt(t.not_found), "404 (bots, scanners)", ""], [fmt(t.err_4xx), "autres erreurs 4xx", t.err_4xx ? "partial" : ""], [fmt(t.rate_limited), "429 (limitées)", t.rate_limited ? "partial" : ""], [fmt(t.err_5xx), "erreurs 5xx", t.err_5xx ? "failed" : "success"], [fmt(t.with_key), "avec clé API", ""], [fmt(t.distinct_ips), "IP distinctes", ""], [t.avg_ms + " ms", "temps moyen", ""], [t.p95_ms + " ms", "p95", ""]]
     .map(([v, l, c]) => el("div", { class: "card kpi" }, el("b", { class: c }, v), el("span", {}, l))));
   $("chart").replaceChildren(drawChart(d.series, d.hours));
   table($("routes"), ["Route", "#Appels", "#Moy. (ms)", "#p95 (ms)", "#5xx"], d.top_routes.map((r) => [el("span", { class: "mono" }, r.route), fmt(r.hits), r.avg_ms, r.p95_ms, r.err_5xx ? el("span", { class: "err" }, r.err_5xx) : "0"]), "Aucun appel sur la période.");
