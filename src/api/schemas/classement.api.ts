@@ -18,5 +18,5 @@ export const classementItemSchema = z.object({
 }).openapi("ClassementItem");
 
 export const classementQuerySchema = z.object({
-  poule_id_ffhb: z.string().optional().openapi({ description: "Identifiant FFH de la poule (obligatoire)" }),
+  poule_id_ffhb: z.string().min(1).openapi({ description: "Identifiant FFHB de la poule (obligatoire)", example: "168256" }),
 });

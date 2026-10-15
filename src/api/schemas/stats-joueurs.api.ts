@@ -13,7 +13,7 @@ export const statsJoueurItemSchema = z
   .openapi("StatsJoueurItem");
 
 export const statsJoueursQuerySchema = z.object({
-  poule_id_ffhb: z.string().optional().openapi({ description: "Identifiant FFHB de la poule (obligatoire)" }),
+  poule_id_ffhb: z.string().min(1).openapi({ description: "Identifiant FFHB de la poule (obligatoire)", example: "168256" }),
   limit: z.coerce.number().int().positive().max(100).default(20),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

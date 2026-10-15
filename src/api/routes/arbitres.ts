@@ -1,5 +1,6 @@
 // src/api/routes/arbitres.ts
-import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import { newRouter } from "@/api/lib/router.js";
+import { createRoute, z } from "@hono/zod-openapi";
 import {
   arbitreListItemSchema,
   arbitreMatchItemSchema,
@@ -9,7 +10,7 @@ import {
 import { paginationMetaSchema, paginationQuerySchema, errorResponseSchema } from "@/api/schemas/common.js";
 import { listArbitres, getArbitreMatchs, getArbitreDetail } from "@/api/lib/repositories/arbitre.repo.js";
 
-const arbitres = new OpenAPIHono();
+const arbitres = newRouter();
 
 const listRoute = createRoute({
   method: "get",

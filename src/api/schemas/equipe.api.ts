@@ -1,5 +1,7 @@
 // src/api/schemas/equipe.api.ts
 import { z } from "@hono/zod-openapi";
+import { triDateSchema } from "@/api/schemas/common.js";
+import { matchFiltersQuery } from "@/api/schemas/match.api.js";
 import { saisonQuerySchema } from "@/api/schemas/competition.api.js";
 import { currentSaison } from "@/lib/saison.js";
 
@@ -92,9 +94,8 @@ export const rosterJoueurItemSchema = z
 
 export const equipeMatchsQuerySchema = z.object({
   saison: z.string().regex(/^\d{4}-\d{4}$/).default(() => currentSaison()),
-  date_from: z.string().optional(),
-  date_to: z.string().optional(),
-  statut: z.enum(["a_jouer", "joue", "reporte", "annule", "forfait"]).optional(),
+  ...matchFiltersQuery,
+  tri: triDateSchema.optional().openapi({ description: "Tri par date de match (défaut : date_asc)" }),
   limit: z.coerce.number().int().positive().max(100).default(20),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

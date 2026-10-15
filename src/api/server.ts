@@ -20,7 +20,9 @@ import statusRoutes from "@/api/routes/status.js";
 import { env } from "@/config/env.js";
 import { logger } from "@/lib/logger.js";
 import { requestLoggerMiddleware } from "@/api/middleware/request-logger.js";
-import { errorHandlerMiddleware } from "@/api/middleware/error-handler.js";
+import { requestIdMiddleware } from "@/api/middleware/request-id.js";
+import { enrichOpenApi } from "@/api/lib/openapi-enrich.js";
+import { errorHandlerMiddleware, apiErrorHandler, apiNotFoundHandler } from "@/api/middleware/error-handler.js";
 import { rateLimitMiddleware } from "@/api/middleware/rate-limit.js";
 import { apiKeyAuthMiddleware } from "@/api/middleware/auth.js";
 import { httpCacheMiddleware } from "@/api/middleware/http-cache.js";
@@ -49,7 +51,11 @@ export function buildApp(opts: BuildAppOptions = {}): OpenAPIHono {
     },
   });
 
+  app.onError(apiErrorHandler);
+  app.notFound(apiNotFoundHandler);
+
   // Middlewares (ordre important : auth avant rate-limit pour la limite par clé)
+  app.use("*", requestIdMiddleware());
   app.use("*", requestLoggerMiddleware());
   app.use("*", errorHandlerMiddleware());
   if (authEnabled) app.use("*", apiKeyAuthMiddleware());
@@ -81,17 +87,24 @@ export function buildApp(opts: BuildAppOptions = {}): OpenAPIHono {
     scheme: "bearer",
     description: "Clé API : Authorization: Bearer <token>. Requise si l'auth est activée.",
   });
-  app.doc31("/openapi.json", {
-    openapi: "3.1.0",
+  const openApiConfig = {
+    openapi: "3.1.0" as const,
     info: {
-      version: "1.0.0",
+      version: "1.1.0",
       title: "ffhandball API",
       description:
-        "API read-only sur les données handball français scrapées de FFHandball." +
+        "API read-only sur les données handball français scrapées de FFHandball.\n\n" +
+        "**Conventions** : réponses `{ data, meta }` ; listes paginées par `limit` (≤ 100) / `offset` avec `meta.total` ; " +
+        "erreurs `{ error: { code, message } }` ; dates en ISO 8601 ; en-têtes `ETag` (revalidation `If-None-Match` → 304), " +
+        "`X-RateLimit-*` et `X-Request-Id`." +
         (authEnabled ? " Authentification par clé API requise (Authorization: Bearer)." : ""),
     },
     ...(authEnabled ? { security: [{ bearerAuth: [] }] } : {}),
-  });
+  };
+  // Spec servie à la main (et non via app.doc31) pour y ajouter les erreurs/en-têtes communs.
+  app.get("/openapi.json", (c) =>
+    c.json(enrichOpenApi(app.getOpenAPI31Document(openApiConfig) as never, { authEnabled })),
+  );
 
   app.get("/docs", swaggerUI({ url: "/openapi.json" }));
 

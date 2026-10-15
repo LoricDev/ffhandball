@@ -1,9 +1,10 @@
 // src/api/routes/status.ts — /status (JSON, public) et /statut (page publique).
 import { readFileSync } from "node:fs";
-import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import { newRouter } from "@/api/lib/router.js";
+import { createRoute, z } from "@hono/zod-openapi";
 import { getStatus } from "@/api/lib/repositories/status.repo.js";
 
-const status = new OpenAPIHono();
+const status = newRouter();
 
 const datasetSchema = z.object({
   key: z.string().openapi({ example: "matchs" }),

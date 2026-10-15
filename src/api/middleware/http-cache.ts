@@ -19,6 +19,13 @@ function isUncached(path: string): boolean {
   );
 }
 
+/** Référentiels quasi statiques et spec (change au déploiement) : cache plus long que les données de matchs. */
+function maxAgeFor(path: string, dflt: number): number {
+  if (path === "/saisons" || path === "/departements" || path === "/ligues") return 3600;
+  if (path === "/openapi.json") return 300;
+  return dflt;
+}
+
 export interface HttpCacheOptions {
   /** Avec auth par clé, la réponse peut dépendre de la clé : cache privé + Vary: Authorization. */
   authEnabled: boolean;
@@ -37,8 +44,7 @@ export function httpCacheMiddleware(opts: HttpCacheOptions): MiddlewareHandler {
     await withEtag(c, async () => {
       await next();
       if (c.res.status !== 200) return;
-      // La spec OpenAPI ne change qu'au déploiement : cache plus long.
-      const age = c.req.path === "/openapi.json" ? 300 : maxAge;
+      const age = maxAgeFor(c.req.path, maxAge);
       c.res.headers.set(
         "Cache-Control",
         `${opts.authEnabled ? "private" : "public"}, max-age=${age}, stale-while-revalidate=${swr}`,

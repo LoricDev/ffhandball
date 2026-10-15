@@ -1,10 +1,11 @@
 // src/api/routes/stats-joueurs.ts
-import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import { newRouter } from "@/api/lib/router.js";
+import { createRoute, z } from "@hono/zod-openapi";
 import { statsJoueurItemSchema, statsJoueursQuerySchema } from "@/api/schemas/stats-joueurs.api.js";
 import { paginationMetaSchema, errorResponseSchema } from "@/api/schemas/common.js";
 import { getStatsJoueursByPoule } from "@/api/lib/repositories/stats-joueurs.repo.js";
 
-const statsJoueurs = new OpenAPIHono();
+const statsJoueurs = newRouter();
 
 const listRoute = createRoute({
   method: "get",
@@ -34,12 +35,6 @@ const listRoute = createRoute({
 
 statsJoueurs.openapi(listRoute, async (c) => {
   const q = c.req.valid("query");
-  if (!q.poule_id_ffhb) {
-    return c.json(
-      { error: { code: "BAD_REQUEST" as const, message: "Le paramètre poule_id_ffhb est obligatoire" } },
-      400,
-    );
-  }
   const { data, total } = await getStatsJoueursByPoule(q.poule_id_ffhb, q.limit, q.offset);
   if (total === 0) {
     return c.json(

@@ -1,5 +1,6 @@
 // src/api/schemas/match.api.ts
 import { z } from "@hono/zod-openapi";
+import { isoDateParamSchema, matchStatutSchema, saisonCodeSchema, triDateSchema } from "@/api/schemas/common.js";
 
 export const matchListItemSchema = z.object({
   id_ffhb_match: z.string(),
@@ -9,7 +10,9 @@ export const matchListItemSchema = z.object({
     description: "Équipe ayant fait forfait (score affiché « FO » sur ffhandball.fr), null sinon",
   }),
   journee: z.number().int().nullable(),
+  equipe_dom_id_ffhb: z.string(),
   equipe_dom_nom: z.string(),
+  equipe_ext_id_ffhb: z.string(),
   equipe_ext_nom: z.string(),
   score_dom: z.number().int().nullable(),
   score_ext: z.number().int().nullable(),
@@ -57,8 +60,6 @@ const officielItemSchema = z.object({
 }).openapi("OfficielItem");
 
 export const matchDetailSchema = matchListItemSchema.extend({
-  equipe_dom_id_ffhb: z.string(),
-  equipe_ext_id_ffhb: z.string(),
   score_mt_dom: z.number().int().nullable(),
   score_mt_ext: z.number().int().nullable(),
   heure_estimee: z.boolean(),
@@ -68,14 +69,28 @@ export const matchDetailSchema = matchListItemSchema.extend({
   officiels: z.array(officielItemSchema),
 }).openapi("MatchDetail");
 
+/** Filtres communs aux listes de matchs (/matchs, /equipes/{id}/matchs, /salles/{id}/matchs, /poules/{id}/matchs). */
+export const matchFiltersQuery = {
+  date_from: isoDateParamSchema.optional().openapi({ description: "Matchs à partir de cette date (ISO 8601)" }),
+  date_to: isoDateParamSchema.optional().openapi({ description: "Matchs jusqu'à cette date (ISO 8601)" }),
+  statut: matchStatutSchema.optional(),
+  journee: z.coerce.number().int().positive().optional().openapi({ description: "Numéro de journée de championnat" }),
+  tri: triDateSchema.optional(),
+};
+
 export const matchListQuerySchema = z.object({
   poule_id_ffhb: z.string().optional().openapi({ description: "Filtre par poule (id_ffhb)" }),
-  date_from: z.string().optional().openapi({ description: "Date début ISO 8601" }),
-  date_to: z.string().optional().openapi({ description: "Date fin ISO 8601" }),
-  statut: z.enum(["a_jouer", "joue", "reporte", "annule", "forfait"]).optional().openapi({ description: "Statut match" }),
-  saison: z
-    .string()
-    .regex(/^\d{4}-\d{4}$/)
+  competition_id_ffhb: z.string().optional().openapi({ description: "Filtre par compétition (id_ffhb)" }),
+  equipe_id_ffhb: z.string().optional().openapi({
+    description: "Matchs d'une équipe (domicile ou extérieur). Les ids d'équipe sont propres à une saison.",
+  }),
+  club_id_ffhb: z.string().optional().openapi({
+    description: "Matchs des équipes portées par ce club (id_club FFHB). Pour inclure les ententes, voir /clubs/{id}/matchs.",
+  }),
+  salle_id_ffhb: z.string().optional().openapi({ description: "Matchs accueillis par cette salle (id_ffhb)" }),
+  ...matchFiltersQuery,
+  tri: triDateSchema.optional().openapi({ description: "Tri par date de match (défaut : date_desc)" }),
+  saison: saisonCodeSchema
     .optional()
     .openapi({ example: "2026-2027", description: "Filtre sur une saison. Sans ce paramètre : toutes les saisons (voir /saisons)." }),
   limit: z.coerce.number().int().positive().max(100).default(20),

@@ -1,16 +1,18 @@
 // src/api/routes/search.ts
 import { currentSaison } from "@/lib/saison.js";
-import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import { newRouter } from "@/api/lib/router.js";
+import { createRoute, z } from "@hono/zod-openapi";
 import { searchResultItemSchema, searchQuerySchema } from "@/api/schemas/search.api.js";
 import { errorResponseSchema } from "@/api/schemas/common.js";
 import { search } from "@/api/lib/repositories/search.repo.js";
 
-const searchRouter = new OpenAPIHono();
+const searchRouter = newRouter();
 
 const searchRoute = createRoute({
   method: "get",
   path: "/search",
   tags: ["search"],
+  summary: "Recherche floue multi-entités (clubs, équipes, joueurs)",
   request: { query: searchQuerySchema },
   responses: {
     200: {
@@ -33,12 +35,6 @@ const searchRoute = createRoute({
 
 searchRouter.openapi(searchRoute, async (c) => {
   const { q, type, limit, saison } = c.req.valid("query");
-  if (q.length < 2) {
-    return c.json(
-      { error: { code: "BAD_REQUEST" as const, message: "Le paramètre q doit contenir au moins 2 caractères" } },
-      400,
-    );
-  }
   const data = await search({ q, type, saison, limit });
   return c.json({ data, meta: { saison: saison ?? currentSaison() } }, 200);
 });

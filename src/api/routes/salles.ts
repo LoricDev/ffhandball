@@ -1,11 +1,12 @@
 // src/api/routes/salles.ts
-import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import { newRouter } from "@/api/lib/router.js";
+import { createRoute, z } from "@hono/zod-openapi";
 import { salleDetailSchema, salleMatchsQuerySchema } from "@/api/schemas/salle.api.js";
 import { matchListItemSchema } from "@/api/schemas/match.api.js";
 import { paginationMetaSchema, errorResponseSchema } from "@/api/schemas/common.js";
 import { getSalleByIdFfhb, getSalleMatchs } from "@/api/lib/repositories/salle.repo.js";
 
-const salles = new OpenAPIHono();
+const salles = newRouter();
 
 const detailRoute = createRoute({
   method: "get",
@@ -62,6 +63,8 @@ salles.openapi(matchsRoute, async (c) => {
     date_from: q.date_from,
     date_to: q.date_to,
     statut: q.statut,
+    journee: q.journee,
+    tri: q.tri,
     limit: q.limit,
     offset: q.offset,
   });

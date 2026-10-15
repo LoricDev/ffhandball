@@ -1,4 +1,5 @@
 // src/api/lib/repositories/equipe.repo.ts
+import { queryMatchList, type MatchListRow } from "@/api/lib/repositories/match-list.js";
 import { query } from "@/db/client.js";
 import { resolveLinkedTeams } from "@/api/lib/repositories/club-matchs.repo.js";
 import { RANK_BY_CONFIDENCE, type Confidence, type MatchMethod } from "@/api/lib/club-matching.js";
@@ -19,20 +20,7 @@ export interface EquipeDetail {
   engagements: EngagementRef[];
 }
 
-export interface EquipeMatchItem {
-  id_ffhb_match: string;
-  date_heure: Date;
-  statut: string;
-  forfait_equipe: "dom" | "ext" | null;
-  journee: number | null;
-  equipe_dom_nom: string;
-  equipe_ext_nom: string;
-  score_dom: number | null;
-  score_ext: number | null;
-  poule_id_ffhb: string;
-  competition_nom: string;
-  fdm_url: string | null;
-}
+export type EquipeMatchItem = MatchListRow;
 
 export interface ClubEquipe {
   id_ffhb: string;
@@ -106,6 +94,8 @@ export interface EquipeMatchsOptions {
   date_from?: string;
   date_to?: string;
   statut?: string;
+  journee?: number;
+  tri?: "date_asc" | "date_desc";
   limit: number;
   offset: number;
 }
@@ -120,49 +110,12 @@ export async function getEquipeMatchs(
     [idFfhb, saison],
   );
   if (eqRes.rowCount === 0) return null;
-  const equipeId = eqRes.rows[0]!.id;
-
-  const params: unknown[] = [equipeId];
-  const where: string[] = ["(m.equipe_dom_id = $1 OR m.equipe_ext_id = $1)"];
-  if (opts.date_from) {
-    params.push(opts.date_from);
-    where.push(`m.date_heure >= $${params.length}::timestamptz`);
-  }
-  if (opts.date_to) {
-    params.push(opts.date_to);
-    where.push(`m.date_heure <= $${params.length}::timestamptz`);
-  }
-  if (opts.statut) {
-    params.push(opts.statut);
-    where.push(`m.statut = $${params.length}`);
-  }
-  const whereClause = where.join(" AND ");
-
-  const countRes = await query<{ total: number }>(
-    `SELECT count(*)::int AS total FROM core.matchs m WHERE ${whereClause}`,
-    params,
+  const { limit, offset, tri, ...filters } = opts;
+  return queryMatchList(
+    filters,
+    { limit, offset, tri: tri ?? "date_asc" },
+    { where: ["(m.equipe_dom_id = $1 OR m.equipe_ext_id = $1)"], params: [eqRes.rows[0]!.id] },
   );
-  const total = countRes.rows[0]!.total;
-
-  params.push(opts.limit);
-  params.push(opts.offset);
-  const dataRes = await query<EquipeMatchItem>(
-    `SELECT m.id_ffhb_match, m.date_heure, m.statut, m.forfait_equipe, m.journee,
-            ed.nom AS equipe_dom_nom, ee.nom AS equipe_ext_nom,
-            m.score_dom, m.score_ext, po.id_ffhb AS poule_id_ffhb,
-            c.nom AS competition_nom, m.fdm_url
-       FROM core.matchs m
-       JOIN core.equipes ed ON ed.id = m.equipe_dom_id
-       JOIN core.equipes ee ON ee.id = m.equipe_ext_id
-       JOIN core.poules po ON po.id = m.poule_id
-       JOIN core.phases ph ON ph.id = po.phase_id
-       JOIN core.competitions c ON c.id = ph.competition_id
-      WHERE ${whereClause}
-      ORDER BY m.date_heure ASC
-      LIMIT $${params.length - 1} OFFSET $${params.length}`,
-    params,
-  );
-  return { data: dataRes.rows, total };
 }
 
 export interface RosterJoueurItem {

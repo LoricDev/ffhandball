@@ -10,8 +10,8 @@ export const searchResultItemSchema = z.object({
 }).openapi("SearchResultItem");
 
 export const searchQuerySchema = z.object({
-  q: z.string().default("").openapi({ description: "Terme de recherche (min 2 chars)" }),
+  q: z.string().trim().min(2, "Le paramètre q doit contenir au moins 2 caractères").openapi({ description: "Terme de recherche (min 2 chars)", example: "bouzonville" }),
   type: z.enum(["all", "clubs", "equipes", "joueurs"]).default("all").openapi({ description: "Type d'entité à chercher" }),
   limit: z.coerce.number().int().positive().max(50).default(10),
-  saison: z.string().optional().openapi({ description: "Code saison (ex: 2025-2026)" }),
+  saison: z.string().regex(/^\d{4}-\d{4}$/).optional().openapi({ description: "Code saison pour la recherche d'équipes (ex: 2025-2026), défaut : saison courante" }),
 });

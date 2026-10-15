@@ -1,9 +1,10 @@
 // src/api/routes/referentiels.ts
-import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import { newRouter } from "@/api/lib/router.js";
+import { createRoute, z } from "@hono/zod-openapi";
 import { saisonItemSchema, referentielItemSchema } from "@/api/schemas/referentiel.api.js";
 import { listSaisons, listDepartements, listLigues } from "@/api/lib/repositories/referentiel.repo.js";
 
-const referentiels = new OpenAPIHono();
+const referentiels = newRouter();
 
 const saisonsRoute = createRoute({
   method: "get",

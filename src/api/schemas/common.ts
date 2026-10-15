@@ -14,6 +14,7 @@ export const errorResponseSchema = z
       ]),
       message: z.string(),
       details: z.unknown().optional(),
+      request_id: z.string().optional().openapi({ description: "Identifiant de requête (en-tête X-Request-Id), à communiquer en cas de 500" }),
     }),
   })
   .openapi("ErrorResponse");
@@ -35,3 +36,20 @@ export const paginationQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(100).default(20),
   offset: z.coerce.number().int().nonnegative().default(0),
 });
+
+/** Date ISO 8601 en paramètre de requête : rejetée en 400 plutôt que de provoquer une erreur SQL (500). */
+export const isoDateParamSchema = z
+  .string()
+  .refine((v) => !Number.isNaN(Date.parse(v)), { message: "Date ISO 8601 invalide (ex: 2026-01-31 ou 2026-01-31T18:00:00Z)" })
+  .openapi({ example: "2026-01-31T00:00:00Z" });
+
+export const matchStatutSchema = z
+  .enum(["a_jouer", "joue", "reporte", "annule", "forfait"])
+  .openapi({ description: "Statut du match" });
+
+export const saisonCodeSchema = z.string().regex(/^\d{4}-\d{4}$/).openapi({ example: "2026-2027" });
+
+/** Ordre chronologique des matchs. */
+export const triDateSchema = z
+  .enum(["date_asc", "date_desc"])
+  .openapi({ description: "Tri par date de match (défaut propre à chaque endpoint)" });

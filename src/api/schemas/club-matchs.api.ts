@@ -1,5 +1,6 @@
 // src/api/schemas/club-matchs.api.ts
 import { z } from "@hono/zod-openapi";
+import { isoDateParamSchema } from "@/api/schemas/common.js";
 import { currentSaison } from "@/lib/saison.js";
 
 export const equipeLieeSchema = z
@@ -85,15 +86,13 @@ export const clubMatchsQuerySchema = z.object({
       description: "Inclure les matchs des équipes ententes où participe le club (défaut true)",
       example: "true",
     }),
-  date_from: z
-    .string()
+  date_from: isoDateParamSchema
     .optional()
     .openapi({
       description: "Filtre date de début (ISO 8601, ex: 2025-09-01)",
       example: "2025-09-01",
     }),
-  date_to: z
-    .string()
+  date_to: isoDateParamSchema
     .optional()
     .openapi({
       description: "Filtre date de fin (ISO 8601, ex: 2026-06-30)",

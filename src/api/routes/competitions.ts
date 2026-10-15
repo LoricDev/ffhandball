@@ -1,5 +1,6 @@
 // src/api/routes/competitions.ts
-import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import { newRouter } from "@/api/lib/router.js";
+import { createRoute, z } from "@hono/zod-openapi";
 import {
   competitionListItemSchema,
   competitionDetailSchema,
@@ -8,7 +9,7 @@ import {
 import { paginationMetaSchema, paginationMetaWithSaisonSchema, errorResponseSchema } from "@/api/schemas/common.js";
 import { listCompetitions, getCompetitionDetail } from "@/api/lib/repositories/competition.repo.js";
 
-const competitions = new OpenAPIHono();
+const competitions = newRouter();
 
 const listRoute = createRoute({
   method: "get",

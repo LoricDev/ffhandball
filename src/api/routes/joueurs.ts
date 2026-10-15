@@ -1,15 +1,17 @@
 // src/api/routes/joueurs.ts
-import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import { newRouter } from "@/api/lib/router.js";
+import { createRoute, z } from "@hono/zod-openapi";
 import { joueurDetailSchema, joueurMatchItemSchema } from "@/api/schemas/joueur.api.js";
 import { errorResponseSchema, paginationMetaSchema, paginationQuerySchema } from "@/api/schemas/common.js";
 import { getJoueurByLicence, getJoueurMatchs } from "@/api/lib/repositories/joueur.repo.js";
 
-const joueurs = new OpenAPIHono();
+const joueurs = newRouter();
 
 const detailRoute = createRoute({
   method: "get",
   path: "/joueurs/{numero_licence}",
   tags: ["joueurs"],
+  summary: "Fiche d'un joueur (stats cumulées + 10 derniers matchs)",
   request: { params: z.object({ numero_licence: z.string() }) },
   responses: {
     200: {

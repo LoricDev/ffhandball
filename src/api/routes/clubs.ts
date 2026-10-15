@@ -1,5 +1,6 @@
 // src/api/routes/clubs.ts
-import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import { newRouter } from "@/api/lib/router.js";
+import { createRoute, z } from "@hono/zod-openapi";
 import { clubListItemSchema, clubDetailSchema, clubListQuerySchema, clubClassementItemSchema } from "@/api/schemas/club.api.js";
 import { errorResponseSchema, paginationMetaSchema } from "@/api/schemas/common.js";
 import { listClubs, getClubByIdFfhb, listClubJoueurs, listClubClassements } from "@/api/lib/repositories/club.repo.js";
@@ -16,12 +17,13 @@ import { grouperEquipes } from "@/api/lib/equipe-groupes.js";
 import { getOverrides } from "@/api/lib/repositories/equipe-overrides.repo.js";
 import { listClubEquipesAvecPartenaires } from "@/api/lib/repositories/equipe.repo.js";
 
-const clubs = new OpenAPIHono();
+const clubs = newRouter();
 
 const listRoute = createRoute({
   method: "get",
   path: "/clubs",
   tags: ["clubs"],
+  summary: "Liste des clubs (recherche floue + filtre département)",
   request: { query: clubListQuerySchema },
   responses: {
     200: {
@@ -56,6 +58,7 @@ const detailRoute = createRoute({
   method: "get",
   path: "/clubs/{id_ffhb}",
   tags: ["clubs"],
+  summary: "Détail d'un club (par id_club ou code FFHB)",
   request: {
     params: z.object({
       id_ffhb: z.string().openapi({

@@ -1,15 +1,17 @@
 // src/api/routes/matchs.ts
-import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import { newRouter } from "@/api/lib/router.js";
+import { createRoute, z } from "@hono/zod-openapi";
 import { matchListItemSchema, matchDetailSchema, matchListQuerySchema } from "@/api/schemas/match.api.js";
 import { errorResponseSchema, paginationMetaWithSaisonSchema } from "@/api/schemas/common.js";
 import { listMatchs, getMatchDetail } from "@/api/lib/repositories/match.repo.js";
 
-const matchs = new OpenAPIHono();
+const matchs = newRouter();
 
 const listRoute = createRoute({
   method: "get",
   path: "/matchs",
   tags: ["matchs"],
+  summary: "Liste des matchs (filtres poule, compétition, équipe, club, salle, journée, dates, statut, saison)",
   request: { query: matchListQuerySchema },
   responses: {
     200: {
@@ -21,22 +23,15 @@ const listRoute = createRoute({
           }),
         },
       },
-      description: "List of matchs (paginated)",
+      description: "Liste paginée de matchs (tri par défaut : date décroissante)",
     },
   },
 });
 
 matchs.openapi(listRoute, async (c) => {
   const q = c.req.valid("query");
-  const result = await listMatchs({
-    poule_id_ffhb: q.poule_id_ffhb,
-    date_from: q.date_from,
-    date_to: q.date_to,
-    statut: q.statut,
-    saison: q.saison,
-    limit: q.limit,
-    offset: q.offset,
-  });
+  const { limit, offset, ...filters } = q;
+  const result = await listMatchs({ ...filters, limit, offset });
   return c.json({
     data: result.data,
     meta: { total: result.total, limit: q.limit, offset: q.offset, saison: q.saison ?? null },
@@ -47,6 +42,7 @@ const detailRoute = createRoute({
   method: "get",
   path: "/matchs/{id_ffhb_match}",
   tags: ["matchs"],
+  summary: "Détail d'un match (compositions, actions, officiels)",
   request: { params: z.object({ id_ffhb_match: z.string() }) },
   responses: {
     200: {

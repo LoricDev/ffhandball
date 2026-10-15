@@ -1,5 +1,7 @@
 // src/api/schemas/salle.api.ts
 import { z } from "@hono/zod-openapi";
+import { triDateSchema } from "@/api/schemas/common.js";
+import { matchFiltersQuery } from "@/api/schemas/match.api.js";
 
 export const salleDetailSchema = z
   .object({
@@ -14,9 +16,8 @@ export const salleDetailSchema = z
   .openapi("SalleDetail");
 
 export const salleMatchsQuerySchema = z.object({
-  date_from: z.string().optional(),
-  date_to: z.string().optional(),
-  statut: z.enum(["a_jouer", "joue", "reporte", "annule", "forfait"]).optional(),
+  ...matchFiltersQuery,
+  tri: triDateSchema.optional().openapi({ description: "Tri par date de match (défaut : date_asc)" }),
   limit: z.coerce.number().int().positive().max(100).default(20),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

@@ -1,12 +1,13 @@
 // src/api/routes/equipes.ts
-import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import { newRouter } from "@/api/lib/router.js";
+import { createRoute, z } from "@hono/zod-openapi";
 import { equipeDetailSchema, equipeMatchsQuerySchema, rosterJoueurItemSchema } from "@/api/schemas/equipe.api.js";
 import { matchListItemSchema } from "@/api/schemas/match.api.js";
 import { saisonQuerySchema } from "@/api/schemas/competition.api.js";
 import { paginationMetaWithSaisonSchema, errorResponseSchema } from "@/api/schemas/common.js";
 import { getEquipeDetail, getEquipeMatchs, getEquipeJoueurs } from "@/api/lib/repositories/equipe.repo.js";
 
-const equipes = new OpenAPIHono();
+const equipes = newRouter();
 
 const detailRoute = createRoute({
   method: "get",
@@ -65,6 +66,8 @@ equipes.openapi(matchsRoute, async (c) => {
     date_from: q.date_from,
     date_to: q.date_to,
     statut: q.statut,
+    journee: q.journee,
+    tri: q.tri,
     limit: q.limit,
     offset: q.offset,
   });

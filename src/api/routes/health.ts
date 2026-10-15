@@ -1,12 +1,14 @@
 // src/api/routes/health.ts
-import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import { newRouter } from "@/api/lib/router.js";
+import { createRoute, z } from "@hono/zod-openapi";
 import { query } from "@/db/client.js";
 
-const health = new OpenAPIHono();
+const health = newRouter();
 
 const healthRoute = createRoute({
   method: "get",
   path: "/health",
+  summary: "Sonde de vie (le process répond)",
   tags: ["health"],
   responses: {
     200: {
@@ -21,6 +23,7 @@ health.openapi(healthRoute, (c) => c.json({ status: "ok" as const }));
 const readyRoute = createRoute({
   method: "get",
   path: "/ready",
+  summary: "Sonde de disponibilité (la base répond)",
   tags: ["health"],
   responses: {
     200: {
