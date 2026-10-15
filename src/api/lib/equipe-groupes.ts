@@ -48,11 +48,31 @@ export function sexe(libelle: string): Sexe {
  * (« JDA DIJON HB (C) » → 3, A=1, B=2…). 1 par défaut.
  */
 export function rang(nomEquipe: string): number {
+  return rangExplicite(nomEquipe) ?? 1;
+}
+
+/** Rang écrit dans le nom de l'équipe, `null` si le nom n'en dit rien. */
+function rangExplicite(nomEquipe: string): number | null {
   const n = strip(nomEquipe).trim();
   const lettre = n.match(/\(([A-F])\)\s*$/);
   if (lettre) return lettre[1]!.charCodeAt(0) - 64;
   const chiffre = n.match(/(?:\s|^)([1-9])\s*$/);
-  return chiffre ? Number(chiffre[1]) : 1;
+  return chiffre ? Number(chiffre[1]) : null;
+}
+
+/**
+ * Niveau de jeu d'une inscription : 1 = régional ou plus, 2 = départemental, `null` = indéterminé.
+ * Sert à départager deux équipes seniors d'un même club aux noms identiques (« ENTENTE X/Y SM » en
+ * Honneur et en 2e division territoriale). Le texte prime sur `niveau` : la Coupe de France
+ * départementale est rangée dans la section « national » du site.
+ */
+function tierCompetition(competition: string, niveau: string | null): 1 | 2 | null {
+  const n = strip(competition);
+  if (/DEPARTEMENT|\bDEPT?\b/.test(n)) return 2;
+  if (/REGION|\bREG\b|HONNEUR|EXCELLENCE|NATIONAL|BUTAGAZ|STARLIGUE|PROLIGUE/.test(n)) return 1;
+  if (niveau === "departemental") return 2;
+  if (niveau === "regional" || niveau === "national") return 1;
+  return null;
 }
 
 /** Entente ou convention entre clubs : « ENT BOUZONVILLE / BOULAY », « CONV. JDA / FONTAINE ». */
@@ -98,16 +118,30 @@ function libelle(cat: Categorie, sx: Sexe, rg: number, ent: boolean): string {
 export function grouperEquipes<T extends EquipeEntree>(equipes: T[]): Array<GroupeEquipes<T>> {
   const groupes = new Map<string, GroupeEquipes<T>>();
 
-  for (const eq of equipes) {
+  // Inscriptions seniors dont le nom ne donne aucun rang : si elles couvrent deux niveaux de jeu
+  // (régional + départemental), ce sont deux équipes — le niveau fait office de rang.
+  const sansRang = new Map<string, Set<number>>();
+  const infos = equipes.map((eq) => {
     const premiere = eq.engagements[0];
     const texteCompetition = premiere ? `${premiere.competition.nom} ${premiere.phase.nom}` : "";
-    // Le nom de l'équipe ne sert que de repli quand la compétition ne dit rien (« U17M » dans le nom).
     let cat = categorie(texteCompetition);
     if (cat === "Autre") cat = categorie(eq.nom);
     let sx = sexe(texteCompetition);
     if (sx === "mixte") sx = sexe(eq.nom);
-    const rg = rang(eq.nom);
+    const explicite = rangExplicite(eq.nom);
     const ent = estEntente(eq.nom);
+    const tier = premiere ? tierCompetition(texteCompetition, premiere.competition.niveau) : null;
+    if (cat === "Seniors" && explicite === null && tier !== null) {
+      const k = `${sx}|${ent}`;
+      if (!sansRang.has(k)) sansRang.set(k, new Set());
+      sansRang.get(k)!.add(tier);
+    }
+    return { eq, cat, sx, explicite, ent, tier };
+  });
+
+  for (const { eq, cat, sx, explicite, ent, tier } of infos) {
+    const departage = cat === "Seniors" && explicite === null && tier !== null && (sansRang.get(`${sx}|${ent}`)?.size ?? 0) > 1;
+    const rg = explicite ?? (departage ? tier! : 1);
     const cle = `${cat}|${sx}|${rg}|${ent ? "entente" : "club"}`;
 
     let g = groupes.get(cle);
