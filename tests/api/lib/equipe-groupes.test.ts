@@ -176,3 +176,41 @@ describe("grouperEquipes — seniors de Bouzonville : deux équipes aux noms ide
     expect(g.map((x) => x.libelle)).toEqual(["Seniors F — entente", "Seniors F (équipe 2) — entente"]);
   });
 });
+
+describe("grouperEquipes — corrections manuelles (overrides)", () => {
+  const base = () => [
+    eq("A", "ENTENTE X/Y SM", "57-02 2 IEME DIVISION TERRITORIALE MASCULINE"),
+    eq("B", "ENTENTE X/Y SM", "57- 20 COUPE ECHO'SPORT SM"),
+  ];
+  const ov = (o: Partial<{ categorie: string | null; sexe: string | null; rang: number | null; entente: boolean | null; exclu: boolean }>) =>
+    ({ categorie: null, sexe: null, rang: null, entente: null, exclu: false, ...o });
+
+  it("sans correction : une seule équipe", () => {
+    expect(grouperEquipes(base())).toHaveLength(1);
+  });
+
+  it("un rang forcé sépare deux inscriptions que l'heuristique fusionne", () => {
+    const g = grouperEquipes(base(), new Map([["B", ov({ rang: 2 })]]));
+    expect(g.map((x) => x.libelle)).toEqual(["Seniors M — entente", "Seniors M (équipe 2) — entente"]);
+    expect(g[1]!.equipes.map((e) => e.id_ffhb)).toEqual(["B"]);
+  });
+
+  it("catégorie, sexe et entente forcés", () => {
+    const g = grouperEquipes(base(), new Map([["B", ov({ categorie: "-19", sexe: "F", entente: false })]]));
+    expect(g.map((x) => x.cle).sort()).toEqual(["-19|F|1|club", "Seniors|M|1|entente"]);
+  });
+
+  it("exclu : absente des groupes", () => {
+    const g = grouperEquipes(base(), new Map([["A", ov({ exclu: true })]]));
+    expect(g.flatMap((x) => x.equipes.map((e) => e.id_ffhb))).toEqual(["B"]);
+  });
+
+  it("un rang forcé n'est pas écrasé par le départage par niveau", () => {
+    const data = [
+      eq("A", "ENTENTE X/Y SM", "56-03 CHAMPIONNAT HONNEUR MASCULIN", "H", "regional"),
+      eq("B", "ENTENTE X/Y SM", "57-02 2 IEME DIVISION TERRITORIALE MASCULINE"),
+    ];
+    const g = grouperEquipes(data, new Map([["B", ov({ rang: 1 })]]));
+    expect(g).toHaveLength(1);
+  });
+});
