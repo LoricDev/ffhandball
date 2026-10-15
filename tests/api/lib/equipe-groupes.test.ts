@@ -144,18 +144,35 @@ describe("grouperEquipes — JDA Dijon (cas d'ententes, conventions et équipes 
   });
 });
 
-describe("grouperEquipes — seniors de Bouzonville : championnat + coupes + Coupe de France (ententes partenaires incluses)", () => {
+describe("grouperEquipes — seniors de Bouzonville : deux équipes aux noms identiques, départagées par le niveau", () => {
   const groupes = grouperEquipes([
     eq("2128182", "ENT BOUZONVILLE/BOULAY SM HON", "56-03 CHAMPIONNAT HONNEUR MASCULIN", "HONNEUR MASCULIN", "regional"),
-    // Entente dont Boulay est le porteur côté FFHB : « ENTENTE BOULAY/BOUZONVILLE SM »
+    // Entente dont Boulay est le porteur côté FFHB, même nom « …SM » pour les deux équipes
+    eq("2126551", "ENTENTE BOULAY/BOUZONVILLE SM", "57-02 2 IEME DIVISION TERRITORIALE MASCULINE", "57- DEUXIEME DIVISION TERRITORIALE MASCULINE"),
     eq("2133862", "ENTENTE BOULAY/BOUZONVILLE SM", "57- 20 COUPE ECHO'SPORT SM", "57-COUPE ECHO'SPORT  SM 1° TOUR"),
     eq("2169469", "ENT BOUZONVILLE/BOULAY", "COUPE DE FRANCE REGIONALE MASCULINE 2026-2027", "CDF REG MAS (1° TOUR)", "national"),
+    eq("2203191", "ENT BOULAY/BOUZONVILLE", "COUPE DE FRANCE DEPARTEMENTALE MASCULINE 2026-2027", "CDF DEP MAS (1° TOUR)", "national"),
   ]);
 
-  it("les trois inscriptions forment UNE équipe réelle « Seniors M — entente »", () => {
-    expect(groupes).toHaveLength(1);
-    expect(groupes[0]!.libelle).toBe("Seniors M — entente");
-    expect(groupes[0]!.equipes.map((e) => e.id_ffhb).sort()).toEqual(["2128182", "2133862", "2169469"]);
-    expect(groupes[0]!.competitions).toHaveLength(3);
+  it("Honneur + Coupe de France régionale = équipe 1 ; 2e division + coupe départementale + Echo'Sport = équipe 2", () => {
+    expect(groupes.map((g) => g.libelle)).toEqual(["Seniors M — entente", "Seniors M (équipe 2) — entente"]);
+    expect(groupes[0]!.equipes.map((e) => e.id_ffhb).sort()).toEqual(["2128182", "2169469"]);
+    expect(groupes[1]!.equipes.map((e) => e.id_ffhb).sort()).toEqual(["2126551", "2133862", "2203191"]);
+  });
+
+  it("un seul niveau de jeu dans le club : une seule équipe (pas de rang inventé)", () => {
+    const g = grouperEquipes([
+      eq("1", "ENTENTE X/Y SM", "57-02 2 IEME DIVISION TERRITORIALE MASCULINE"),
+      eq("2", "ENTENTE X/Y SM", "57- 20 COUPE ECHO'SPORT SM"),
+    ]);
+    expect(g).toHaveLength(1);
+  });
+
+  it("un rang écrit dans le nom l'emporte sur le niveau (SF 2 en 2e division féminine)", () => {
+    const g = grouperEquipes([
+      eq("1", "ENTENTE X/Y 1 SF", "57-04 1° DIVISION TERRITORIALE FEMININE"),
+      eq("2", "ENTENTE X/Y SF 2", "57-05 2E DIVISION TERRITORIALE FEMININES"),
+    ]);
+    expect(g.map((x) => x.libelle)).toEqual(["Seniors F — entente", "Seniors F (équipe 2) — entente"]);
   });
 });
