@@ -201,7 +201,7 @@ export async function getClubMatchsCalendar(opts: ClubMatchsOptions): Promise<Cl
  *  - `club.code_ffhb` = code FFHB 7 chiffres (colonne générée depuis l'email, = préfixe des
  *    numéros de licence) → couche `licence`. null si inconnu → couche licence inerte.
  */
-async function resolveLinkedTeams(
+export async function resolveLinkedTeams(
   club: { id_ffhb: string; code_ffhb: string | null; nom: string },
   saison: string,
   include_ententes: boolean,

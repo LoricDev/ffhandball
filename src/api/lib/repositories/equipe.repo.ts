@@ -1,5 +1,7 @@
 // src/api/lib/repositories/equipe.repo.ts
 import { query } from "@/db/client.js";
+import { resolveLinkedTeams } from "@/api/lib/repositories/club-matchs.repo.js";
+import type { Confidence, MatchMethod } from "@/api/lib/club-matching.js";
 
 export interface EngagementRef {
   poule: { id_ffhb: string; nom: string };
@@ -34,6 +36,8 @@ export interface ClubEquipe {
   id_ffhb: string;
   nom: string;
   engagements: EngagementRef[];
+  /** Comment l'équipe a été rattachée au club (absent pour la liste « équipes propres » historique). */
+  lien?: { methode: MatchMethod; confiance: Confidence };
 }
 
 async function engagementsByEquipeIds(equipeIds: bigint[]): Promise<Map<string, EngagementRef[]>> {
@@ -186,6 +190,28 @@ export async function getEquipeJoueurs(idFfhb: string, saison: string): Promise<
     [eqRes.rows[0]!.id],
   );
   return r.rows;
+}
+
+/**
+ * Équipes d'un club : celles dont il est le porteur (pont autoritatif ext_structure_id = clubs.id_ffhb)
+ * ET les ententes / conventions où il est seulement partenaire. Chez FFHB une entente est rattachée au
+ * club « porteur » : « ENTENTE BOULAY/BOUZONVILLE SM » appartient à Boulay, donc sans cette résolution
+ * elle manquait dans la liste de Bouzonville. Même résolution multi-signal que /clubs/:id/matchs
+ * (licences des joueurs, structure, nom) ; chaque équipe porte le signal et la confiance qui l'ont rattachée.
+ */
+export async function listClubEquipesAvecPartenaires(
+  club: { id_ffhb: string; code_ffhb: string | null; nom: string },
+  saison: string,
+  opts: { include_ententes: boolean; min_confidence?: Confidence },
+): Promise<ClubEquipe[]> {
+  const linked = await resolveLinkedTeams(club, saison, opts.include_ententes, opts.min_confidence);
+  const engMap = await engagementsByEquipeIds(linked.map((l) => l.id));
+  return linked.map((l) => ({
+    id_ffhb: l.id_ffhb,
+    nom: l.nom,
+    engagements: engMap.get(l.id.toString()) ?? [],
+    lien: { methode: l.match_method, confiance: l.confidence },
+  }));
 }
 
 /** Équipes propres d'un club (pont autoritatif ext_structure_id = clubs.id_ffhb). */

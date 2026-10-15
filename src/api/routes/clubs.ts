@@ -13,7 +13,7 @@ import { getClubMatchsCalendar } from "@/api/lib/repositories/club-matchs.repo.j
 import { clubEquipeSchema, clubEquipesQuerySchema, groupeEquipesSchema } from "@/api/schemas/equipe.api.js";
 import { saisonQuerySchema } from "@/api/schemas/competition.api.js";
 import { grouperEquipes } from "@/api/lib/equipe-groupes.js";
-import { listClubEquipes } from "@/api/lib/repositories/equipe.repo.js";
+import { listClubEquipesAvecPartenaires } from "@/api/lib/repositories/equipe.repo.js";
 
 const clubs = new OpenAPIHono();
 
@@ -202,12 +202,12 @@ const clubEquipesRoute = createRoute({
 
 clubs.openapi(clubEquipesRoute, async (c) => {
   const { id_ffhb } = c.req.valid("param");
-  const { saison, grouper } = c.req.valid("query");
+  const { saison, grouper, include_ententes, min_confidence } = c.req.valid("query");
   const club = await getClubByIdFfhb(id_ffhb); // résout par id_ffhb OU code_ffhb
   if (!club) {
     return c.json({ error: { code: "NOT_FOUND" as const, message: `Club id_ffhb=${id_ffhb} introuvable` } }, 404);
   }
-  const data = await listClubEquipes(club.id_ffhb, saison);
+  const data = await listClubEquipesAvecPartenaires(club, saison, { include_ententes, min_confidence });
   const groupes = grouper ? { groupes: grouperEquipes(data) } : {};
   return c.json({ data, ...groupes, meta: { saison, club: { id_ffhb: club.id_ffhb, code_ffhb: club.code_ffhb, nom: club.nom } } }, 200);
 });
