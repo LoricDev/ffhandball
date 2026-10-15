@@ -9,10 +9,10 @@
 // C'est une HEURISTIQUE : elle couvre les nommages courants mais pas tous. Ce qu'elle ne sait pas
 // classer tombe en « Autre » (jamais perdu). Voir tests/api/lib/equipe-groupes.test.ts.
 
-export type Categorie = "Seniors" | "-20" | "-18" | "-17" | "-15" | "-13" | "-11" | "-9" | "-7" | "Loisir" | "Autre";
+export type Categorie = "Seniors" | "-20" | "-19" | "-18" | "-17" | "-15" | "-13" | "-11" | "-9" | "-7" | "Loisir" | "Autre";
 export type Sexe = "M" | "F" | "mixte";
 
-const AGES = [7, 9, 11, 13, 15, 17, 18, 20];
+const AGES = [7, 9, 11, 13, 15, 17, 18, 19, 20];
 
 const strip = (s: string): string =>
   s
@@ -86,7 +86,7 @@ export interface GroupeEquipes<T extends EquipeEntree = EquipeEntree> {
   competitions: Array<{ id_ffhb: string; nom: string; niveau: string | null }>;
 }
 
-const ORDRE_CATEGORIE: Categorie[] = ["Seniors", "-20", "-18", "-17", "-15", "-13", "-11", "-9", "-7", "Loisir", "Autre"];
+const ORDRE_CATEGORIE: Categorie[] = ["Seniors", "-20", "-19", "-18", "-17", "-15", "-13", "-11", "-9", "-7", "Loisir", "Autre"];
 const ORDRE_SEXE: Sexe[] = ["M", "F", "mixte"];
 
 function libelle(cat: Categorie, sx: Sexe, rg: number, ent: boolean): string {
