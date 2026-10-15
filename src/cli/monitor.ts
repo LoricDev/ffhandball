@@ -10,6 +10,7 @@ import { closePool, query } from "@/db/client.js";
 import { env } from "@/config/env.js";
 import { canonicalizeSaison } from "@/etl/shared/parse-saison.js";
 import { sendMail } from "@/lib/mailer.js";
+import { loadJourneesRattrapage, loadCouvertureJournees, type Rattrapage, type CouvertureJournees } from "@/lib/rattrapage-journees.js";
 import { loadSiteCoverage, evaluateSiteCoverage, type SiteCoverage } from "@/lib/site-coverage.js";
 import { renderEmail, emailTable, emailCallout, emailList, emailCodeBlock, escapeHtml } from "@/lib/email-template.js";
 
@@ -174,6 +175,41 @@ function siteCoverageHtml(c: SiteCoverage): string {
       ]),
       ["l", "l", "l", "r", "l"],
     )
+  );
+}
+
+function couvertureHtml(c: CouvertureJournees): string {
+  const manquantes = c.journees_site - c.journees_en_base;
+  const pct = c.journees_site ? ((c.journees_en_base / c.journees_site) * 100).toFixed(1) : "100";
+  return (
+    H("Base vs site — journées de championnat déjà commencées") +
+    emailTable(
+      ["", "Valeur"],
+      [
+        ["Journées commencées sur le site", String(c.journees_site)],
+        ["Journées présentes en base", `${c.journees_en_base} (${pct} %)`],
+        ["Journées manquantes ou sans résultat", String(manquantes)],
+        ["Poules concernées", `${c.poules_incompletes} / ${c.poules_site}`],
+        ["Dernière lecture du site", c.derniere_lecture ? fmtDate(c.derniere_lecture) : "–"],
+      ],
+      ["l", "r"],
+    ) +
+    (c.top.length
+      ? `<div style="height:8px;"></div>` + emailTable(["Compétitions les plus en retard", "Journées manquantes"], c.top.map((t) => [t.competition, String(t.manquantes)]), ["l", "r"])
+      : "")
+  );
+}
+
+function rattrapageHtml(c: Rattrapage): string {
+  const reste = c.journees_reportees > 0
+    ? `<strong>${c.journees_reportees}</strong> journée(s) restent à récupérer (plafond de ${c.plafond} pages atteint) : poursuite les nuits suivantes.`
+    : "Plus aucune journée passée manquante : le rattrapage est terminé.";
+  const echec = c.journees_en_echec > 0 ? ` ${c.journees_en_echec} journée(s) en échec (réessayées la nuit suivante).` : "";
+  return (
+    emailCallout(
+      `<strong>Rattrapage des journées passées</strong> (nuit du ${fmtDate(c.started_at)}) : ${c.journees_recuperees} journée(s) récupérée(s) sur ${c.poules_concernees} poule(s). ${reste}${echec}`,
+      "info",
+    ) + `<div style="height:14px;"></div>`
   );
 }
 
@@ -438,6 +474,26 @@ async function main(): Promise<void> {
   if (coverage) {
     problems.push(...evaluateSiteCoverage(coverage));
     extraHtml += siteCoverageHtml(coverage);
+  }
+
+  // 5. Rattrapage des journées passées (scrape matchs --journees=manquantes) : ce qui a été récupéré cette
+  //    nuit et ce qui reste (plafond de pages). Info seulement ; alerte si des journées échouent en masse.
+  const couverture = await loadCouvertureJournees(saison);
+  const rattrapage = await loadJourneesRattrapage({ saison, maxAgeHours: 36 });
+  if (couverture) {
+    const manquantes = couverture.journees_site - couverture.journees_en_base;
+    if (manquantes > 0 && rattrapage && rattrapage.journees_recuperees === 0) {
+      problems.push(`${manquantes} journée(s) passée(s) du site absentes de la base et le rattrapage de cette nuit n'en a récupéré aucune (bloqué ?)`);
+    }
+    extraHtml = couvertureHtml(couverture) + extraHtml;
+  }
+  if (rattrapage) {
+    if (rattrapage.journees_en_echec > 0 && rattrapage.journees_en_echec >= rattrapage.journees_recuperees) {
+      problems.push(
+        `Rattrapage des journées passées : ${rattrapage.journees_en_echec} journée(s) en échec pour ${rattrapage.journees_recuperees} récupérée(s) (site injoignable ou bloqué ?)`,
+      );
+    }
+    extraHtml = rattrapageHtml(rattrapage) + extraHtml;
   }
 
   // Info : rattrapage FdM en cours (les causes « jamais tentée » se résorbent alors d'elles-mêmes).

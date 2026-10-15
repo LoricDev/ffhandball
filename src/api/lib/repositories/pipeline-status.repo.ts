@@ -1,6 +1,8 @@
 // src/api/lib/repositories/pipeline-status.repo.ts
 // Instantané temps réel du pipeline (scrapes, ETL, trafic API, base) pour le tableau de bord admin.
 import { query } from "@/db/client.js";
+import { currentSaison } from "@/lib/saison.js";
+import { loadJourneesRattrapage, loadCouvertureJournees } from "@/lib/rattrapage-journees.js";
 
 /** Tables raw dont le total sert de dénominateur pour la progression d'un ETL en streaming. */
 const STREAMING_RAW: Record<string, string> = {
@@ -91,5 +93,7 @@ export async function getPipelineSnapshot() {
     last_by_job: lastByJob.rows,
     api: { ...traffic.rows[0], recent_errors: errors.rows },
     db: { ...db.rows[0], top_tables: tables.rows },
+    rattrapage: await loadJourneesRattrapage(),
+    couverture: await loadCouvertureJournees(currentSaison()),
   };
 }

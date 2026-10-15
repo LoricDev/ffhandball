@@ -90,6 +90,7 @@
   <div class="tab" id="tab-pipeline">
     <section class="grid" id="kpis"></section>
     <section class="card"><h2>En cours</h2><div id="running"></div></section>
+    <section class="card"><h2>Base vs site — journées de championnat</h2><div id="coverage"></div><h2 style="margin-top:14px">Rattrapage des journées passées</h2><div id="catchup" class="mut"></div></section>
     <section class="card"><h2>Crons</h2><div class="scroll"><table id="crons"></table></div></section>
     <section class="two">
       <div class="card"><h2>Dernier passage par tâche</h2><div class="scroll"><table id="jobs"></table></div></div>
@@ -248,7 +249,30 @@ function runningCard(kind, name, saison, started, done, total, extra, key) {
       el("span", {}, st.r ? `${st.r.toFixed(1)}/s` : "", eta != null ? ` · reste ~${dur(eta)}` : "", stalled ? el("span", { class: "err" }, " · aucune progression depuis ~30 s") : "")));
 }
 
+function renderCoverage(cv) {
+  if (!cv) { $("coverage").textContent = "Pas encore de lecture du site (disponible après le prochain scrape des matchs)."; return; }
+  const manq = cv.journees_site - cv.journees_en_base;
+  const pct = cv.journees_site ? (cv.journees_en_base / cv.journees_site) * 100 : 100;
+  $("coverage").replaceChildren(
+    el("div", {}, el("b", {}, `${fmt(cv.journees_en_base)} / ${fmt(cv.journees_site)}`), ` journées commencées sur le site sont en base (${pct.toFixed(1)} %)`),
+    el("div", { class: "bar" }, el("i", { style: `width:${pct}%` })),
+    el("div", {}, manq > 0 ? el("span", { class: "partial" }, `${fmt(manq)} manquante(s) ou sans résultat, dans ${fmt(cv.poules_incompletes)} poule(s) sur ${fmt(cv.poules_site)}`) : el("span", { class: "success" }, "Base à jour avec le site"), el("span", { class: "mut" }, ` · site lu ${ago(cv.derniere_lecture)}`)),
+    ...cv.top.map((t) => el("div", { class: "mut" }, `${t.competition} : ${fmt(t.manquantes)}`)));
+}
+
+function renderCatchup(c) {
+  if (!c) { $("catchup").textContent = "Pas encore de passage (le cron de 02:00 l'effectue chaque nuit)."; return; }
+  const reste = c.journees_reportees > 0
+    ? el("span", { class: "partial" }, `${fmt(c.journees_reportees)} journée(s) restent à récupérer (plafond ${fmt(c.plafond)} pages/nuit) — poursuite la nuit suivante`)
+    : el("span", { class: "success" }, "terminé : plus aucune journée passée manquante");
+  $("catchup").replaceChildren(
+    el("div", {}, `Dernier passage ${ago(c.started_at)} : `, el("b", {}, fmt(c.journees_recuperees)), ` journée(s) récupérée(s) sur ${fmt(c.poules_concernees)} poule(s)`),
+    el("div", {}, reste),
+    c.journees_en_echec ? el("div", { class: "err" }, `${fmt(c.journees_en_echec)} journée(s) en échec (réessayées la nuit suivante)`) : null);
+}
+
 function renderPipeline(d) {
+  renderCoverage(d.couverture); renderCatchup(d.rattrapage);
   const all = [...d.scrapes.map((r) => ({ k: "scrape", r })), ...d.etls.map((r) => ({ k: "etl", r }))].filter(({ r }) => r.status === "running");
   const run = all.filter(({ k, r }) => !isOrphan(k, r));
   const cronsAll = (d.crons || []).filter((c) => c.status === "running");
