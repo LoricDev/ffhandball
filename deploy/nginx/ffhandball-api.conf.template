@@ -4,6 +4,9 @@ server {
     listen 80;
     server_name {{DOMAIN}};
 
+    # Sondes de scanners coupées sans réponse (.env, .git, PHP, WordPress…)
+    include snippets/ffhandball-block-scanners.conf;
+
     # Let's Encrypt verification (avant certbot HTTPS redirect)
     location /.well-known/acme-challenge/ {
         root /var/www/html;
