@@ -1,7 +1,7 @@
 // src/api/routes/matchs.ts
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { matchListItemSchema, matchDetailSchema, matchListQuerySchema } from "@/api/schemas/match.api.js";
-import { errorResponseSchema, paginationMetaSchema } from "@/api/schemas/common.js";
+import { errorResponseSchema, paginationMetaWithSaisonSchema } from "@/api/schemas/common.js";
 import { listMatchs, getMatchDetail } from "@/api/lib/repositories/match.repo.js";
 
 const matchs = new OpenAPIHono();
@@ -17,7 +17,7 @@ const listRoute = createRoute({
         "application/json": {
           schema: z.object({
             data: z.array(matchListItemSchema),
-            meta: paginationMetaSchema,
+            meta: paginationMetaWithSaisonSchema,
           }),
         },
       },
@@ -33,12 +33,13 @@ matchs.openapi(listRoute, async (c) => {
     date_from: q.date_from,
     date_to: q.date_to,
     statut: q.statut,
+    saison: q.saison,
     limit: q.limit,
     offset: q.offset,
   });
   return c.json({
     data: result.data,
-    meta: { total: result.total, limit: q.limit, offset: q.offset },
+    meta: { total: result.total, limit: q.limit, offset: q.offset, saison: q.saison ?? null },
   });
 });
 

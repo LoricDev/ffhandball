@@ -1,5 +1,6 @@
 // src/api/lib/repositories/search.repo.ts
 import { query } from "@/db/client.js";
+import { currentSaison } from "@/lib/saison.js";
 
 export interface SearchResult {
   type: "club" | "equipe" | "joueur";
@@ -18,7 +19,7 @@ export interface SearchOptions {
 
 export async function search(opts: SearchOptions): Promise<SearchResult[]> {
   const { q, type, limit } = opts;
-  const saison = opts.saison ?? "2025-2026";
+  const saison = opts.saison ?? currentSaison();
 
   if (type === "clubs") {
     const r = await query<SearchResult>(

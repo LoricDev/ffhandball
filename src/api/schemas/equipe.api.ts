@@ -1,5 +1,6 @@
 // src/api/schemas/equipe.api.ts
 import { z } from "@hono/zod-openapi";
+import { currentSaison } from "@/lib/saison.js";
 
 export const engagementRefSchema = z
   .object({
@@ -37,7 +38,7 @@ export const rosterJoueurItemSchema = z
   .openapi("RosterJoueurItem");
 
 export const equipeMatchsQuerySchema = z.object({
-  saison: z.string().regex(/^\d{4}-\d{4}$/).default("2025-2026"),
+  saison: z.string().regex(/^\d{4}-\d{4}$/).default(() => currentSaison()),
   date_from: z.string().optional(),
   date_to: z.string().optional(),
   statut: z.enum(["a_jouer", "joue", "reporte", "annule", "forfait"]).optional(),

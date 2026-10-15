@@ -5,7 +5,7 @@ import {
   competitionDetailSchema,
   competitionListQuerySchema,
 } from "@/api/schemas/competition.api.js";
-import { paginationMetaSchema, errorResponseSchema } from "@/api/schemas/common.js";
+import { paginationMetaSchema, paginationMetaWithSaisonSchema, errorResponseSchema } from "@/api/schemas/common.js";
 import { listCompetitions, getCompetitionDetail } from "@/api/lib/repositories/competition.repo.js";
 
 const competitions = new OpenAPIHono();
@@ -20,7 +20,7 @@ const listRoute = createRoute({
     200: {
       content: {
         "application/json": {
-          schema: z.object({ data: z.array(competitionListItemSchema), meta: paginationMetaSchema }),
+          schema: z.object({ data: z.array(competitionListItemSchema), meta: paginationMetaWithSaisonSchema }),
         },
       },
       description: "Liste paginée des compétitions",
@@ -38,7 +38,7 @@ competitions.openapi(listRoute, async (c) => {
     limit: q.limit,
     offset: q.offset,
   });
-  return c.json({ data, meta: { total, limit: q.limit, offset: q.offset } });
+  return c.json({ data, meta: { total, limit: q.limit, offset: q.offset, saison: q.saison } });
 });
 
 const detailRoute = createRoute({

@@ -1,4 +1,5 @@
 // src/api/routes/search.ts
+import { currentSaison } from "@/lib/saison.js";
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { searchResultItemSchema, searchQuerySchema } from "@/api/schemas/search.api.js";
 import { errorResponseSchema } from "@/api/schemas/common.js";
@@ -17,6 +18,7 @@ const searchRoute = createRoute({
         "application/json": {
           schema: z.object({
             data: z.array(searchResultItemSchema),
+            meta: z.object({ saison: z.string().openapi({ description: "Saison utilisée pour la recherche d'équipes" }) }),
           }),
         },
       },
@@ -38,7 +40,7 @@ searchRouter.openapi(searchRoute, async (c) => {
     );
   }
   const data = await search({ q, type, saison, limit });
-  return c.json({ data }, 200);
+  return c.json({ data, meta: { saison: saison ?? currentSaison() } }, 200);
 });
 
 export default searchRouter;

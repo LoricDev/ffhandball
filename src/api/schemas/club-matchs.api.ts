@@ -1,5 +1,6 @@
 // src/api/schemas/club-matchs.api.ts
 import { z } from "@hono/zod-openapi";
+import { currentSaison } from "@/lib/saison.js";
 
 export const equipeLieeSchema = z
   .object({
@@ -71,7 +72,7 @@ export const clubMatchsQuerySchema = z.object({
   saison: z
     .string()
     .regex(/^\d{4}-\d{4}$/)
-    .default("2025-2026")
+    .default(() => currentSaison())
     .openapi({
       description: "Code saison (format YYYY-YYYY)",
       example: "2025-2026",
@@ -133,6 +134,7 @@ export const clubMatchsMetaSchema = z
     total: z.number().int().nonnegative().openapi({ description: "Nombre total de matchs correspondant aux filtres" }),
     limit: z.number().int().positive(),
     offset: z.number().int().nonnegative(),
+    saison: z.string().openapi({ example: "2026-2027", description: "Saison utilisée pour cette réponse" }),
     club: z
       .object({
         id_ffhb: z.string(),

@@ -1,5 +1,6 @@
 // src/api/schemas/competition.api.ts
 import { z } from "@hono/zod-openapi";
+import { currentSaison } from "@/lib/saison.js";
 import { classementItemSchema } from "@/api/schemas/classement.api.js";
 
 export const competitionListItemSchema = z
@@ -27,7 +28,7 @@ export const competitionDetailSchema = competitionListItemSchema
   .openapi("CompetitionDetail");
 
 export const competitionListQuerySchema = z.object({
-  saison: z.string().regex(/^\d{4}-\d{4}$/).default("2025-2026").openapi({ example: "2025-2026" }),
+  saison: z.string().regex(/^\d{4}-\d{4}$/).default(() => currentSaison()).openapi({ example: "2025-2026" }),
   niveau: z.enum(["national", "regional", "departemental"]).optional(),
   sexe: z.enum(["M", "F", "mixte"]).optional(),
   q: z.string().min(2).optional().openapi({ description: "Recherche floue sur le nom (min 2 chars)" }),
@@ -36,7 +37,7 @@ export const competitionListQuerySchema = z.object({
 });
 
 export const saisonQuerySchema = z.object({
-  saison: z.string().regex(/^\d{4}-\d{4}$/).default("2025-2026").openapi({ example: "2025-2026" }),
+  saison: z.string().regex(/^\d{4}-\d{4}$/).default(() => currentSaison()).openapi({ example: "2025-2026" }),
 });
 
 export const pouleDetailSchema = z

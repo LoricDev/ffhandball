@@ -26,6 +26,11 @@ export const paginationMetaSchema = z
   })
   .openapi("PaginationMeta");
 
+/** Pagination + saison réellement utilisée (null = toutes les saisons, pour /matchs sans filtre). */
+export const paginationMetaWithSaisonSchema = paginationMetaSchema
+  .extend({ saison: z.string().nullable().openapi({ example: "2026-2027", description: "Saison utilisée pour cette réponse (null = toutes les saisons)" }) })
+  .openapi("PaginationMetaWithSaison");
+
 export const paginationQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(100).default(20),
   offset: z.coerce.number().int().nonnegative().default(0),

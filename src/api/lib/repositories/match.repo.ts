@@ -61,6 +61,7 @@ export interface MatchListOptions {
   date_from?: string;
   date_to?: string;
   statut?: string;
+  saison?: string;
   limit: number;
   offset: number;
 }
@@ -84,6 +85,10 @@ export async function listMatchs(opts: MatchListOptions): Promise<{ data: MatchL
   if (opts.statut) {
     params.push(opts.statut);
     where.push(`m.statut = $${params.length}`);
+  }
+  if (opts.saison) {
+    params.push(opts.saison);
+    where.push(`po.saison_code = $${params.length}`);
   }
 
   const whereClause = where.join(" AND ");
