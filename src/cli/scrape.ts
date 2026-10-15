@@ -19,7 +19,8 @@ import {
 } from "@/scrapers/ffhandball/competition-list.scraper.js";
 import { parseCompetitionDetail } from "@/scrapers/ffhandball/competition-detail.scraper.js";
 import { parseAvailableTypes, sectionSegmentForType } from "@/scrapers/ffhandball/competition-list.scraper.js";
-import { parseRencontreList, type JourneeInfo } from "@/scrapers/ffhandball/rencontre-list.scraper.js";
+import { parseRencontreList } from "@/scrapers/ffhandball/rencontre-list.scraper.js";
+import { journeesToFetch, JOURNEES_MODES, type JourneesMode } from "@/scrapers/shared/journees.js";
 import { parseClassement } from "@/scrapers/ffhandball/classement.scraper.js";
 import { resolveDateWindow, type DateWindow } from "@/scrapers/shared/date-window.js";
 import { parseStatsJoueurs } from "@/scrapers/ffhandball/stats-joueurs.scraper.js";
@@ -32,7 +33,7 @@ interface CliArgs {
   limit?: number;
   slug?: string;
   level?: "national" | "regional" | "departemental";
-  journees?: "all" | "courante" | "recent";
+  journees?: JourneesMode;
   window: DateWindow | null;
   reparseCache?: boolean;
   /** matchs : ne re-scraper que les poules contenant au moins un match en forfait. */
@@ -85,13 +86,12 @@ function parseCliArgs(): CliArgs {
     level = values.level as "national" | "regional" | "departemental";
   }
 
-  let journees: "all" | "courante" | "recent" | undefined;
+  let journees: JourneesMode | undefined;
   if (values.journees !== undefined) {
-    const valid = ["all", "courante", "recent"] as const;
-    if (!valid.includes(values.journees as (typeof valid)[number])) {
-      throw new Error(`Invalid --journees value: ${values.journees}. Use 'all', 'recent' or 'courante'.`);
+    if (!JOURNEES_MODES.includes(values.journees as JourneesMode)) {
+      throw new Error(`Invalid --journees value: ${values.journees}. Use ${JOURNEES_MODES.map((m) => `'${m}'`).join(", ")}.`);
     }
-    journees = values.journees as "all" | "courante" | "recent";
+    journees = values.journees as JourneesMode;
   }
 
   let recentDays: number | undefined;
@@ -605,53 +605,36 @@ async function selectScrapablePoules(
   return res.rows;
 }
 
-function startOfDayMs(now: Date): number {
-  const d = new Date(now);
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
-}
-
 /**
- * Journées à fetcher EN PLUS de la page courante, selon le mode :
- *  - "courante" : aucune (seule la page par défaut, déjà récupérée).
- *  - "all"      : toutes les journées DÉJÀ jouées (on saute les journées futures : aucun match
- *                 à récupérer, et ce sont autant de hits non-cachés qui font basculer le WAF).
- *  - "recent"   : seulement les journées jouées dans la fenêtre glissante des N derniers jours
- *                 (runs réguliers ; le backfill complet se fait une fois en "all").
- * La journée déjà couverte par la page courante est toujours exclue.
+ * Journées « complètes » par poule (id FFHB) : présentes en base et sans match resté « à jouer » alors que
+ * sa date est passée (résultat jamais récupéré). Tout le reste est à (re)lire en mode « manquantes ».
  */
-function journeesToFetch(
-  mode: "all" | "courante" | "recent",
-  journees: JourneeInfo[],
-  alreadyFetched: number | undefined,
-  now: Date,
-): number[] {
-  if (mode === "courante") return [];
-  const todayMs = startOfDayMs(now);
-  const recentFromMs = todayMs - env.SCRAPE_MATCHS_RECENT_DAYS * 86_400_000;
-  const picked: number[] = [];
-  for (const j of journees) {
-    if (j.numero === alreadyFetched) continue;
-    const debutMs = j.date_debut ? Date.parse(`${j.date_debut}T00:00:00`) : NaN;
-    const finMs = j.date_fin ? Date.parse(`${j.date_fin}T23:59:59`) : debutMs;
-    // Saute les journées futures (date de début > aujourd'hui) : pas encore jouées.
-    if (Number.isFinite(debutMs) && debutMs > todayMs) continue;
-    if (mode === "recent") {
-      const refMs = Number.isFinite(finMs) ? finMs : debutMs;
-      // Sans date exploitable, on ne peut pas confirmer « récent » → on n'ajoute pas (la page
-      // courante couvre déjà la journée en cours).
-      if (!Number.isFinite(refMs) || refMs < recentFromMs) continue;
-    }
-    picked.push(j.numero);
+async function loadCompleteJournees(saison: string): Promise<Map<string, Set<number>>> {
+  const r = await query<{ poule: string; journee: number }>(
+    `SELECT po.id_ffhb AS poule, m.journee
+       FROM core.matchs m
+       JOIN core.poules po ON po.id = m.poule_id
+       JOIN core.phases ph ON ph.id = po.phase_id
+       JOIN core.competitions c ON c.id = ph.competition_id
+      WHERE c.saison_code = $1 AND m.journee IS NOT NULL
+      GROUP BY po.id_ffhb, m.journee
+     HAVING NOT bool_or(m.statut = 'a_jouer' AND m.date_heure < now() - interval '6 hours')`,
+    [saison],
+  );
+  const map = new Map<string, Set<number>>();
+  for (const row of r.rows) {
+    let set = map.get(row.poule);
+    if (!set) map.set(row.poule, (set = new Set()));
+    set.add(row.journee);
   }
-  return picked;
+  return map;
 }
 
 async function scrapeMatchs(
   saison: string,
   opts: {
     level?: "national" | "regional" | "departemental";
-    journees?: "all" | "courante" | "recent";
+    journees?: JourneesMode;
     limit?: number;
     window?: DateWindow | null;
     forfaits?: boolean;
@@ -674,6 +657,10 @@ async function scrapeMatchs(
     let pouleSkipped = 0;
     let processed = 0;
     const mode = opts.journees ?? "courante";
+    // Mode « manquantes » : journées déjà complètes en base, par poule (pas besoin de les re-télécharger),
+    // et plafond de pages supplémentaires par run pour étaler le rattrapage initial sur plusieurs nuits.
+    const completes = mode === "manquantes" ? await loadCompleteJournees(saison) : new Map<string, Set<number>>();
+    let extraPages = 0;
     // Horloge figée pour tout le run : « journée future » et « fenêtre récente » sont évaluées
     // de façon cohérente d'une poule à l'autre.
     const now = new Date();
@@ -721,9 +708,14 @@ async function scrapeMatchs(
 
       // Journées supplémentaires à fetcher selon le mode (all/recent), en sautant les futures.
       const journeeAlreadyFetched = parsed.matchs[0]?.journee;
-      const remaining = journeesToFetch(mode, parsed.journees, journeeAlreadyFetched, now);
+      const remaining = journeesToFetch(mode, parsed.journees, journeeAlreadyFetched, now, {
+        recentDays: env.SCRAPE_MATCHS_RECENT_DAYS,
+        completes: completes.get(po.ext_poule_id),
+      });
       if (remaining.length > 0) {
         for (const j of remaining) {
+          if (mode === "manquantes" && extraPages >= env.SCRAPE_MISSING_JOURNEES_MAX) break;
+          extraPages++;
           const jUrl = `${baseUrl}?numero_journee=${j}`;
           const jRes = await tryFetchHtml(run, jUrl);
           if (jRes === null) continue;
@@ -1142,7 +1134,7 @@ async function main(): Promise<void> {
   } else if (args.entity === "matchs") {
     await scrapeMatchs(args.saison, {
       level: args.level as "national" | "regional" | "departemental" | undefined,
-      journees: args.journees as "all" | "courante" | "recent" | undefined,
+      journees: args.journees,
       limit: args.limit,
       window: args.window,
       forfaits: args.forfaits,

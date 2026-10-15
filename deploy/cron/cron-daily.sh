@@ -73,9 +73,10 @@ run_step "etl equipes"   pnpm etl --entity=equipes --saison="$SAISON"
 
 run_step "etl engagements"   pnpm etl --entity=engagements --saison="$SAISON"
 
-# 1. Matchs journée courante
-run_step "scrape matchs (journée courante)" \
-  pnpm scrape --entity=matchs --saison="$SAISON"
+# 1. Matchs : journée courante + journées passées absentes de la base (ou restées « à jouer »). Sans
+#    cela, une journée jouée n'est capturée que si le scrape passe pendant qu'elle est affichée par défaut.
+run_step "scrape matchs (courante + passées manquantes)" \
+  pnpm scrape --entity=matchs --saison="$SAISON" --journees=manquantes
 
 run_step "etl matchs (incrémental)" \
   pnpm etl --entity=matchs --saison="$SAISON" --incremental

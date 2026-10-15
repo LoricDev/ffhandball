@@ -18,6 +18,9 @@ const envSchema = z.object({
   SCRAPE_COOLDOWN_MAX_MS: z.coerce.number().int().min(0).default(300_000),
   // --journees=recent : fenêtre glissante (en jours) des journées récemment jouées à re-scraper
   // lors des runs réguliers (le backfill complet se fait une fois avec --journees=all).
+  // --journees=manquantes : plafond de pages supplémentaires par run (le rattrapage initial s'étale sur
+  // plusieurs nuits au lieu de saturer le site d'un coup).
+  SCRAPE_MISSING_JOURNEES_MAX: z.coerce.number().int().positive().default(2500),
   SCRAPE_MATCHS_RECENT_DAYS: z.coerce.number().int().positive().default(14),
   // FdM : âge (jours) au-delà duquel on cesse de retenter un 404 (cache négatif borné). Une
   // feuille non publiée N jours après le match ne le sera plus → on arrête de taper l'origine

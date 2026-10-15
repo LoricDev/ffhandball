@@ -277,7 +277,7 @@ open https://api.ton-domaine.fr/docs
 
 | Fréquence | Tâche | Coût HTTP | Durée |
 |---|---|---|---|
-| **Quotidien (nuit)** | Scrape journée courante matchs + ETLs | ~1500-3000 req | ~1h |
+| **Quotidien (nuit)** | Scrape matchs (courante + passées manquantes) + ETLs | ~1500-3000 req | ~1h |
 | **Hebdomadaire** | Re-scrape club-details (nouveaux clubs) + competitions structurelles | ~3000 req | ~30 min |
 | **Hebdomadaire (nuit)** | Scrape FdM pour matchs récemment joués (filtre date_from = J-7) | ~1-3k req | ~1h |
 | **Mensuel** | `--journees=all` matchs (rattrapage historique complet) | ~40-80k req | 17-33h (multi-nuits) |
@@ -294,7 +294,7 @@ crontab -l      # vérifier
 
 | Fréquence | Script | Rôle |
 |---|---|---|
-| Quotidien 02:00 | `cron-daily.sh` | **Structure des compétitions (poules, équipes, engagements)**, matchs (journée courante), ETL, classements, FdM des 10 derniers jours, stats joueurs |
+| Quotidien 02:00 | `cron-daily.sh` | **Structure des compétitions (poules, équipes, engagements)**, matchs (journée courante **+ journées passées manquantes**, `--journees=manquantes`, plafonné par `SCRAPE_MISSING_JOURNEES_MAX`), ETL, classements, FdM des 10 derniers jours, stats joueurs |
 | Quotidien 07:00 | `cron-monitor.sh` | **Récap quotidien par mail** (voir « Mails et alertes ») |
 | Toutes les 5 min | `cron-healthcheck.sh` | Sonde l'API (`/ready`) et le disque (seuil 85 %), un mail par incident et au rétablissement |
 | Lundi 03:00 | `cron-weekly-fdm-recent.sh` | FdM des 30 derniers jours + ETL |
