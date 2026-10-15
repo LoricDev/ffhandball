@@ -73,6 +73,11 @@ export const matchListQuerySchema = z.object({
   date_from: z.string().optional().openapi({ description: "Date début ISO 8601" }),
   date_to: z.string().optional().openapi({ description: "Date fin ISO 8601" }),
   statut: z.enum(["a_jouer", "joue", "reporte", "annule", "forfait"]).optional().openapi({ description: "Statut match" }),
+  saison: z
+    .string()
+    .regex(/^\d{4}-\d{4}$/)
+    .optional()
+    .openapi({ example: "2026-2027", description: "Filtre sur une saison. Sans ce paramètre : toutes les saisons (voir /saisons)." }),
   limit: z.coerce.number().int().positive().max(100).default(20),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

@@ -3,7 +3,7 @@ import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { equipeDetailSchema, equipeMatchsQuerySchema, rosterJoueurItemSchema } from "@/api/schemas/equipe.api.js";
 import { matchListItemSchema } from "@/api/schemas/match.api.js";
 import { saisonQuerySchema } from "@/api/schemas/competition.api.js";
-import { paginationMetaSchema, errorResponseSchema } from "@/api/schemas/common.js";
+import { paginationMetaWithSaisonSchema, errorResponseSchema } from "@/api/schemas/common.js";
 import { getEquipeDetail, getEquipeMatchs, getEquipeJoueurs } from "@/api/lib/repositories/equipe.repo.js";
 
 const equipes = new OpenAPIHono();
@@ -49,7 +49,7 @@ const matchsRoute = createRoute({
     200: {
       content: {
         "application/json": {
-          schema: z.object({ data: z.array(matchListItemSchema), meta: paginationMetaSchema }),
+          schema: z.object({ data: z.array(matchListItemSchema), meta: paginationMetaWithSaisonSchema }),
         },
       },
       description: "Matchs de l'équipe (triés par date_heure ASC)",
@@ -71,7 +71,7 @@ equipes.openapi(matchsRoute, async (c) => {
   if (!result) {
     return c.json({ error: { code: "NOT_FOUND" as const, message: `Équipe id_ffhb=${id_ffhb} introuvable` } }, 404);
   }
-  return c.json({ data: result.data, meta: { total: result.total, limit: q.limit, offset: q.offset } }, 200);
+  return c.json({ data: result.data, meta: { total: result.total, limit: q.limit, offset: q.offset, saison: q.saison } }, 200);
 });
 
 const joueursRoute = createRoute({

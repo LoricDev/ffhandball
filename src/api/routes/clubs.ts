@@ -160,6 +160,7 @@ clubs.openapi(clubMatchsRoute, async (c) => {
       total: result.total,
       limit: q.limit,
       offset: q.offset,
+      saison: q.saison,
       club: result.club,
       equipes_liees: result.equipes_liees,
     },
@@ -184,6 +185,7 @@ const clubEquipesRoute = createRoute({
           schema: z.object({
             data: z.array(clubEquipeSchema),
             meta: z.object({
+              saison: z.string(),
               club: z.object({ id_ffhb: z.string(), code_ffhb: z.string().nullable(), nom: z.string() }),
             }),
           }),
@@ -203,7 +205,7 @@ clubs.openapi(clubEquipesRoute, async (c) => {
     return c.json({ error: { code: "NOT_FOUND" as const, message: `Club id_ffhb=${id_ffhb} introuvable` } }, 404);
   }
   const data = await listClubEquipes(club.id_ffhb, saison);
-  return c.json({ data, meta: { club: { id_ffhb: club.id_ffhb, code_ffhb: club.code_ffhb, nom: club.nom } } }, 200);
+  return c.json({ data, meta: { saison, club: { id_ffhb: club.id_ffhb, code_ffhb: club.code_ffhb, nom: club.nom } } }, 200);
 });
 
 const clubJoueursRoute = createRoute({
@@ -258,6 +260,7 @@ const clubClassementsRoute = createRoute({
           schema: z.object({
             data: z.array(clubClassementItemSchema),
             meta: z.object({
+              saison: z.string(),
               club: z.object({ id_ffhb: z.string(), code_ffhb: z.string().nullable(), nom: z.string() }),
             }),
           }),
@@ -277,7 +280,7 @@ clubs.openapi(clubClassementsRoute, async (c) => {
     return c.json({ error: { code: "NOT_FOUND" as const, message: `Club id_ffhb=${id_ffhb} introuvable` } }, 404);
   }
   const data = await listClubClassements(club.id_ffhb, saison);
-  return c.json({ data, meta: { club: { id_ffhb: club.id_ffhb, code_ffhb: club.code_ffhb, nom: club.nom } } }, 200);
+  return c.json({ data, meta: { saison, club: { id_ffhb: club.id_ffhb, code_ffhb: club.code_ffhb, nom: club.nom } } }, 200);
 });
 
 export default clubs;
