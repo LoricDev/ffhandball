@@ -10,6 +10,8 @@ export interface ScrapeRunHandle {
   id: string;
   setTotal(n: number): Promise<void>;
   incrementPages(n?: number): Promise<void>;
+  /** Compteurs libres du run (colonne jsonb `stats`), écrasés à chaque appel. */
+  setStats(stats: Record<string, unknown>): Promise<void>;
   finishSuccess(): Promise<void>;
   finishFailure(error: unknown): Promise<void>;
   finishPartial(error: unknown): Promise<void>;
@@ -51,6 +53,9 @@ export async function startScrapeRun(input: ScrapeRunInput): Promise<ScrapeRunHa
         `UPDATE raw.scrape_runs SET pages_total = $1, last_activity_at = now() WHERE id = $2`,
         [n, id],
       );
+    },
+    async setStats(stats) {
+      await query(`UPDATE raw.scrape_runs SET stats = $1::jsonb WHERE id = $2`, [JSON.stringify(stats), id]);
     },
     async incrementPages(n = 1) {
       await query(

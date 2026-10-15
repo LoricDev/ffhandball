@@ -20,6 +20,7 @@ import {
 import { parseCompetitionDetail } from "@/scrapers/ffhandball/competition-detail.scraper.js";
 import { parseAvailableTypes, sectionSegmentForType } from "@/scrapers/ffhandball/competition-list.scraper.js";
 import { parseRencontreList } from "@/scrapers/ffhandball/rencontre-list.scraper.js";
+import { recordSiteJournees } from "@/lib/rattrapage-journees.js";
 import { journeesToFetch, JOURNEES_MODES, type JourneesMode } from "@/scrapers/shared/journees.js";
 import { parseClassement } from "@/scrapers/ffhandball/classement.scraper.js";
 import { resolveDateWindow, type DateWindow } from "@/scrapers/shared/date-window.js";
@@ -661,6 +662,10 @@ async function scrapeMatchs(
     // et plafond de pages supplémentaires par run pour étaler le rattrapage initial sur plusieurs nuits.
     const completes = mode === "manquantes" ? await loadCompleteJournees(saison) : new Map<string, Set<number>>();
     let extraPages = 0;
+    let journeesRecuperees = 0;
+    let journeesReportees = 0; // reste à faire : plafond de pages atteint
+    let journeesEnEchec = 0;
+    let poulesConcernees = 0;
     // Horloge figée pour tout le run : « journée future » et « fenêtre récente » sont évaluées
     // de façon cohérente d'une poule à l'autre.
     const now = new Date();
@@ -706,6 +711,11 @@ async function scrapeMatchs(
         natural_key: `${en.ext_equipe_id}-${en.ext_poule_id}`, payload: en, saison, http_status: res.status,
       }));
 
+      // Journées annoncées par le site : mémorisées pour comparer « site vs base » (récap, admin).
+      await recordSiteJournees(saison, po.ext_poule_id, parsed.journees).catch((err) =>
+        logger.warn({ err, poule: po.ext_poule_id }, "site_journees non enregistré"),
+      );
+
       // Journées supplémentaires à fetcher selon le mode (all/recent), en sautant les futures.
       const journeeAlreadyFetched = parsed.matchs[0]?.journee;
       const remaining = journeesToFetch(mode, parsed.journees, journeeAlreadyFetched, now, {
@@ -713,14 +723,19 @@ async function scrapeMatchs(
         completes: completes.get(po.ext_poule_id),
       });
       if (remaining.length > 0) {
-        for (const j of remaining) {
-          if (mode === "manquantes" && extraPages >= env.SCRAPE_MISSING_JOURNEES_MAX) break;
+        if (mode === "manquantes") poulesConcernees++;
+        for (const [idx, j] of remaining.entries()) {
+          if (mode === "manquantes" && extraPages >= env.SCRAPE_MISSING_JOURNEES_MAX) {
+            journeesReportees += remaining.length - idx;
+            break;
+          }
           extraPages++;
           const jUrl = `${baseUrl}?numero_journee=${j}`;
           const jRes = await tryFetchHtml(run, jUrl);
-          if (jRes === null) continue;
+          if (jRes === null) { journeesEnEchec++; continue; }
           const jParsed = parseRencontreList(jRes.body, jUrl, po.ext_poule_id);
-          if (!jParsed) continue;
+          if (!jParsed) { journeesEnEchec++; continue; }
+          journeesRecuperees++;
           for (const m of jParsed.matchs) {
             matchRows.push({
               scrape_run_id: run.id, source_url: m.source_url, source_site: "ffhandball.fr",
@@ -736,6 +751,16 @@ async function scrapeMatchs(
       totalInserted += mres.inserted;
     });
     prog.done(poules.length);
+    if (mode === "manquantes") {
+      await run.setStats({
+        mode,
+        poules_concernees: poulesConcernees,
+        journees_recuperees: journeesRecuperees,
+        journees_reportees: journeesReportees,
+        journees_en_echec: journeesEnEchec,
+        plafond: env.SCRAPE_MISSING_JOURNEES_MAX,
+      });
+    }
 
     logger.info(
       { totalInserted, pouleSkipped, mode, concurrency: env.SCRAPE_CONCURRENCY },
