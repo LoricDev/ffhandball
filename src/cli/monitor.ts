@@ -10,6 +10,7 @@ import { closePool, query } from "@/db/client.js";
 import { env } from "@/config/env.js";
 import { canonicalizeSaison } from "@/etl/shared/parse-saison.js";
 import { sendMail } from "@/lib/mailer.js";
+import { loadSiteCoverage, evaluateSiteCoverage, type SiteCoverage } from "@/lib/site-coverage.js";
 import { renderEmail, emailTable, emailCallout, emailList, emailCodeBlock, escapeHtml } from "@/lib/email-template.js";
 
 interface RunRow {
@@ -159,6 +160,23 @@ const fmtDate = (d: Date): string => d.toISOString().slice(0, 16).replace("T", "
 const NOTE_STYLE = "font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;font-size:12px;color:#64748b;margin-top:6px;";
 
 /** Matchs sans score mais sans FdM attendue : listés pour info, jamais en alerte. */
+function siteCoverageHtml(c: SiteCoverage): string {
+  return (
+    H(`Sections du site ffhandball.fr (dernier scrape des compétitions : ${fmtDate(c.runStartedAt)})`) +
+    emailTable(
+      ["Section", "Annoncée", "Lue", "Compétitions", "Remarque"],
+      c.rows.map((r) => [
+        r.section,
+        r.announced ? "oui" : "non",
+        r.crawled ? "oui" : "NON",
+        String(r.competitions),
+        r.note ?? "",
+      ]),
+      ["l", "l", "l", "r", "l"],
+    )
+  );
+}
+
 function bruitHtml(d: NoScoreDetails): string {
   if (d.bruit.length === 0) return "";
   return (
@@ -413,6 +431,14 @@ async function main(): Promise<void> {
     extraHtml = noScoreHtml(noScore, staleScoreDays);
   }
   extraHtml += bruitHtml(noScore);
+
+  // 4. Couverture du site : le site annonce-t-il des sections de compétitions que nous ne lisons pas ?
+  //    (la Coupe de France n'a ainsi jamais été scrapée : section à part, jamais visitée).
+  const coverage = await loadSiteCoverage(saison);
+  if (coverage) {
+    problems.push(...evaluateSiteCoverage(coverage));
+    extraHtml += siteCoverageHtml(coverage);
+  }
 
   // Info : rattrapage FdM en cours (les causes « jamais tentée » se résorbent alors d'elles-mêmes).
   const fdmRun = scrape.rows.find((r) => r.name === "feuilles-match" && r.status === "running");

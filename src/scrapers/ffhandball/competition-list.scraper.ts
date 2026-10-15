@@ -23,12 +23,21 @@ const TYPE_TO_NIVEAU: Record<string, "national" | "regional" | "departemental"> 
 };
 
 /**
- * Segment d'URL du site pour chaque type de compétition. Par défaut c'est le niveau (national, regional,
- * departemental) ; la Coupe de France a sa propre section : /competitions/saison-X/coupe-de-france/…
+ * Segment d'URL du site pour un type de compétition. NATIONAL / REGIONAL / DEPARTEMENTAL → le niveau ;
+ * tout autre type a sa propre section, nommée comme le type en kebab-case :
+ * COUPE_DE_FRANCE → /competitions/saison-X/coupe-de-france/…  (INTER_LIGUES → inter-ligues, etc.)
  */
-const TYPE_TO_URL_SEGMENT: Record<string, string> = {
-  COUPE_DE_FRANCE: "coupe-de-france",
-};
+export function sectionSegmentForType(type: string): string {
+  return type.toLowerCase().replace(/_/g, "-");
+}
+
+/** Types de compétition (sections) que le site annonce pour la saison : champ available_types du menu. */
+export function parseAvailableTypes(html: string): string[] {
+  const data = loadAttributes(html);
+  if (!data || typeof data !== "object") return [];
+  const types = (data as { available_types?: unknown }).available_types;
+  return Array.isArray(types) ? types.filter((t): t is string => typeof t === "string") : [];
+}
 
 const GENRE_TO_SEXE: Record<string, "M" | "F" | "mixte"> = {
   FEMININ: "F",
@@ -81,8 +90,8 @@ export function parseCompetitionList(
     if (seen.has(ext)) continue;
     seen.add(ext);
 
-    const mappedNiveau = TYPE_TO_NIVEAU[type];
-    if (!mappedNiveau) continue;
+    // Type inconnu (nouvelle section du site) : classé « national » plutôt qu'ignoré en silence.
+    const mappedNiveau = TYPE_TO_NIVEAU[type] ?? "national";
 
     const genre = typeof item.genre === "string" ? item.genre : null;
     const sexe = genre ? GENRE_TO_SEXE[genre] : undefined;
@@ -90,7 +99,7 @@ export function parseCompetitionList(
     const ext_structure_id =
       typeof item.structureId === "string" ? item.structureId : undefined;
 
-    const niveauUrl = TYPE_TO_URL_SEGMENT[type] ?? mappedNiveau;
+    const niveauUrl = sectionSegmentForType(type);
     const detail_url = `https://www.ffhandball.fr/competitions/saison-${saison}-${extSaisonId}/${niveauUrl}/${slugifyLibelle(libelle)}-${ext}/`;
 
     const candidate = {
