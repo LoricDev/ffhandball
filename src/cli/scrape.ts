@@ -389,6 +389,31 @@ async function scrapeCompetitions(
         }
       }
     }
+    // Coupe de France : section À PART du site (/coupe-de-france/), absente des listes par niveau. Elle
+    // regroupe 8 compétitions (nationale, fédérale, régionale, départementale × masculin/féminin) ;
+    // la régionale compte plusieurs centaines d'équipes engagées, dont celles de nos clubs.
+    if (!opts.level || opts.level === "national") {
+      const cdfUrl = `https://www.ffhandball.fr/competitions/saison-${saison}-${extSaisonId}/coupe-de-france/`;
+      const cdfRes = await tryFetchHtml(run, cdfUrl);
+      if (!cdfRes) {
+        listSkipped++;
+        logger.warn({ url: cdfUrl }, "liste Coupe de France injoignable, section sautée");
+      } else {
+        for (const c of parseCompetitionList(cdfRes.body, "national", cdfUrl, saison, extSaisonId)) {
+          await insertRaw("competitions", {
+            scrape_run_id: run.id,
+            source_url: c.source_url,
+            source_site: "ffhandball.fr",
+            natural_key: c.ext_competition_id,
+            payload: c,
+            saison,
+            http_status: cdfRes.status,
+          });
+          competitionsToDetail.push({ ext_competition_id: c.ext_competition_id, detail_url: c.detail_url });
+          totalCompetitions++;
+        }
+      }
+    }
     logger.info({ totalCompetitions }, "passe A done");
 
     // 3. Passe B — détails (phases + poules)

@@ -22,6 +22,14 @@ const TYPE_TO_NIVEAU: Record<string, "national" | "regional" | "departemental"> 
   INTER_COMITES: "national",
 };
 
+/**
+ * Segment d'URL du site pour chaque type de compétition. Par défaut c'est le niveau (national, regional,
+ * departemental) ; la Coupe de France a sa propre section : /competitions/saison-X/coupe-de-france/…
+ */
+const TYPE_TO_URL_SEGMENT: Record<string, string> = {
+  COUPE_DE_FRANCE: "coupe-de-france",
+};
+
 const GENRE_TO_SEXE: Record<string, "M" | "F" | "mixte"> = {
   FEMININ: "F",
   MASCULIN: "M",
@@ -82,7 +90,7 @@ export function parseCompetitionList(
     const ext_structure_id =
       typeof item.structureId === "string" ? item.structureId : undefined;
 
-    const niveauUrl = mappedNiveau; // url segment same as niveau
+    const niveauUrl = TYPE_TO_URL_SEGMENT[type] ?? mappedNiveau;
     const detail_url = `https://www.ffhandball.fr/competitions/saison-${saison}-${extSaisonId}/${niveauUrl}/${slugifyLibelle(libelle)}-${ext}/`;
 
     const candidate = {
