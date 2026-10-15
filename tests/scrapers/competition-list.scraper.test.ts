@@ -103,3 +103,29 @@ describe("parseStructures — departemental", () => {
     expect(structures.length).toBeGreaterThanOrEqual(50);
   });
 });
+
+describe("parseCompetitionList — Coupe de France (section à part du site)", () => {
+  const CDF_URL = "https://www.ffhandball.fr/competitions/saison-2026-2027-22/coupe-de-france/";
+  const html = fixture("ffhandball-competitions-coupe-de-france.html");
+  const list = parseCompetitionList(html, "national", CDF_URL, "2026-2027", "22");
+
+  it("extrait les 8 compétitions (nationale, fédérale, régionale, départementale × M/F)", () => {
+    expect(list.map((c) => c.ext_competition_id).sort()).toEqual(
+      ["30617", "32510", "32636", "32638", "32661", "32662", "33243", "33244"],
+    );
+  });
+
+  it("l'URL de détail pointe sous /coupe-de-france/ (pas /national/), sinon la page est introuvable", () => {
+    const regionale = list.find((c) => c.ext_competition_id === "32662")!;
+    expect(regionale.nom).toBe("COUPE DE FRANCE REGIONALE MASCULINE 2026-2027");
+    expect(regionale.detail_url).toBe(
+      "https://www.ffhandball.fr/competitions/saison-2026-2027-22/coupe-de-france/coupe-de-france-regionale-masculine-2026-2027-32662/",
+    );
+    expect(list.every((c) => c.detail_url.includes("/coupe-de-france/"))).toBe(true);
+  });
+
+  it("les compétitions nationales ordinaires gardent /national/", () => {
+    const nat = parseCompetitionList(fixture("ffhandball-competitions-national.html"), "national", SOURCE_URL, "2025-2026", EXT_SAISON_ID);
+    expect(nat.every((c) => c.detail_url.includes("/national/"))).toBe(true);
+  });
+});
