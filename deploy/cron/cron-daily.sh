@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # deploy/cron/cron-daily.sh
-# Scrape quotidien : matchs (journée courante) + classements & FdM des matchs joués récents
+# Scrape quotidien : structure des compétitions (poules, équipes, engagements) + matchs (journée courante)
+# + classements & FdM des matchs joués récents
 # (l'ETL FdM dérive le score sans attendre la publication serveur) + stats-joueurs.
 # Lancé chaque nuit à 02:00 par le crontab utilisateur.
 
@@ -36,7 +37,7 @@ require_scrape_lock "cron-daily" 6 fail
 
 # Suivi du cron en base (tableau de bord admin) — jamais bloquant.
 source "$(dirname "$0")/lib-cron.sh"
-cron_track_start "cron-daily" 10
+cron_track_start "cron-daily" 16
 
 log "=== Démarrage cron-daily (saison $SAISON) ==="
 
@@ -55,6 +56,22 @@ run_step() {
     cron_track_error
   fi
 }
+
+# 0. Structure des compétitions : les coupes, les phases suivantes et les tirages sont publiés EN COURS DE
+#    SEMAINE. Avec un refresh hebdomadaire seulement, les engagements d'une coupe jouée le week-end manquaient
+#    jusqu'au dimanche. En tête de cron pour que les nouvelles poules aient leurs matchs scrapés la même nuit.
+#    Coût : ~12 min (≈1 300 pages), idempotent.
+run_step "scrape competitions (poules, équipes, engagements)"   pnpm scrape --entity=competitions --saison="$SAISON"
+
+run_step "etl competitions"   pnpm etl --entity=competitions --saison="$SAISON"
+
+run_step "etl phases"   pnpm etl --entity=phases --saison="$SAISON"
+
+run_step "etl poules"   pnpm etl --entity=poules --saison="$SAISON"
+
+run_step "etl equipes"   pnpm etl --entity=equipes --saison="$SAISON"
+
+run_step "etl engagements"   pnpm etl --entity=engagements --saison="$SAISON"
 
 # 1. Matchs journée courante
 run_step "scrape matchs (journée courante)" \
