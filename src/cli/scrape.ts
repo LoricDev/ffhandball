@@ -444,9 +444,10 @@ async function scrapeCompetitions(
     }
 
     // Journal de ce que le site annonce vs ce qu'on a lu (lu par le monitor : une section annoncée mais non
-    // visitée, ou une section à structures non gérée, déclenche une alerte).
+    // visitée, ou une section à structures non gérée, déclenche une alerte). Seulement pour un run COMPLET :
+    // avec --level on ne visite volontairement qu'une partie des sections, ce qui fausserait la comparaison.
     const announcedSections = new Set(announcedTypes.map(sectionSegmentForType));
-    for (const section of new Set([...announcedSections, ...sectionStats.keys()])) {
+    for (const section of fullRun ? new Set([...announcedSections, ...sectionStats.keys()]) : []) {
       const st = sectionStats.get(section);
       await query(
         `INSERT INTO raw.site_sections (scrape_run_id, saison, section, announced, crawled, competitions, note)
