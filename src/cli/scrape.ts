@@ -18,6 +18,7 @@ import {
   slugifyLibelle,
 } from "@/scrapers/ffhandball/competition-list.scraper.js";
 import { parseCompetitionDetail } from "@/scrapers/ffhandball/competition-detail.scraper.js";
+import { parseAvailableTypes, sectionSegmentForType } from "@/scrapers/ffhandball/competition-list.scraper.js";
 import { parseRencontreList, type JourneeInfo } from "@/scrapers/ffhandball/rencontre-list.scraper.js";
 import { parseClassement } from "@/scrapers/ffhandball/classement.scraper.js";
 import { resolveDateWindow, type DateWindow } from "@/scrapers/shared/date-window.js";
@@ -328,14 +329,22 @@ async function scrapeCompetitions(
     }> = [];
 
     let listSkipped = 0;
+    // Ce que le scrape a réellement lu par section du site, pour raw.site_sections (contrôlé par le monitor).
+    const sectionStats = new Map<string, { crawled: boolean; competitions: number; note?: string }>();
+    let announcedTypes: string[] = [];
     for (const niveau of levels) {
       const listUrl = `https://www.ffhandball.fr/competitions/saison-${saison}-${extSaisonId}/${niveau}/`;
       const listRes = await tryFetchHtml(run, listUrl);
       if (!listRes) {
         listSkipped++;
         logger.warn({ url: listUrl, niveau }, "liste par niveau injoignable, niveau sauté");
+        sectionStats.set(niveau, { crawled: false, competitions: 0, note: "page injoignable" });
         continue;
       }
+
+      // Le menu du site annonce ses sections (available_types) : on s'en sert pour toutes les visiter.
+      if (niveau === "national") announcedTypes = parseAvailableTypes(listRes.body);
+      const totalBefore = totalCompetitions;
 
       if (niveau === "national") {
         const comps = parseCompetitionList(listRes.body, "national", listUrl, saison, extSaisonId);
@@ -388,18 +397,28 @@ async function scrapeCompetitions(
           }
         }
       }
+      sectionStats.set(niveau, { crawled: true, competitions: totalCompetitions - totalBefore });
     }
-    // Coupe de France : section À PART du site (/coupe-de-france/), absente des listes par niveau. Elle
-    // regroupe 8 compétitions (nationale, fédérale, régionale, départementale × masculin/féminin) ;
-    // la régionale compte plusieurs centaines d'équipes engagées, dont celles de nos clubs.
-    if (!opts.level || opts.level === "national") {
-      const cdfUrl = `https://www.ffhandball.fr/competitions/saison-${saison}-${extSaisonId}/coupe-de-france/`;
-      const cdfRes = await tryFetchHtml(run, cdfUrl);
-      if (!cdfRes) {
-        listSkipped++;
-        logger.warn({ url: cdfUrl }, "liste Coupe de France injoignable, section sautée");
-      } else {
-        for (const c of parseCompetitionList(cdfRes.body, "national", cdfUrl, saison, extSaisonId)) {
+    // Sections supplémentaires annoncées par le site (available_types) : Coupe de France, et toute section
+    // future (inter-ligues…). Elles ont leur propre page /competitions/saison-X/<section>/, absente des
+    // listes par niveau : c'est ce qui a fait manquer la Coupe de France pendant des mois.
+    const BASE_TYPES = new Set(["NATIONAL", "REGIONAL", "DEPARTEMENTAL"]);
+    const fullRun = !opts.level;
+    if (fullRun || opts.level === "national") {
+      // Repli si le menu n'a pas pu être lu : on garde au moins la Coupe de France (cf. incident d'octobre 2026).
+      const extraTypes = (announcedTypes.length > 0 ? announcedTypes : ["COUPE_DE_FRANCE"]).filter((t) => !BASE_TYPES.has(t));
+      for (const type of extraTypes) {
+        const section = sectionSegmentForType(type);
+        const sectionUrl = `https://www.ffhandball.fr/competitions/saison-${saison}-${extSaisonId}/${section}/`;
+        const sectionRes = await tryFetchHtml(run, sectionUrl);
+        if (!sectionRes) {
+          listSkipped++;
+          logger.warn({ url: sectionUrl, section }, "section du site injoignable, sautée");
+          sectionStats.set(section, { crawled: false, competitions: 0, note: "page injoignable" });
+          continue;
+        }
+        const comps = parseCompetitionList(sectionRes.body, "national", sectionUrl, saison, extSaisonId);
+        for (const c of comps) {
           await insertRaw("competitions", {
             scrape_run_id: run.id,
             source_url: c.source_url,
@@ -407,12 +426,44 @@ async function scrapeCompetitions(
             natural_key: c.ext_competition_id,
             payload: c,
             saison,
-            http_status: cdfRes.status,
+            http_status: sectionRes.status,
           });
           competitionsToDetail.push({ ext_competition_id: c.ext_competition_id, detail_url: c.detail_url });
           totalCompetitions++;
         }
+        // Une section organisée par structures (comme regional/departemental) n'est pas gérée ici : on le
+        // signale (préfixe STRUCTURES, repris par le monitor) au lieu de la croire vide.
+        const structures = comps.length === 0 ? parseStructures(sectionRes.body).length : 0;
+        sectionStats.set(section, {
+          crawled: true,
+          competitions: comps.length,
+          note: structures > 0 ? `STRUCTURES : ${structures} structure(s), section non gérée` : comps.length === 0 ? "aucune compétition lue" : undefined,
+        });
+        logger.info({ section, competitions: comps.length }, "section du site scrapée");
       }
+    }
+
+    // Journal de ce que le site annonce vs ce qu'on a lu (lu par le monitor : une section annoncée mais non
+    // visitée, ou une section à structures non gérée, déclenche une alerte).
+    const announcedSections = new Set(announcedTypes.map(sectionSegmentForType));
+    for (const section of new Set([...announcedSections, ...sectionStats.keys()])) {
+      const st = sectionStats.get(section);
+      await query(
+        `INSERT INTO raw.site_sections (scrape_run_id, saison, section, announced, crawled, competitions, note)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT (scrape_run_id, section) DO UPDATE
+           SET announced = EXCLUDED.announced, crawled = EXCLUDED.crawled,
+               competitions = EXCLUDED.competitions, note = EXCLUDED.note`,
+        [
+          run.id,
+          saison,
+          section,
+          announcedSections.has(section),
+          st?.crawled ?? false,
+          st?.competitions ?? 0,
+          st?.note ?? (st ? null : "annoncée par le site mais non visitée"),
+        ],
+      );
     }
     logger.info({ totalCompetitions }, "passe A done");
 
