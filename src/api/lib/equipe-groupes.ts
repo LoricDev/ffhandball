@@ -180,3 +180,29 @@ export function grouperEquipes<T extends EquipeEntree>(
       Number(a.entente) - Number(b.entente),
   );
 }
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+export interface LienEquipe {
+  methode: string;
+  confiance: "haute" | "moyenne" | "basse";
+}
+
+/**
+ * Une inscription sans feuille de match (match pas encore joué) ne peut pas être rattachée au club par
+ * les licences et retombe sur le nom (confiance « basse »). Si une autre inscription de la MÊME équipe
+ * réelle (même groupe) est rattachée avec certitude, la première en hérite : confiance « moyenne »,
+ * méthode « groupe ». Une erreur de regroupement se propage donc au lien : à corriger dans les
+ * corrections manuelles (`overrides`). Les autres champs sont inchangés ; l'ordre est conservé.
+ */
+export function heriterLiens<T extends EquipeEntree & { lien?: LienEquipe }>(
+  equipes: T[],
+  overrides: ReadonlyMap<string, EquipeOverride> = new Map(),
+): T[] {
+  const herites = new Set<string>();
+  for (const g of grouperEquipes(equipes, overrides)) {
+    if (!g.equipes.some((e) => e.lien?.confiance === "haute")) continue;
+    for (const e of g.equipes) if (e.lien?.confiance === "basse") herites.add(e.id_ffhb);
+  }
+  return equipes.map((e) => (herites.has(e.id_ffhb) ? { ...e, lien: { methode: "groupe", confiance: "moyenne" as const } } : e));
+}

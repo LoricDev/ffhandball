@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { categorie, sexe, rang, estEntente, grouperEquipes, type EquipeEntree } from "@/api/lib/equipe-groupes.js";
+import { categorie, sexe, rang, estEntente, grouperEquipes, heriterLiens, type EquipeEntree } from "@/api/lib/equipe-groupes.js";
 
 const eq = (id: string, nom: string, competition: string, phase = "PHASE", niveau = "departemental"): EquipeEntree => ({
   id_ffhb: id,
@@ -212,5 +212,41 @@ describe("grouperEquipes — corrections manuelles (overrides)", () => {
     ];
     const g = grouperEquipes(data, new Map([["B", ov({ rang: 1 })]]));
     expect(g).toHaveLength(1);
+  });
+});
+
+describe("heriterLiens — une inscription sans feuille de match hérite du lien de sa jumelle", () => {
+  type L = EquipeEntree & { lien?: { methode: string; confiance: "haute" | "moyenne" | "basse" } };
+  const avec = (id: string, nom: string, comp: string, methode: string, confiance: "haute" | "moyenne" | "basse"): L => ({ ...eq(id, nom, comp), lien: { methode, confiance } });
+
+  it("la coupe -13 M (licence, haute) donne « groupe / moyenne » au championnat -13 M (nom, basse)", () => {
+    const r = heriterLiens<L>([
+      avec("champ", "ENT BOUZONVILLE / BOULAY -13 M 1", "57-12 -13 MASCULINS", "nom_entente", "basse"),
+      avec("coupe", "ENT BOUZONVILLE / BOULAY -13 M 1", "57-26 COUPE ECHO'SPORT  -13 M", "licence", "haute"),
+    ]);
+    expect(r.map((e) => e.lien)).toEqual([
+      { methode: "groupe", confiance: "moyenne" },
+      { methode: "licence", confiance: "haute" },
+    ]);
+  });
+
+  it("sans jumelle certaine, ou dans un autre groupe : le lien reste « basse »", () => {
+    const seule = heriterLiens<L>([avec("a", "ENT X / Y -13 M 1", "57-12 -13 MASCULINS", "nom_entente", "basse")]);
+    expect(seule[0]!.lien).toEqual({ methode: "nom_entente", confiance: "basse" });
+
+    const autreGroupe = heriterLiens<L>([
+      avec("a", "ENT X / Y -13 M 1", "57-12 -13 MASCULINS", "nom_entente", "basse"),
+      avec("b", "ENT X / Y -17 M", "57-08 -17MASCULINS", "licence", "haute"),
+    ]);
+    expect(autreGroupe[0]!.lien!.confiance).toBe("basse");
+  });
+
+  it("les liens « moyenne » et « haute » ne sont jamais modifiés ; l'ordre est conservé", () => {
+    const r = heriterLiens<L>([
+      avec("a", "ENT X / Y -13 M 1", "57-12 -13 MASCULINS", "nom_reserve", "moyenne"),
+      avec("b", "ENT X / Y -13 M 1", "57-26 COUPE ECHO'SPORT  -13 M", "structure", "haute"),
+    ]);
+    expect(r.map((e) => e.id_ffhb)).toEqual(["a", "b"]);
+    expect(r[0]!.lien).toEqual({ methode: "nom_reserve", confiance: "moyenne" });
   });
 });
