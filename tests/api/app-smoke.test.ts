@@ -25,3 +25,13 @@ describe("app smoke", () => {
     expect(res.status).toBe(200);
   });
 });
+
+describe("racine", () => {
+  const app = buildApp({ authEnabled: true });
+
+  it("redirige / vers /docs, même quand l'authentification par clé est active", async () => {
+    const res = await app.request("/");
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("/docs");
+  });
+});

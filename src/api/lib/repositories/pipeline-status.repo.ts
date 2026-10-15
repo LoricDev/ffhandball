@@ -33,7 +33,7 @@ export async function getPipelineSnapshot() {
               COALESCE(round(avg(duration_ms)))::int AS avg_ms_1h,
               COALESCE(percentile_disc(0.95) WITHIN GROUP (ORDER BY duration_ms), 0)::int AS p95_ms_1h
          FROM core.api_logs
-        WHERE requested_at > now() - interval '1 hour' AND path NOT LIKE '/admin%'`,
+        WHERE requested_at > now() - interval '1 hour' AND path NOT LIKE '/admin%' AND path NOT IN ('/health', '/ready')`,
     ),
     query(
       `SELECT requested_at, method, path, status, duration_ms

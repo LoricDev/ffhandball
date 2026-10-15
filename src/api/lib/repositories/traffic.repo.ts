@@ -3,8 +3,8 @@ import { query } from "@/db/client.js";
 
 export const TRAFFIC_WINDOWS = [24, 72, 168] as const;
 
-/** Les routes admin ne comptent pas : rafraîchir le dashboard fausserait les chiffres. */
-const NOT_ADMIN = `l.path NOT LIKE '/admin%'`;
+/** Hors trafic : routes admin (rafraîchir le dashboard fausserait les chiffres) et sondes internes. */
+const NOT_ADMIN = `l.path NOT LIKE '/admin%' AND l.path NOT IN ('/health', '/ready')`;
 
 export async function getTraffic(hours: number) {
   const win = (TRAFFIC_WINDOWS as readonly number[]).includes(hours) ? hours : 24;
@@ -16,7 +16,8 @@ export async function getTraffic(hours: number) {
                                 date_trunc('hour', now()), interval '1 hour') AS t)
        SELECT h.t,
               count(l.id)::int AS total,
-              count(l.id) FILTER (WHERE l.status >= 400 AND l.status < 500)::int AS err_4xx,
+              count(l.id) FILTER (WHERE l.status = 404)::int AS not_found,
+              count(l.id) FILTER (WHERE l.status >= 400 AND l.status < 500 AND l.status NOT IN (404, 429))::int AS err_4xx,
               count(l.id) FILTER (WHERE l.status >= 500)::int AS err_5xx
          FROM h
          LEFT JOIN core.api_logs l
@@ -27,7 +28,8 @@ export async function getTraffic(hours: number) {
     query(
       `SELECT count(*)::int AS total,
               count(*) FILTER (WHERE status < 400)::int AS ok,
-              count(*) FILTER (WHERE status >= 400 AND status < 500 AND status <> 429)::int AS err_4xx,
+              count(*) FILTER (WHERE status = 404)::int AS not_found,
+              count(*) FILTER (WHERE status >= 400 AND status < 500 AND status NOT IN (404, 429))::int AS err_4xx,
               count(*) FILTER (WHERE status = 429)::int AS rate_limited,
               count(*) FILTER (WHERE status >= 500)::int AS err_5xx,
               count(*) FILTER (WHERE key_prefix IS NOT NULL)::int AS with_key,

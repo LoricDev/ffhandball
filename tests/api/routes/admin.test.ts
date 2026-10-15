@@ -120,6 +120,8 @@ describe("admin : validation, trafic, webhooks", () => {
     expect(data.hours).toBe(24);
     expect(data.series).toHaveLength(24);
     expect(data.totals).toHaveProperty("p95_ms");
+    expect(data.totals).toHaveProperty("not_found");
+    expect(data.series[0]).toHaveProperty("not_found");
     expect(Array.isArray(data.top_routes)).toBe(true);
     expect(Array.isArray(data.top_keys)).toBe(true);
   });
