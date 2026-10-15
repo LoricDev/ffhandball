@@ -50,7 +50,11 @@ describe("couverture base vs site", () => {
   beforeEach(async () => {
     await query(`DELETE FROM raw.site_journees WHERE saison = $1`, [SAISON]);
     await query(`DELETE FROM core.matchs WHERE id_ffhb_match LIKE 'TST-COUV-%'`);
-    await query(`DELETE FROM core.competitions WHERE id_ffhb = 'TST-COUV-C'`); // cascade phases/poules
+    await query(`DELETE FROM core.poules WHERE id_ffhb = 'TST-COUV-P'`);
+    await query(`DELETE FROM core.phases WHERE id_ffhb = 'TST-COUV-PH'`);
+    await query(`DELETE FROM core.poules WHERE id_ffhb = 'TST-COUV-P'`);
+    await query(`DELETE FROM core.phases WHERE id_ffhb = 'TST-COUV-PH'`);
+    await query(`DELETE FROM core.competitions WHERE id_ffhb = 'TST-COUV-C'`);
     await query(`DELETE FROM core.equipes WHERE id_ffhb LIKE 'TST-COUV-%'`);
     await query(`INSERT INTO core.saisons (saison_code, date_debut, date_fin) VALUES ($1, '2099-07-01', '2100-06-30') ON CONFLICT DO NOTHING`, [SAISON]);
   });
