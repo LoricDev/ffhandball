@@ -315,7 +315,11 @@ function healthVerdict(
   return { icon: "✓", label: "sain", color: c.green };
 }
 
-const W = 80;
+// Largeur de rendu = largeur du terminal (80 si sortie non-TTY), bornée pour rester lisible.
+let W = 80;
+function setWidth(cols: number | undefined): void {
+  W = Math.max(40, Math.min(cols ?? 80, 160));
+}
 function out(s = ""): void {
   process.stdout.write(s + "\n");
 }
@@ -324,6 +328,12 @@ type Align = "l" | "r";
 interface Column {
   header: string;
   align: Align;
+  drop?: number;
+}
+
+// Tronque un texte SANS code ANSI à `max` caractères (ellipse finale).
+function truncVis(s: string, max: number): string {
+  return visLen(s) <= max ? s : s.slice(0, Math.max(0, max - 1)) + "…";
 }
 
 // Pad sur la largeur VISIBLE (les codes ANSI ne comptent pas), pour aligner des cellules colorées.
@@ -337,30 +347,51 @@ function padVis(s: string, width: number, align: Align): string {
 // n'est jamais tronquée — contrairement à un padding fixe qui corromprait les grands nombres.
 function renderTable(
   title: string,
-  columns: Column[],
-  rows: string[][],
-  totals?: string[],
+  allColumns: Column[],
+  allRows: string[][],
+  allTotals?: string[],
 ): void {
-  const all = totals ? [...rows, totals] : rows;
-  const widths = columns.map((col, i) =>
-    Math.max(visLen(col.header), ...all.map((r) => visLen(r[i] ?? ""))),
-  );
   const indent = "  ";
   const gap = "  ";
+  const measure = (idx: number[]): number[] =>
+    idx.map((i) =>
+      Math.max(
+        visLen(allColumns[i]!.header),
+        ...allRows.map((r) => visLen(r[i] ?? "")),
+        visLen(allTotals?.[i] ?? ""),
+      ),
+    );
+  const totalWidth = (w: number[]): number =>
+    indent.length + w.reduce((a, b) => a + b, 0) + gap.length * Math.max(0, w.length - 1);
+
+  // Responsive : tant que le tableau déborde du terminal, on retire la colonne la moins prioritaire.
+  let idx = allColumns.map((_, i) => i);
+  let widths = measure(idx);
+  while (totalWidth(widths) > W) {
+    let victim = -1;
+    for (const i of idx) {
+      const d = allColumns[i]!.drop;
+      if (d !== undefined && (victim === -1 || d > allColumns[victim]!.drop!)) victim = i;
+    }
+    if (victim === -1) break;
+    idx = idx.filter((i) => i !== victim);
+    widths = measure(idx);
+  }
+
+  const columns = idx.map((i) => allColumns[i]!);
+  const rows = allRows.map((r) => idx.map((i) => r[i] ?? ""));
+  const totals = allTotals ? idx.map((i) => allTotals[i] ?? "") : undefined;
   const line = (cells: string[]): string =>
     (indent + columns.map((col, i) => padVis(cells[i] ?? "", widths[i]!, col.align)).join(gap)).replace(
       /\s+$/u,
       "",
     );
   const innerRule = indent + widths.map((w) => "─".repeat(w)).join("─".repeat(gap.length));
-  const width = Math.max(
-    W,
-    indent.length + widths.reduce((a, b) => a + b, 0) + gap.length * (widths.length - 1),
-  );
+  const width = Math.max(W, totalWidth(widths));
 
   out();
   out(c.gray("─".repeat(width)));
-  out(c.bold(c.cyan(title)));
+  out(c.bold(c.cyan(truncVis(title, width))));
   out(c.gray("─".repeat(width)));
   out(c.dim(line(columns.map((col) => col.header))));
   out(c.gray(innerRule));
@@ -534,11 +565,11 @@ function renderScrape(latestScrape: Map<string, ScrapeRow>): void {
   const cols: Column[] = [
     { header: "entity", align: "l" },
     { header: "état", align: "l" },
-    { header: "démarré", align: "l" },
-    { header: "durée / progression", align: "l" },
-    { header: "pages", align: "r" },
-    { header: "débit", align: "r" },
-    { header: "âge", align: "r" },
+    { header: "démarré", align: "l", drop: 3 },
+    { header: "durée / progression", align: "l", drop: 1 },
+    { header: "pages", align: "r", drop: 4 },
+    { header: "débit", align: "r", drop: 5 },
+    { header: "âge", align: "r", drop: 2 },
   ];
   const rows = SCRAPE_ENTITIES.map((entity) => {
     const row = latestScrape.get(entity);
@@ -568,14 +599,14 @@ function renderEtl(latestEtl: Map<string, EtlRow>, progress: Map<string, number>
   const cols: Column[] = [
     { header: "entity", align: "l" },
     { header: "état", align: "l" },
-    { header: "démarré", align: "l" },
-    { header: "durée / progression", align: "l" },
+    { header: "démarré", align: "l", drop: 3 },
+    { header: "durée / progression", align: "l", drop: 1 },
     { header: "read", align: "r" },
     { header: "ins", align: "r" },
-    { header: "upd", align: "r" },
-    { header: "rej", align: "r" },
-    { header: "warn", align: "r" },
-    { header: "débit", align: "r" },
+    { header: "upd", align: "r", drop: 5 },
+    { header: "rej", align: "r", drop: 2 },
+    { header: "warn", align: "r", drop: 4 },
+    { header: "débit", align: "r", drop: 6 },
   ];
   const rejCell = (rej: number | null, read: number | null): string => {
     if (rej === null) return "-";
@@ -626,8 +657,8 @@ function renderCoverage(rows: CoverageRow[]): void {
     { header: "entité", align: "l" },
     { header: "raw (uniques)", align: "r" },
     { header: "core", align: "r" },
-    { header: "Δ", align: "r" },
-    { header: "couverture", align: "l" },
+    { header: "Δ", align: "r", drop: 2 },
+    { header: "couverture", align: "l", drop: 1 },
   ];
   const body = rows.map((r) => {
     const delta = r.coreCount - r.rawUniques;
@@ -652,9 +683,9 @@ function renderRawVolume(saison: string, rows: RawVolume[]): void {
   const cols: Column[] = [
     { header: "table", align: "l" },
     { header: "lignes", align: "r" },
-    { header: "uniques", align: "r" },
-    { header: "dernière capture", align: "l" },
-    { header: "", align: "l" },
+    { header: "uniques", align: "r", drop: 1 },
+    { header: "dernière capture", align: "l", drop: 2 },
+    { header: "", align: "l", drop: 3 },
   ];
   const maxTotal = Math.max(1, ...rows.map((r) => r.total));
   let totLignes = 0;
@@ -676,8 +707,8 @@ function renderCoreVolume(saison: string, rows: CoreVolume[]): void {
   const cols: Column[] = [
     { header: "table", align: "l" },
     { header: "lignes", align: "r" },
-    { header: "filtre", align: "l" },
-    { header: "", align: "l" },
+    { header: "filtre", align: "l", drop: 1 },
+    { header: "", align: "l", drop: 2 },
   ];
   const maxCount = Math.max(1, ...rows.map((r) => r.count));
   const body = rows.map((r) => [
@@ -699,8 +730,8 @@ function renderStorage(db: DbInfo | null): void {
   const cols: Column[] = [
     { header: "table", align: "l" },
     { header: "taille", align: "r" },
-    { header: "lignes", align: "r" },
-    { header: "", align: "l" },
+    { header: "lignes", align: "r", drop: 1 },
+    { header: "", align: "l", drop: 2 },
   ];
   const maxBytes = Math.max(1, ...db.tables.map((t) => t.bytes));
   const body = db.tables.map((t) => [
@@ -717,14 +748,14 @@ function renderIncidents(latestScrape: ScrapeRow[], latestEtl: EtlRow[]): void {
   for (const r of latestScrape) {
     if ((r.status === "failed" || r.status === "partial") && r.error_message) {
       incidents.push(
-        `  ${statusCell(r.status)} ${c.bold(`scrape ${r.scraper_name}`)} ${c.dim("—")} ${r.error_message.slice(0, 100)}`,
+        `  ${statusCell(r.status)} ${c.bold(`scrape ${r.scraper_name}`)} ${c.dim("—")} ${r.error_message.slice(0, Math.max(20, W - 30))}`,
       );
     }
   }
   for (const r of latestEtl) {
     if ((r.status === "failed" || r.status === "partial") && r.error_message) {
       incidents.push(
-        `  ${statusCell(r.status)} ${c.bold(`etl ${r.entity}`)} ${c.dim("—")} ${r.error_message.slice(0, 100)}`,
+        `  ${statusCell(r.status)} ${c.bold(`etl ${r.entity}`)} ${c.dim("—")} ${r.error_message.slice(0, Math.max(20, W - 30))}`,
       );
     }
   }
@@ -764,6 +795,8 @@ async function main(): Promise<void> {
       process.env.NO_COLOR == null &&
       Boolean(process.stdout.isTTY),
   );
+
+  setWidth(process.stdout.columns);
 
   const saisons = await listSaisons();
 
