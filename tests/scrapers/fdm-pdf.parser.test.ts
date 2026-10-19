@@ -168,3 +168,23 @@ describe("parseFdmPdf — actions (Page 2)", () => {
     }
   });
 });
+
+describe("parseFdmPdf — colonnes de stats (positions X)", () => {
+  it("rattache chaque valeur à sa colonne malgré les cellules vides", async () => {
+    const buf = await readFile(fixturePath("fdm-VAGPOQJ.pdf"));
+    const r = await parseFdmPdf(buf, SOURCE_URL, "VAGPOQJ");
+    const find = (nom: string) =>
+      [...r!.composition_recevant, ...r!.composition_visiteur].find((j) => j.nom === nom)!;
+
+    // "1 1 1" : buts, tirs et 2' (et non buts/7m/tirs ou arrêts)
+    const hacquin = find("HACQUIN");
+    expect(hacquin).toMatchObject({ buts: 1, tirs: 1, arrets: null, exclusions_2min: 1 });
+    // Valeur isolée sous "Arrets" : arrêts, pas buts
+    const macel = find("MACEL");
+    expect(macel).toMatchObject({ buts: 1, tirs: 1, arrets: 2 });
+    // "3 3 X 1" : buts, tirs, avertissement, 2'
+    expect(find("GROSSE")).toBeDefined();
+    const nemsguers = find("NEMSGUERS");
+    expect(nemsguers).toMatchObject({ buts: 2, tirs: 2, avertissement: true, exclusions_2min: 2 });
+  });
+});

@@ -1,5 +1,5 @@
 // src/scrapers/ffhandball/fdm-pdf.parser.ts
-import { extractPdfText } from "@/lib/pdf-parser.js";
+import { extractPdfText, type PdfTextItem } from "@/lib/pdf-parser.js";
 import {
   rawFeuilleMatchPayloadSchema,
   type RawFeuilleMatchPayload,
@@ -326,6 +326,82 @@ function parseStatsColumns(cols: string[]): {
   };
 }
 
+
+/** Colonnes de statistiques de l'en-tête "Buts 7m Tirs Arrets Av. 2' Dis". */
+type StatCol = "buts" | "7m" | "tirs" | "arrets" | "av" | "2min" | "dis";
+type StatCells = Partial<Record<StatCol, string>>;
+
+const STAT_HEADERS: Record<string, StatCol> = {
+  Buts: "buts",
+  "7m": "7m",
+  Tirs: "tirs",
+  Arrets: "arrets",
+  "Av.": "av",
+  "2'": "2min",
+  Dis: "dis",
+};
+
+/**
+ * Rattache chaque valeur de stats à sa colonne via la position X des en-têtes.
+ * Le texte brut perd les cellules vides ("1 1 1" = buts/tirs/2' ou buts/tirs/arrêts ?),
+ * seule la géométrie lève l'ambiguïté. Retourne licence → cellules.
+ */
+function extractStatCells(items: PdfTextItem[]): Map<string, StatCells> {
+  const headers = items.filter((i) => i.str in STAT_HEADERS);
+  const result = new Map<string, StatCells>();
+  if (headers.length === 0) return result;
+
+  for (const lic of items.filter((i) => /^\d{10,13}$/.test(i.str))) {
+    // En-tête de la table du joueur = le plus proche au-dessus de sa ligne.
+    const above = headers.filter((h) => h.y >= lic.y);
+    if (above.length === 0) continue;
+    const headerY = Math.min(...above.map((h) => h.y));
+    const cols = above.filter((h) => Math.abs(h.y - headerY) < 2);
+    const minX = Math.min(...cols.map((c) => c.x)) - 10;
+
+    const cells: StatCells = {};
+    const rowItems = items.filter(
+      (i) => Math.abs(i.y - lic.y) < 3 && i.x >= minX && !/^\d{10,13}$/.test(i.str),
+    );
+    for (const it of rowItems) {
+      const cx = it.x + it.width / 2;
+      let best: PdfTextItem | null = null;
+      for (const c of cols) {
+        if (!best || Math.abs(cx - (c.x + c.width / 2)) < Math.abs(cx - (best.x + best.width / 2))) best = c;
+      }
+      const col = best ? STAT_HEADERS[best.str] : undefined;
+      if (col && !cells[col]) cells[col] = it.str;
+    }
+    result.set(lic.str, cells);
+  }
+  return result;
+}
+
+/** Stats d'un joueur à partir des cellules positionnées. */
+function statsFromCells(cells: StatCells): ReturnType<typeof parseStatsColumns> {
+  const num = (s: string | undefined): number | null => (s && /^\d+$/.test(s) ? parseInt(s, 10) : null);
+  let sept_metres_reussis: number | null = null;
+  let sept_metres_tentes: number | null = null;
+  const sept = cells["7m"];
+  if (sept?.includes("/")) {
+    const [a, b] = sept.split("/").map((x) => parseInt(x.trim(), 10));
+    sept_metres_reussis = Number.isFinite(a) ? a! : null;
+    sept_metres_tentes = Number.isFinite(b) ? b! : null;
+  } else {
+    sept_metres_reussis = num(sept);
+  }
+  return {
+    buts: num(cells.buts),
+    sept_metres_reussis,
+    sept_metres_tentes,
+    tirs: num(cells.tirs),
+    arrets: num(cells.arrets),
+    avertissement: cells.av === "X",
+    exclusions_2min: num(cells["2min"]),
+    disqualifie: cells.dis === "X",
+  };
+}
+
 /**
  * Parse une ligne joueur :
  *   [X] N° NOM prenom(parts) LICENCE TYPE [stats...]
@@ -336,7 +412,7 @@ function parseStatsColumns(cols: string[]): {
  *   "23 GROSSE thomas 5657027100959 A 3 3 X 1"
  *   "87 MEYER tom - MEYER-MATTA 5657027100665 A 8 9"
  */
-function parseJoueurLine(line: string): RawJoueurInFdm | null {
+function parseJoueurLine(line: string, statCells?: Map<string, StatCells>): RawJoueurInFdm | null {
   let working = line.trim();
 
   // 1. Détecter capitaine (X en début)
@@ -380,7 +456,9 @@ function parseJoueurLine(line: string): RawJoueurInFdm | null {
 
   // 4. Stats
   const cols = statsStr.split(/\s+/).filter((c) => c.length > 0);
-  const stats = parseStatsColumns(cols);
+  // Positions disponibles → colonnes exactes ; sinon heuristique sur les tokens.
+  const cells = statCells?.get(numero_licence);
+  const stats = cells ? statsFromCells(cells) : parseStatsColumns(cols);
 
   // Gardien : heuristique — si arrets non-null
   const gardien = (stats.arrets ?? 0) > 0;
@@ -404,7 +482,11 @@ function parseJoueurLine(line: string): RawJoueurInFdm | null {
   };
 }
 
-function parseComposition(page1Text: string, section: "recevant" | "visiteur"): RawJoueurInFdm[] {
+function parseComposition(
+  page1Text: string,
+  section: "recevant" | "visiteur",
+  statCells?: Map<string, StatCells>,
+): RawJoueurInFdm[] {
   const lines = page1Text.split("\n");
   // Ancien format : "Club Recevant" sur une ligne ; nouvelle FDME : "Club" / "recevant" / "- 5657013".
   const word = section === "recevant" ? "recevant" : "visiteur";
@@ -452,7 +534,7 @@ function parseComposition(page1Text: string, section: "recevant" | "visiteur"): 
     ) continue;
 
     // Try to parse as a joueur line
-    const j = parseJoueurLine(trimmed);
+    const j = parseJoueurLine(trimmed, statCells);
     if (j) joueurs.push(j);
   }
 
@@ -586,8 +668,9 @@ export async function parseFdmPdf(
   }
 
   const officiels = parseOfficiels(page1);
-  const composition_recevant = parseComposition(page1, "recevant");
-  const composition_visiteur = parseComposition(page1, "visiteur");
+  const statCells = extractStatCells(extracted.page1Items);
+  const composition_recevant = parseComposition(page1, "recevant", statCells);
+  const composition_visiteur = parseComposition(page1, "visiteur", statCells);
   const actions = parseActions(page2);
 
   const candidate = {
