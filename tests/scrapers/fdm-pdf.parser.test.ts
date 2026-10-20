@@ -188,3 +188,30 @@ describe("parseFdmPdf — colonnes de stats (positions X)", () => {
     expect(nemsguers).toMatchObject({ buts: 2, tirs: 2, avertissement: true, exclusions_2min: 2 });
   });
 });
+
+describe("parseFdmPdf — colonnes optionnelles JIPES / JFL", () => {
+  it.each([
+    ["WAGTJIG", "colonne JIPES"],
+    ["WAGQLZN", "colonne JFL"],
+  ])("lit les joueurs de %s (%s avant Buts)", async (code) => {
+    const buf = await readFile(fixturePath(`fdm-${code}.pdf`));
+    const r = await parseFdmPdf(buf, `https://fdm.fdme.ffhandball.fr/${code}.pdf`, code);
+    expect(r).not.toBeNull();
+    const joueurs = [...r!.composition_recevant, ...r!.composition_visiteur];
+    expect(joueurs.length).toBeGreaterThan(10);
+    
+    expect(joueurs.reduce((s, j) => s + (j.buts ?? 0), 0)).toBe(
+      (r!.score_recevant ?? 0) + (r!.score_visiteur ?? 0),
+    );
+  });
+});
+
+describe("parseFdmPdf — joueur sans type de licence", () => {
+  it("conserve les joueurs dont la colonne Type est vide (WAGQLZN : 7 buts)", async () => {
+    const buf = await readFile(fixturePath("fdm-WAGQLZN.pdf"));
+    const r = await parseFdmPdf(buf, "https://fdm.fdme.ffhandball.fr/WAGQLZN.pdf", "WAGQLZN");
+    const sans = r!.composition_visiteur.filter((j) => j.type_licence === null);
+    expect(sans.map((j) => j.numero_maillot).sort()).toEqual([25, 51]);
+    expect(r!.composition_visiteur).toHaveLength(13);
+  });
+});

@@ -17,7 +17,7 @@ export const rawJoueurInFdmSchema = z.object({
   numero_licence: z.string().regex(/^\d{10,13}$/),
   nom: z.string().min(1),
   prenom: z.string().min(1),
-  type_licence: z.string().length(1),
+  type_licence: z.string().regex(/^[A-Z]{1,3}$/).nullable(),
   numero_maillot: intOrNull,
   capitaine: z.boolean(),
   gardien: z.boolean(),

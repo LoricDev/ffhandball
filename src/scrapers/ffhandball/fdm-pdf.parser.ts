@@ -328,7 +328,7 @@ function parseStatsColumns(cols: string[]): {
 
 
 /** Colonnes de statistiques de l'en-tête "Buts 7m Tirs Arrets Av. 2' Dis". */
-type StatCol = "buts" | "7m" | "tirs" | "arrets" | "av" | "2min" | "dis";
+type StatCol = "buts" | "7m" | "tirs" | "arrets" | "av" | "2min" | "dis" | "ignore";
 type StatCells = Partial<Record<StatCol, string>>;
 
 const STAT_HEADERS: Record<string, StatCol> = {
@@ -339,6 +339,10 @@ const STAT_HEADERS: Record<string, StatCol> = {
   "Av.": "av",
   "2'": "2min",
   Dis: "dis",
+  // Colonnes optionnelles selon la compétition (avant "Buts") : repérées pour que
+  // leurs valeurs ne soient pas rattachées à la colonne voisine, mais non exploitées.
+  JFL: "ignore",
+  JIPES: "ignore",
 };
 
 /**
@@ -423,14 +427,14 @@ function parseJoueurLine(line: string, statCells?: Map<string, StatCells>): RawJ
   // NOM = sequence of uppercase tokens (may include hyphen)
   // prenom = lowercase tokens (may include " - " or mixed case for composés)
   // LICENCE = 10-13 digit string
-  // TYPE = single uppercase letter
-  const match = working.match(/^(\d+)\s+(.+?)\s+(\d{10,13})\s+([A-Z])\s*(.*)$/);
+  // TYPE = 1 à 3 lettres majuscules (A, B, EB, UEA...)
+  const match = working.match(/^(\d+)\s+(.+?)\s+(\d{10,13})(?:\s+(?!X(?:\s|$))([A-Z]{1,3})(?=\s|$))?\s*(.*)$/);
   if (!match) return null;
 
   const numero_maillot = parseInt(match[1]!, 10);
   const nomPrenom = match[2]!.trim();
   const numero_licence = match[3]!;
-  const type_licence = match[4]!;
+  const type_licence = match[4] ?? null;
   const statsStr = match[5]!.trim();
 
   // 3. Séparer NOM / prenom
