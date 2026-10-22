@@ -39,7 +39,7 @@ Détails complets (options, rate-limit, format réponse) : [docs/runbook.md#api-
 - **Scraping** : Cheerio (HTML), p-retry (résilience)
 - **Validation** : Zod
 - **API** : Hono 4 + @hono/zod-openapi + @hono/swagger-ui
-- **Tests** : Vitest (~440 tests), exécutés sur GitHub Actions (typecheck + migrations + tests sur Postgres)
+- **Tests** : Vitest (~500 tests), exécutés sur GitHub Actions (typecheck + migrations + tests sur Postgres)
 - **Logs** : pino
 
 ## Déploiement en production
@@ -54,9 +54,9 @@ Pour déployer en prod sur un VPS frais : voir [`deploy/README.md`](deploy/READM
 cp .env.example .env       # adapter SCRAPE_USER_AGENT avec un email de contact
 pnpm install
 pnpm db:up              # Postgres + Adminer
-pnpm db:migrate         # 18 migrations
+pnpm db:migrate         # 30 migrations
 pnpm db:seed            # saisons + ligues + départements
-pnpm test                   # ~320 tests (run en séquentiel pour éviter deadlocks)
+pnpm test                   # ~500 tests (run en séquentiel pour éviter deadlocks)
 
 # Smoke test : 5 compétitions nationales avec leurs équipes
 pnpm scrape --entity=competitions --saison=2025-2026 --level=national --limit=5
@@ -192,7 +192,7 @@ Détails complets, options, suivi de couverture SQL : voir `docs/runbook.md`.
 ```
 ffhandball/
 ├── db/
-│   ├── migrations/      # 18 migrations SQL séquentielles
+│   ├── migrations/      # 30 migrations SQL séquentielles
 │   ├── seeds/           # saisons, ligues, départements
 │   └── data/            # volume Docker (gitignored)
 ├── docs/
@@ -236,6 +236,6 @@ Pour ajouter une nouvelle entité :
 
 ## Statut
 
-**17 entités modèle • 18 migrations • 10 scrapers • 13 ETLs • 28 endpoints API • ~320 tests passants**
+**17 entités modèle • 30 migrations • 13 ETLs • 30+ endpoints API • ~500 tests**
 
 Pipeline production-ready. Voir `docs/DEPLOY.md` pour déployer et `docs/runbook.md` pour toutes les commandes opérationnelles.
