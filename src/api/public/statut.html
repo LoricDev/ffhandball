@@ -36,7 +36,7 @@
 </main>
 
 <script>
-const LABELS = { operationnel: "Tous les systèmes sont opérationnels", degrade: "Fonctionnement dégradé — certaines données ont du retard", panne: "Service indisponible" };
+const LABELS = { operationnel: "Tous les systèmes sont opérationnels", degrade: "Fonctionnement dégradé — certaines données ont du retard", panne: "Service indisponible ou données incohérentes" };
 const $ = (id) => document.getElementById(id);
 
 function age(h) {
@@ -59,6 +59,13 @@ function render(s) {
     li.append(dot, name, a);
     return li;
   }));
+  for (const c of (s.integrite || []).filter((c) => !c.ok)) {
+    const li = document.createElement("li"); li.className = c.gravite === "panne" ? "retard" : "degrade";
+    const dot = document.createElement("span"); dot.className = "dot";
+    const name = document.createElement("span"); name.className = "name"; name.textContent = c.label;
+    const a = document.createElement("span"); a.className = "age"; a.textContent = "anomalie";
+    li.append(dot, name, a); ul.append(li);
+  }
   $("checked").textContent = "Vérifié à " + new Date(s.verifie_le).toLocaleTimeString("fr-FR");
   $("err").textContent = "";
 }

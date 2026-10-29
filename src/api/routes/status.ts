@@ -6,6 +6,13 @@ import { getStatus } from "@/api/lib/repositories/status.repo.js";
 
 const status = newRouter();
 
+const integriteSchema = z.object({
+  key: z.string().openapi({ example: "poules" }),
+  label: z.string().openapi({ example: "Poules présentes" }),
+  ok: z.boolean(),
+  gravite: z.enum(["panne", "degrade"]).openapi({ description: "Statut global induit si le contrôle échoue" }),
+});
+
 const datasetSchema = z.object({
   key: z.string().openapi({ example: "matchs" }),
   label: z.string().openapi({ example: "Matchs et résultats" }),
@@ -20,7 +27,7 @@ const statusRoute = createRoute({
   tags: ["health"],
   summary: "État du service et fraîcheur des données",
   description:
-    "Public, sans clé API. `statut` : operationnel (tout est à jour), degrade (au moins un jeu de données en retard), panne (base indisponible).",
+    "Public, sans clé API. `statut` : operationnel (tout est à jour), degrade (jeu de données en retard ou garde de la base manquante), panne (base indisponible, table clé vide ou matchs sans poule).",
   responses: {
     200: {
       content: {
@@ -30,6 +37,7 @@ const statusRoute = createRoute({
             verifie_le: z.string(),
             base_de_donnees: z.enum(["connectee", "indisponible"]),
             donnees: z.array(datasetSchema),
+            integrite: z.array(integriteSchema).openapi({ description: "Contrôles d'intégrité de la base (tables clés non vides, matchs rattachés à une poule, contrainte en place)" }),
           }),
         },
       },

@@ -45,4 +45,17 @@ describe("buildStatus", () => {
     expect(s.statut).toBe("panne");
     expect(s.base_de_donnees).toBe("indisponible");
   });
+
+  it("une table clé vide ou des matchs sans poule → panne, même si les crons sont à jour", () => {
+    const poulesVides = [{ key: "poules", label: "Poules présentes", ok: false, gravite: "panne" as const }];
+    const s = buildStatus(allFresh(), true, NOW, poulesVides);
+    expect(s.statut).toBe("panne");
+    expect(s.integrite).toEqual(poulesVides);
+  });
+
+  it("une contrainte manquante seule → dégradé ; contrôles tous ok → opérationnel", () => {
+    const fk = { key: "fk_matchs_poule", label: "Contrainte", ok: false, gravite: "degrade" as const };
+    expect(buildStatus(allFresh(), true, NOW, [fk]).statut).toBe("degrade");
+    expect(buildStatus(allFresh(), true, NOW, [{ ...fk, ok: true }]).statut).toBe("operationnel");
+  });
 });
