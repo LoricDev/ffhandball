@@ -26,8 +26,19 @@ export interface ClubEquipe {
   id_ffhb: string;
   nom: string;
   engagements: EngagementRef[];
+  /** Fichier logo de l'équipe côté FFHB (utile quand le club n'a pas de logo dans le CMS), null si aucun. */
+  logo_club: string | null;
   /** Comment l'équipe a été rattachée au club (absent pour la liste « équipes propres » historique). */
   lien?: { methode: MatchMethod | "groupe"; confiance: Confidence };
+}
+
+async function logosByEquipeIds(equipeIds: bigint[]): Promise<Map<string, string>> {
+  if (equipeIds.length === 0) return new Map();
+  const res = await query<{ id: bigint; logo: string }>(
+    `SELECT id, logo FROM core.equipes WHERE id = ANY($1) AND logo IS NOT NULL`,
+    [equipeIds],
+  );
+  return new Map(res.rows.map((r) => [r.id.toString(), r.logo]));
 }
 
 async function engagementsByEquipeIds(equipeIds: bigint[]): Promise<Map<string, EngagementRef[]>> {
@@ -162,10 +173,12 @@ export async function listClubEquipesAvecPartenaires(
   // Pas de filtre de confiance ici : l'héritage de lien (heriterLiens) doit voir les « basse » avant qu'on les écarte.
   const linked = await resolveLinkedTeams(club, saison, opts.include_ententes);
   const engMap = await engagementsByEquipeIds(linked.map((l) => l.id));
+  const logos = await logosByEquipeIds(linked.map((l) => l.id));
   const equipes: ClubEquipe[] = linked.map((l) => ({
     id_ffhb: l.id_ffhb,
     nom: l.nom,
     engagements: engMap.get(l.id.toString()) ?? [],
+    logo_club: logos.get(l.id.toString()) ?? null,
     lien: { methode: l.match_method, confiance: l.confidence },
   }));
   const avecLiens = heriterLiens(equipes, await getOverrides(equipes.map((e) => e.id_ffhb)));
@@ -184,9 +197,11 @@ export async function listClubEquipes(clubIdFfhb: string, saison: string): Promi
   );
   const ids = eqRes.rows.map((r) => r.id);
   const engMap = await engagementsByEquipeIds(ids);
+  const logos = await logosByEquipeIds(ids);
   return eqRes.rows.map((r) => ({
     id_ffhb: r.id_ffhb,
     nom: r.nom,
     engagements: engMap.get(r.id.toString()) ?? [],
+    logo_club: logos.get(r.id.toString()) ?? null,
   }));
 }

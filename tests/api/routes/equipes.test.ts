@@ -165,6 +165,29 @@ describe("GET /clubs/:id_ffhb/equipes", () => {
     expect(eq.groupe?.cle).toBe(CLE);
   });
 
+  it("logos, phase et poule dans les matchs ; logo_club sur les équipes et les groupes", async () => {
+    await query(`UPDATE core.clubs SET logo_club = 'logo-t2.png' WHERE id_ffhb = $1`, [CLUB_ID]);
+    const get = async (path: string) => {
+      _resetBuckets();
+      const res = await app.request(path);
+      expect(res.status).toBe(200);
+      return (await res.json()) as { data: Record<string, unknown>[]; meta: { groupes?: Record<string, unknown>[] } };
+    };
+    const attendu = { logo_dom: "logo-t2.png", logo_ext: null, phase_nom: "Phase", poule_nom: "Poule" };
+    const clubMatchs = await get(`/clubs/${CLUB_ID}/matchs?saison=2025-2026`);
+    expect(clubMatchs.data[0]).toMatchObject({ ...attendu, equipe_dom_id_ffhb: "EQT2-EQ1", equipe_ext_id_ffhb: "EQT2-ADV" });
+    expect((await get("/equipes/EQT2-EQ1/matchs?saison=2025-2026")).data[0]).toMatchObject(attendu);
+    expect((await get("/matchs?poule_id_ffhb=EQT2-PO&saison=2025-2026")).data[0]).toMatchObject(attendu);
+    _resetBuckets();
+    const detail = (await (await app.request("/matchs/EQT2-M-001")).json()) as { data: Record<string, unknown> };
+    expect(detail.data).toMatchObject(attendu);
+
+    await query(`UPDATE core.equipes SET logo = 'eq-t2.png' WHERE id_ffhb = 'EQT2-EQ1' AND saison_code = $1`, [SAISON]);
+    const eqs = await get(`/clubs/${CLUB_ID}/equipes?saison=2025-2026&grouper=true`);
+    expect(eqs.data.find((e) => e.id_ffhb === "EQT2-EQ1")).toMatchObject({ logo_club: "eq-t2.png" });
+    expect(eqs.meta.groupes!.some((g) => g.logo_club === "eq-t2.png")).toBe(true);
+  });
+
   afterAll(async () => {
     await closePool();
   });

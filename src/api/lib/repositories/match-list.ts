@@ -19,6 +19,11 @@ export interface MatchListRow {
   poule_id_ffhb: string;
   competition_nom: string;
   fdm_url: string | null;
+  /** Fichier logo du club porteur de chaque équipe (null : entente sans club résolu, ou club sans logo). */
+  logo_dom: string | null;
+  logo_ext: string | null;
+  phase_nom: string;
+  poule_nom: string;
 }
 
 export interface MatchFilters {
@@ -73,7 +78,9 @@ const FROM = `
   JOIN core.equipes ee ON ee.id = m.equipe_ext_id
   JOIN core.poules po ON po.id = m.poule_id
   JOIN core.phases ph ON ph.id = po.phase_id
-  JOIN core.competitions c ON c.id = ph.competition_id`;
+  JOIN core.competitions c ON c.id = ph.competition_id
+  LEFT JOIN core.clubs cd ON cd.id_ffhb = ed.ext_structure_id
+  LEFT JOIN core.clubs ce ON ce.id_ffhb = ee.ext_structure_id`;
 
 /**
  * Page de matchs + total. Le tri est stabilisé par m.id (sinon des matchs de même heure
@@ -96,6 +103,8 @@ export async function queryMatchList(
             ee.id_ffhb AS equipe_ext_id_ffhb, ee.nom AS equipe_ext_nom,
             m.score_dom, m.score_ext, po.id_ffhb AS poule_id_ffhb,
             c.nom AS competition_nom, m.fdm_url,
+            cd.logo_club AS logo_dom, ce.logo_club AS logo_ext,
+            ph.nom AS phase_nom, po.nom AS poule_nom,
             count(*) OVER()::int AS _total
        ${FROM}
       WHERE ${whereClause}

@@ -218,7 +218,12 @@ clubs.openapi(clubEquipesRoute, async (c) => {
     return c.json({ error: { code: "NOT_FOUND" as const, message: `Club id_ffhb=${id_ffhb} introuvable` } }, 404);
   }
   const data = await listClubEquipesAvecPartenaires(club, saison, { include_ententes, min_confidence });
-  const groupes = grouper ? { groupes: grouperEquipes(data, await getOverrides(data.map((e) => e.id_ffhb))) } : {};
+  const groupes = grouper ? {
+        groupes: grouperEquipes(data, await getOverrides(data.map((e) => e.id_ffhb))).map((g) => ({
+          ...g,
+          logo_club: g.equipes.find((e) => e.logo_club)?.logo_club ?? null,
+        })),
+      } : {};
   return c.json({ data, meta: { saison, club: { id_ffhb: club.id_ffhb, code_ffhb: club.code_ffhb, nom: club.nom }, ...groupes } }, 200);
 });
 

@@ -90,7 +90,7 @@ export function buildApp(opts: BuildAppOptions = {}): OpenAPIHono {
   const openApiConfig = {
     openapi: "3.1.0" as const,
     info: {
-      version: "1.2.0",
+      version: "1.3.0",
       title: "ffhandball API",
       description:
         "API read-only sur les données handball français scrapées de FFHandball.\n\n" +

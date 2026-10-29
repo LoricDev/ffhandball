@@ -43,6 +43,7 @@ export const clubEquipeSchema = z
     id_ffhb: z.string(),
     nom: z.string(),
     engagements: z.array(engagementRefSchema),
+    logo_club: z.string().nullable().openapi({ description: "Fichier logo de l'équipe côté FFHB (secours si le club n'a pas de logo), null si aucun" }),
     lien: z
       .object({
         methode: z.enum(["licence", "structure", "nom_exact", "nom_reserve", "nom_entente", "groupe"]).openapi({
@@ -85,6 +86,7 @@ export const groupeEquipesSchema = groupeRefSchema
   .extend({
     equipes: z.array(clubEquipeSchema).openapi({ description: "Les inscriptions FFHB (une par compétition) qui forment cette équipe réelle" }),
     competitions: z.array(competitionRefSchema),
+    logo_club: z.string().nullable().openapi({ description: "Premier logo non nul parmi les inscriptions du groupe, null si aucune" }),
   })
   .openapi("GroupeEquipes");
 

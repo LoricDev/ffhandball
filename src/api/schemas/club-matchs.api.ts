@@ -53,6 +53,10 @@ export const clubMatchItemSchema = z
       .string()
       .nullable()
       .openapi({ example: "https://fdm.ffhandball.fr/...", description: "URL feuille de match PDF" }),
+    logo_dom: z.string().nullable().openapi({ example: "2015-06-26-b57558ab.png", description: "Fichier logo du club de l'équipe domicile (même valeur que `logo_club` de GET /clubs/{id}) ; null : entente sans club résolu ou pas de logo" }),
+    logo_ext: z.string().nullable().openapi({ description: "Fichier logo du club de l'équipe extérieure ; null si aucun" }),
+    phase_nom: z.string().openapi({ example: "CDF REG MAS (1° TOUR)", description: "Nom de la phase (porte le tour d'une coupe)" }),
+    poule_nom: z.string().openapi({ example: "1ER TOUR" }),
     club_recevant: z
       .boolean()
       .openapi({ description: "True si le club joue ce match à domicile (équipe liée est l'équipe dom)" }),

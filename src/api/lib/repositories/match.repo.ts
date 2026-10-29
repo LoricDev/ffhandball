@@ -65,13 +65,17 @@ export async function getMatchDetail(idFfhbMatch: string): Promise<MatchDetail |
   const baseRes = await query<Record<string, unknown>>(
     `SELECT m.*, ed.id_ffhb AS equipe_dom_id_ffhb, ed.nom AS equipe_dom_nom,
             ee.id_ffhb AS equipe_ext_id_ffhb, ee.nom AS equipe_ext_nom,
-            po.id_ffhb AS poule_id_ffhb, c.nom AS competition_nom
+            po.id_ffhb AS poule_id_ffhb, c.nom AS competition_nom,
+            cd.logo_club AS logo_dom, ce.logo_club AS logo_ext,
+            ph.nom AS phase_nom, po.nom AS poule_nom
        FROM core.matchs m
        JOIN core.equipes ed ON ed.id = m.equipe_dom_id
        JOIN core.equipes ee ON ee.id = m.equipe_ext_id
        JOIN core.poules po ON po.id = m.poule_id
        JOIN core.phases ph ON ph.id = po.phase_id
        JOIN core.competitions c ON c.id = ph.competition_id
+       LEFT JOIN core.clubs cd ON cd.id_ffhb = ed.ext_structure_id
+       LEFT JOIN core.clubs ce ON ce.id_ffhb = ee.ext_structure_id
       WHERE m.id_ffhb_match = $1`,
     [idFfhbMatch],
   );
@@ -126,6 +130,10 @@ export async function getMatchDetail(idFfhbMatch: string): Promise<MatchDetail |
     poule_id_ffhb: base.poule_id_ffhb as string,
     competition_nom: base.competition_nom as string,
     fdm_url: base.fdm_url as string | null,
+    logo_dom: (base.logo_dom ?? null) as string | null,
+    logo_ext: (base.logo_ext ?? null) as string | null,
+    phase_nom: base.phase_nom as string,
+    poule_nom: base.poule_nom as string,
     compositions: compoRes.rows.map((r) => ({
       cote: r.cote as "dom" | "ext",
       joueur: {
