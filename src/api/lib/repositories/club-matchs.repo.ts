@@ -40,6 +40,7 @@ export interface ClubMatchItem {
   logo_ext: string | null;
   phase_nom: string;
   poule_nom: string;
+  equipement_id: string | null;
   club_recevant: boolean;
   via_entente: boolean;
   via_principal: boolean;
@@ -152,6 +153,7 @@ export async function getClubMatchsCalendar(opts: ClubMatchsOptions): Promise<Cl
     logo_ext: string | null;
     phase_nom: string;
     poule_nom: string;
+    equipement_id: string | null;
   }>(
     `SELECT m.id_ffhb_match, m.date_heure, m.statut, m.forfait_equipe, m.journee,
             ed.id_ffhb AS equipe_dom_id_ffhb, ed.nom AS equipe_dom_nom,
@@ -162,7 +164,7 @@ export async function getClubMatchsCalendar(opts: ClubMatchsOptions): Promise<Cl
             c.nom AS competition_nom,
             m.fdm_url,
             cd.logo_club AS logo_dom, ce.logo_club AS logo_ext,
-            ph.nom AS phase_nom, po.nom AS poule_nom
+            ph.nom AS phase_nom, po.nom AS poule_nom, m.equipement_id
        FROM core.matchs m
        JOIN core.equipes ed ON ed.id = m.equipe_dom_id
        JOIN core.equipes ee ON ee.id = m.equipe_ext_id
@@ -205,6 +207,7 @@ export async function getClubMatchsCalendar(opts: ClubMatchsOptions): Promise<Cl
       logo_ext: row.logo_ext,
       phase_nom: row.phase_nom,
       poule_nom: row.poule_nom,
+      equipement_id: row.equipement_id,
       club_recevant: !!domEquipe,
       via_entente: matchedEquipe?.is_entente ?? false,
       via_principal: matchedEquipe?.is_principal ?? false,

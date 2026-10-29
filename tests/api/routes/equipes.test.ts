@@ -173,7 +173,7 @@ describe("GET /clubs/:id_ffhb/equipes", () => {
       expect(res.status).toBe(200);
       return (await res.json()) as { data: Record<string, unknown>[]; meta: { groupes?: Record<string, unknown>[] } };
     };
-    const attendu = { logo_dom: "logo-t2.png", logo_ext: null, phase_nom: "Phase", poule_nom: "Poule" };
+    const attendu = { logo_dom: "logo-t2.png", logo_ext: null, phase_nom: "Phase", poule_nom: "Poule", equipement_id: null };
     const clubMatchs = await get(`/clubs/${CLUB_ID}/matchs?saison=2025-2026`);
     expect(clubMatchs.data[0]).toMatchObject({ ...attendu, equipe_dom_id_ffhb: "EQT2-EQ1", equipe_ext_id_ffhb: "EQT2-ADV" });
     expect((await get("/equipes/EQT2-EQ1/matchs?saison=2025-2026")).data[0]).toMatchObject(attendu);

@@ -24,6 +24,8 @@ export interface MatchListRow {
   logo_ext: string | null;
   phase_nom: string;
   poule_nom: string;
+  /** Identifiant FFHB de l'équipement (salle) du match ; sans équivalent dans /salles (voir description du schéma). */
+  equipement_id: string | null;
 }
 
 export interface MatchFilters {
@@ -104,7 +106,7 @@ export async function queryMatchList(
             m.score_dom, m.score_ext, po.id_ffhb AS poule_id_ffhb,
             c.nom AS competition_nom, m.fdm_url,
             cd.logo_club AS logo_dom, ce.logo_club AS logo_ext,
-            ph.nom AS phase_nom, po.nom AS poule_nom,
+            ph.nom AS phase_nom, po.nom AS poule_nom, m.equipement_id,
             count(*) OVER()::int AS _total
        ${FROM}
       WHERE ${whereClause}

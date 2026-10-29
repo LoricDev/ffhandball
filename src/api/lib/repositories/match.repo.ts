@@ -9,7 +9,6 @@ export interface MatchDetail extends MatchListItem {
   score_mt_dom: number | null;
   score_mt_ext: number | null;
   heure_estimee: boolean;
-  equipement_id: string | null;
   compositions: Array<{
     cote: "dom" | "ext";
     joueur: { numero_licence: string; nom: string; prenom: string };

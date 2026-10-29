@@ -24,6 +24,11 @@ export const matchListItemSchema = z.object({
   logo_ext: z.string().nullable().openapi({ description: "Fichier logo du club de l'équipe extérieure ; null si aucun" }),
   phase_nom: z.string().openapi({ example: "CDF REG MAS (1° TOUR)", description: "Nom de la phase (porte le tour d'une coupe)" }),
   poule_nom: z.string().openapi({ example: "1ER TOUR" }),
+  equipement_id: z.string().nullable().openapi({
+    example: "842",
+    description:
+      "Identifiant FFHB de l'équipement (salle) où se joue le match. Ce n'est PAS l'id d'une salle de /salles (celles-ci ont un slug nom+code postal+ville) : aucun lien n'est encore résolu entre les deux.",
+  }),
 }).openapi("MatchListItem");
 
 const compositionItemSchema = z.object({
@@ -68,7 +73,6 @@ export const matchDetailSchema = matchListItemSchema.extend({
   score_mt_dom: z.number().int().nullable(),
   score_mt_ext: z.number().int().nullable(),
   heure_estimee: z.boolean(),
-  equipement_id: z.string().nullable(),
   compositions: z.array(compositionItemSchema),
   actions: z.array(actionItemSchema),
   officiels: z.array(officielItemSchema),
