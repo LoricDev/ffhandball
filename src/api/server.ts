@@ -90,12 +90,13 @@ export function buildApp(opts: BuildAppOptions = {}): OpenAPIHono {
   const openApiConfig = {
     openapi: "3.1.0" as const,
     info: {
-      version: "1.1.0",
+      version: "1.2.0",
       title: "ffhandball API",
       description:
         "API read-only sur les données handball français scrapées de FFHandball.\n\n" +
         "**Conventions** : réponses `{ data, meta }` ; listes paginées par `limit` (≤ 100) / `offset` avec `meta.total` ; " +
-        "erreurs `{ error: { code, message } }` ; dates en ISO 8601 ; en-têtes `ETag` (revalidation `If-None-Match` → 304), " +
+        "erreurs `{ error: { code, message } }` ; dates-heures en ISO 8601, jours en `YYYY-MM-DD` ; " +
+        "`groupes` = équipes réelles d'un club (clé `groupe_cle`, filtre `?groupe=`) ; en-têtes `ETag` (revalidation `If-None-Match` → 304), " +
         "`X-RateLimit-*` et `X-Request-Id`." +
         (authEnabled ? " Authentification par clé API requise (Authorization: Bearer)." : ""),
     },
