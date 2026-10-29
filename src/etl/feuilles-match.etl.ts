@@ -5,6 +5,7 @@ import { rawFeuilleMatchPayloadSchema, type RawFeuilleMatchPayload } from "@/sch
 import { logger } from "@/lib/logger.js";
 import { loadMatchByFdmIndex, type MatchRef } from "@/etl/shared/lookups.js";
 import { Progress } from "@/lib/progress.js";
+import { refreshEquipements } from "@/etl/equipements.etl.js";
 import { EtlCheckpoint } from "@/etl/shared/checkpoint.js";
 
 interface RawFdmRow {
@@ -60,6 +61,11 @@ export async function runFeuillesMatchEtl(saison: string): Promise<EtlReport> {
        report.rows_inserted, report.rows_updated, report.rows_noop, report.warnings_count],
     );
 
+    try {
+      logger.info({ equipements_maj: await refreshEquipements() }, "equipements rafraîchis");
+    } catch (err) {
+      logger.warn({ err }, "rafraîchissement des équipements échoué (non bloquant)");
+    }
     logger.info(report, "feuilles_match ETL done");
     return report;
   } catch (err) {

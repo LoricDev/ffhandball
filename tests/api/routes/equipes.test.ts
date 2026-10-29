@@ -173,7 +173,7 @@ describe("GET /clubs/:id_ffhb/equipes", () => {
       expect(res.status).toBe(200);
       return (await res.json()) as { data: Record<string, unknown>[]; meta: { groupes?: Record<string, unknown>[] } };
     };
-    const attendu = { logo_dom: "logo-t2.png", logo_ext: null, phase_nom: "Phase", poule_nom: "Poule", equipement_id: null };
+    const attendu = { logo_dom: "logo-t2.png", logo_ext: null, phase_nom: "Phase", poule_nom: "Poule", equipement_id: null, salle_id_ffhb: null, salle_nom: null };
     const clubMatchs = await get(`/clubs/${CLUB_ID}/matchs?saison=2025-2026`);
     expect(clubMatchs.data[0]).toMatchObject({ ...attendu, equipe_dom_id_ffhb: "EQT2-EQ1", equipe_ext_id_ffhb: "EQT2-ADV" });
     expect((await get("/equipes/EQT2-EQ1/matchs?saison=2025-2026")).data[0]).toMatchObject(attendu);
@@ -186,6 +186,32 @@ describe("GET /clubs/:id_ffhb/equipes", () => {
     const eqs = await get(`/clubs/${CLUB_ID}/equipes?saison=2025-2026&grouper=true`);
     expect(eqs.data.find((e) => e.id_ffhb === "EQT2-EQ1")).toMatchObject({ logo_club: "eq-t2.png" });
     expect(eqs.meta.groupes!.some((g) => g.logo_club === "eq-t2.png")).toBe(true);
+  });
+
+  it("salle des matchs (équipement des feuilles de match) et /salles/{equipement_id}", async () => {
+    await query(`DELETE FROM core.equipements WHERE equipement_id = 'EQT2-842'`);
+    await query(
+      `INSERT INTO core.equipements (equipement_id, nom, adresse, code_postal, ville)
+       VALUES ('EQT2-842', 'COSEC TEST', 'RUE DU TEST 57155 MARLY', '57155', 'MARLY')`,
+    );
+    await query(`UPDATE core.matchs SET equipement_id = 'EQT2-842' WHERE id_ffhb_match = 'EQT2-M-001'`);
+    const attendu = { equipement_id: "EQT2-842", salle_id_ffhb: "EQT2-842", salle_nom: "COSEC TEST", salle_ville: "MARLY", salle_adresse: "RUE DU TEST 57155 MARLY" };
+    const get = async (path: string) => {
+      _resetBuckets();
+      const res = await app.request(path);
+      expect(res.status).toBe(200);
+      return (await res.json()) as { data: Record<string, unknown> | Record<string, unknown>[] };
+    };
+    expect(((await get(`/clubs/${CLUB_ID}/matchs?saison=2025-2026`)).data as Record<string, unknown>[])[0]).toMatchObject(attendu);
+    expect(((await get("/equipes/EQT2-EQ1/matchs?saison=2025-2026")).data as Record<string, unknown>[])[0]).toMatchObject(attendu);
+    expect((await get("/matchs/EQT2-M-001")).data).toMatchObject(attendu);
+    expect((await get("/salles/EQT2-842")).data).toMatchObject({ id_ffhb: "EQT2-842", nom: "COSEC TEST", ville: "MARLY", code_postal: "57155" });
+    const matchs = (await get("/salles/EQT2-842/matchs")).data as { id_ffhb_match: string }[];
+    expect(matchs.map((m) => m.id_ffhb_match)).toEqual(["EQT2-M-001"]);
+    _resetBuckets();
+    expect((await app.request("/salles/EQT2-INCONNU")).status).toBe(404);
+    await query(`UPDATE core.matchs SET equipement_id = NULL WHERE id_ffhb_match = 'EQT2-M-001'`);
+    await query(`DELETE FROM core.equipements WHERE equipement_id = 'EQT2-842'`);
   });
 
   afterAll(async () => {

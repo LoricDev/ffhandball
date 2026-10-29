@@ -27,8 +27,12 @@ export const matchListItemSchema = z.object({
   equipement_id: z.string().nullable().openapi({
     example: "842",
     description:
-      "Identifiant FFHB de l'équipement (salle) où se joue le match. Ce n'est PAS l'id d'une salle de /salles (celles-ci ont un slug nom+code postal+ville) : aucun lien n'est encore résolu entre les deux.",
+      "Identifiant FFHB de l'équipement (salle) où se joue le match (voir `salle_*` pour son nom).",
   }),
+  salle_id_ffhb: z.string().nullable().openapi({ example: "842", description: "Identifiant à passer à /salles/{id} (équipement connu d'après les feuilles de match, ou salle FFHB rattachée) ; null si la salle n'est pas identifiée" }),
+  salle_nom: z.string().nullable().openapi({ example: "COSEC LA LOUVIERE" }),
+  salle_ville: z.string().nullable().openapi({ example: "MARLY" }),
+  salle_adresse: z.string().nullable().openapi({ example: "RUE CROIX ST JOSEPH 57155 MARLY" }),
 }).openapi("MatchListItem");
 
 const compositionItemSchema = z.object({

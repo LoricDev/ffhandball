@@ -12,9 +12,9 @@ const detailRoute = createRoute({
   method: "get",
   path: "/salles/{id_ffhb}",
   tags: ["salles"],
-  summary: "Détail d'une salle",
+  summary: "Détail d'une salle ou d'un équipement",
   request: {
-    params: z.object({ id_ffhb: z.string().openapi({ example: "5655", description: "Identifiant FFHB de la salle" }) }),
+    params: z.object({ id_ffhb: z.string().openapi({ example: "5655", description: "Identifiant FFHB de la salle (slug), ou `equipement_id` / `salle_id_ffhb` d'un match" }) }),
   },
   responses: {
     200: {
