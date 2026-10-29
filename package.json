@@ -30,7 +30,7 @@
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
     "db:reset": "docker compose down -v && docker compose up -d",
-    "db:migrate": "for f in db/migrations/*.sql; do docker exec -i ffhandball-postgres psql -U ffhandball -d ffhandball < \"$f\"; done",
+    "db:migrate": "node --env-file=.env --import tsx src/cli/migrate.ts",
     "db:seed": "for f in db/seeds/*.sql; do docker exec -i ffhandball-postgres psql -U ffhandball -d ffhandball < \"$f\"; done",
     "db:psql": "docker exec -it ffhandball-postgres psql -U ffhandball -d ffhandball",
     "api": "node --env-file=.env --import tsx src/api/server.ts",

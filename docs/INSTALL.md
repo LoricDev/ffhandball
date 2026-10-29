@@ -184,7 +184,7 @@ npx vitest run --no-file-parallelism --pool=forks --poolOptions.forks.singleFork
 
 ### Migration : "already exists"
 
-`db:migrate` n'est pas idempotent par défaut, il rejoue toutes les migrations. Les migrations utilisent `IF NOT EXISTS` partout, donc c'est généralement safe. Si erreur :
+`db:migrate` appelle désormais le runner suivi (`pnpm migrate`) : il n'applique que les migrations en attente. Sur une base déjà migrée par l'ancien script (qui rejouait tout et détruisait `core.poules` via 0008), lancer une fois `pnpm migrate baseline`. Les migrations utilisent `IF NOT EXISTS` partout, donc c'est généralement safe. Si erreur :
 
 ```bash
 # Reset complet (⚠️ drop le volume Docker, perte de toutes les données)
