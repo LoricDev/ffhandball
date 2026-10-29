@@ -24,7 +24,7 @@ const searchRoute = createRoute({
           }),
         },
       },
-      description: "Résultats de recherche fuzzy multi-entités",
+      description: "Résultats de recherche floue multi-entités",
     },
     400: {
       content: { "application/json": { schema: errorResponseSchema } },

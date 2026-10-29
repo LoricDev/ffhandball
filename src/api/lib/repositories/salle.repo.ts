@@ -1,5 +1,5 @@
 // src/api/lib/repositories/salle.repo.ts
-import { queryMatchList, type MatchListRow } from "@/api/lib/repositories/match-list.js";
+import { queryMatchList, type MatchListRow, type MatchStatut } from "@/api/lib/repositories/match-list.js";
 import { query } from "@/db/client.js";
 
 export interface SalleDetail {
@@ -30,7 +30,7 @@ export async function getSalleByIdFfhb(idFfhb: string): Promise<SalleDetail | nu
 export interface SalleMatchsOptions {
   date_from?: string;
   date_to?: string;
-  statut?: string;
+  statut?: MatchStatut;
   journee?: number;
   tri?: "date_asc" | "date_desc";
   limit: number;

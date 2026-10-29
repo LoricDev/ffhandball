@@ -1,16 +1,12 @@
 // src/api/schemas/referentiel.api.ts
 import { z } from "@hono/zod-openapi";
-
-const dateOut = z
-  .union([z.string(), z.date()])
-  .nullable()
-  .transform((v) => (v instanceof Date ? v.toISOString().slice(0, 10) : v));
+import { dateOut } from "@/api/schemas/shared.js";
 
 export const saisonItemSchema = z
   .object({
     saison_code: z.string().openapi({ example: "2025-2026" }),
-    date_debut: dateOut,
-    date_fin: dateOut,
+    date_debut: dateOut.nullable(),
+    date_fin: dateOut.nullable(),
   })
   .openapi("SaisonItem");
 

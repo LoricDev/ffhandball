@@ -3,6 +3,7 @@ import { newRouter } from "@/api/lib/router.js";
 import { createRoute, z } from "@hono/zod-openapi";
 import { statsJoueurItemSchema, statsJoueursQuerySchema } from "@/api/schemas/stats-joueurs.api.js";
 import { paginationMetaSchema, errorResponseSchema } from "@/api/schemas/common.js";
+import { pouleExists } from "@/api/lib/repositories/match.repo.js";
 import { getStatsJoueursByPoule } from "@/api/lib/repositories/stats-joueurs.repo.js";
 
 const statsJoueurs = newRouter();
@@ -28,7 +29,7 @@ const listRoute = createRoute({
     },
     404: {
       content: { "application/json": { schema: errorResponseSchema } },
-      description: "Poule introuvable ou sans stats joueurs",
+      description: "Poule introuvable (une poule sans stats renvoie 200 avec une liste vide)",
     },
   },
 });
@@ -36,11 +37,8 @@ const listRoute = createRoute({
 statsJoueurs.openapi(listRoute, async (c) => {
   const q = c.req.valid("query");
   const { data, total } = await getStatsJoueursByPoule(q.poule_id_ffhb, q.limit, q.offset);
-  if (total === 0) {
-    return c.json(
-      { error: { code: "NOT_FOUND" as const, message: `Poule id_ffhb=${q.poule_id_ffhb} introuvable ou sans stats joueurs` } },
-      404,
-    );
+  if (total === 0 && !(await pouleExists(q.poule_id_ffhb))) {
+    return c.json({ error: { code: "NOT_FOUND" as const, message: `Poule id_ffhb=${q.poule_id_ffhb} introuvable` } }, 404);
   }
   return c.json({ data, meta: { total, limit: q.limit, offset: q.offset } }, 200);
 });

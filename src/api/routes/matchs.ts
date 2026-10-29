@@ -47,11 +47,11 @@ const detailRoute = createRoute({
   responses: {
     200: {
       content: { "application/json": { schema: z.object({ data: matchDetailSchema }) } },
-      description: "Match detail enrichi (compositions + actions + officiels)",
+      description: "Détail du match (compositions, actions, officiels)",
     },
     404: {
       content: { "application/json": { schema: errorResponseSchema } },
-      description: "Match not found",
+      description: "Match introuvable",
     },
   },
 });

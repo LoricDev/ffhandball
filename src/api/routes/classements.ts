@@ -3,6 +3,7 @@ import { newRouter } from "@/api/lib/router.js";
 import { createRoute, z } from "@hono/zod-openapi";
 import { classementItemSchema, classementQuerySchema } from "@/api/schemas/classement.api.js";
 import { errorResponseSchema } from "@/api/schemas/common.js";
+import { pouleExists } from "@/api/lib/repositories/match.repo.js";
 import { getClassementByPoule } from "@/api/lib/repositories/classement.repo.js";
 
 const classements = newRouter();
@@ -30,7 +31,7 @@ const listRoute = createRoute({
     },
     404: {
       content: { "application/json": { schema: errorResponseSchema } },
-      description: "Poule introuvable ou sans classement",
+      description: "Poule introuvable (une poule sans classement renvoie 200 avec une liste vide)",
     },
   },
 });
@@ -38,11 +39,8 @@ const listRoute = createRoute({
 classements.openapi(listRoute, async (c) => {
   const { poule_id_ffhb } = c.req.valid("query");
   const data = await getClassementByPoule(poule_id_ffhb);
-  if (data.length === 0) {
-    return c.json(
-      { error: { code: "NOT_FOUND" as const, message: `Poule id_ffhb=${poule_id_ffhb} introuvable ou sans classement` } },
-      404,
-    );
+  if (data.length === 0 && !(await pouleExists(poule_id_ffhb))) {
+    return c.json({ error: { code: "NOT_FOUND" as const, message: `Poule id_ffhb=${poule_id_ffhb} introuvable` } }, 404);
   }
   return c.json({ data }, 200);
 });

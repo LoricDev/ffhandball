@@ -5,6 +5,7 @@ import { equipeDetailSchema, equipeMatchsQuerySchema, rosterJoueurItemSchema } f
 import { matchListItemSchema } from "@/api/schemas/match.api.js";
 import { saisonQuerySchema } from "@/api/schemas/competition.api.js";
 import { paginationMetaWithSaisonSchema, errorResponseSchema } from "@/api/schemas/common.js";
+import { resolveClubGroupes } from "@/api/lib/club-groupes.js";
 import { getEquipeDetail, getEquipeMatchs, getEquipeJoueurs } from "@/api/lib/repositories/equipe.repo.js";
 
 const equipes = newRouter();
@@ -34,7 +35,14 @@ equipes.openapi(detailRoute, async (c) => {
   if (!data) {
     return c.json({ error: { code: "NOT_FOUND" as const, message: `Équipe id_ffhb=${id_ffhb} introuvable` } }, 404);
   }
-  return c.json({ data }, 200);
+  // Le groupe se calcule dans le club porteur : c'est lui qui donne les équipes sœurs (rang, entente).
+  let groupe = null;
+  if (data.club) {
+    const { groupes, cleParEquipe } = await resolveClubGroupes(data.club, saison);
+    const cle = cleParEquipe.get(data.id_ffhb);
+    groupe = groupes.find((g) => g.cle === cle) ?? null;
+  }
+  return c.json({ data: { ...data, groupe } }, 200);
 });
 
 const matchsRoute = createRoute({

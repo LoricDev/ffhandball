@@ -2,27 +2,39 @@
 import { z } from "@hono/zod-openapi";
 import { triDateSchema } from "@/api/schemas/common.js";
 import { matchFiltersQuery } from "@/api/schemas/match.api.js";
-import { saisonQuerySchema } from "@/api/schemas/competition.api.js";
+import { pouleRefSchema, saisonQuerySchema } from "@/api/schemas/competition.api.js";
+import { clubRefSchema, competitionRefSchema, phaseRefSchema } from "@/api/schemas/shared.js";
 import { currentSaison } from "@/lib/saison.js";
 
 export const engagementRefSchema = z
   .object({
-    poule: z.object({ id_ffhb: z.string(), nom: z.string() }),
-    phase: z.object({ id_ffhb: z.string(), nom: z.string() }),
-    competition: z.object({ id_ffhb: z.string(), nom: z.string(), niveau: z.string().nullable() }),
+    poule: pouleRefSchema,
+    phase: phaseRefSchema,
+    competition: competitionRefSchema,
   })
   .openapi("EngagementRef");
+
+export const groupeRefSchema = z
+  .object({
+    cle: z.string().openapi({ example: "-13|M|1|entente", description: "Clé stable du groupe : catégorie|sexe|rang|club ou entente" }),
+    categorie: z.enum(["Seniors", "-20", "-19", "-18", "-17", "-15", "-13", "-11", "-9", "-7", "Loisir", "Autre"]),
+    sexe: z.enum(["M", "F", "mixte"]),
+    rang: z.number().int().positive().openapi({ description: "1 = équipe première ; 2, 3… = équipes réserves (chiffre ou lettre finale du nom)" }),
+    entente: z.boolean().openapi({ description: "true si l'équipe est une entente ou une convention entre clubs" }),
+    libelle: z.string().openapi({ example: "-13 M — entente" }),
+  })
+  .openapi("GroupeRef");
 
 export const equipeDetailSchema = z
   .object({
     id_ffhb: z.string(),
     nom: z.string(),
     saison_code: z.string(),
-    club: z
-      .object({ id_ffhb: z.string(), code_ffhb: z.string().nullable(), nom: z.string() })
+    club: clubRefSchema
       .nullable()
       .openapi({ description: "Club résolu via le pont ext_structure_id = clubs.id_ffhb" }),
     engagements: z.array(engagementRefSchema),
+    groupe: groupeRefSchema.nullable().openapi({ description: "Équipe réelle (catégorie, sexe, rang) à laquelle appartient cette inscription, calculée dans le club porteur ; null sans club" }),
   })
   .openapi("EquipeDetail");
 
@@ -64,23 +76,23 @@ export const clubEquipesQuerySchema = saisonQuerySchema.extend({
     .transform((v) => v === "true")
     .openapi({
       description:
-        "Regrouper les inscriptions en équipes réelles (catégorie, sexe, rang, entente). Ajoute le champ `groupes` ; `data` reste inchangé.",
+        "Regrouper les inscriptions en équipes réelles (catégorie, sexe, rang, entente). Ajoute `meta.groupes` ; `data` reste inchangé.",
       example: "true",
     }),
 });
 
-export const groupeEquipesSchema = z
-  .object({
-    cle: z.string().openapi({ example: "-13|M|1|entente", description: "Clé stable du groupe : catégorie|sexe|rang|club ou entente" }),
-    categorie: z.enum(["Seniors", "-20", "-19", "-18", "-17", "-15", "-13", "-11", "-9", "-7", "Loisir", "Autre"]),
-    sexe: z.enum(["M", "F", "mixte"]),
-    rang: z.number().int().positive().openapi({ description: "1 = équipe première ; 2, 3… = équipes réserves (chiffre ou lettre finale du nom)" }),
-    entente: z.boolean().openapi({ description: "true si l'équipe est une entente ou une convention entre clubs" }),
-    libelle: z.string().openapi({ example: "-13 M — entente" }),
+export const groupeEquipesSchema = groupeRefSchema
+  .extend({
     equipes: z.array(clubEquipeSchema).openapi({ description: "Les inscriptions FFHB (une par compétition) qui forment cette équipe réelle" }),
-    competitions: z.array(z.object({ id_ffhb: z.string(), nom: z.string(), niveau: z.string().nullable() })),
+    competitions: z.array(competitionRefSchema),
   })
   .openapi("GroupeEquipes");
+
+/** Clé du groupe (équipe réelle) auquel appartient l'élément, dans `meta.groupes`. null si inconnu ou exclu. */
+export const groupeCleSchema = z.string().nullable().openapi({ example: "-13|M|1|club", description: "Clé du groupe (voir `meta.groupes`)" });
+
+/** Filtre `?groupe=` : clé d'un groupe de `meta.groupes`. */
+export const groupeQuerySchema = z.string().optional().openapi({ example: "-13|M|1|club", description: "Ne garder que ce groupe (clé de `meta.groupes`, voir `/clubs/{id}/equipes?grouper=true`)" });
 
 export const rosterJoueurItemSchema = z
   .object({

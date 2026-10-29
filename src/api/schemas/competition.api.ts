@@ -1,5 +1,6 @@
 // src/api/schemas/competition.api.ts
 import { z } from "@hono/zod-openapi";
+import { competitionRefSchema, phaseRefSchema } from "@/api/schemas/shared.js";
 import { currentSaison } from "@/lib/saison.js";
 import { classementItemSchema } from "@/api/schemas/classement.api.js";
 
@@ -19,8 +20,8 @@ export const pouleRefSchema = z
   .object({ id_ffhb: z.string(), nom: z.string() })
   .openapi("PouleRef");
 
-export const phaseWithPoulesSchema = z
-  .object({ id_ffhb: z.string(), nom: z.string(), poules: z.array(pouleRefSchema) })
+export const phaseWithPoulesSchema = phaseRefSchema
+  .extend({ poules: z.array(pouleRefSchema) })
   .openapi("PhaseWithPoules");
 
 export const competitionDetailSchema = competitionListItemSchema
@@ -45,8 +46,8 @@ export const pouleDetailSchema = z
     id_ffhb: z.string(),
     nom: z.string(),
     saison_code: z.string(),
-    phase: z.object({ id_ffhb: z.string(), nom: z.string() }),
-    competition: z.object({ id_ffhb: z.string(), nom: z.string(), niveau: z.string().nullable() }),
+    phase: phaseRefSchema,
+    competition: competitionRefSchema,
     classement: z.array(classementItemSchema),
   })
   .openapi("PouleDetail");

@@ -1,6 +1,8 @@
 // src/api/schemas/club-matchs.api.ts
 import { z } from "@hono/zod-openapi";
-import { isoDateParamSchema } from "@/api/schemas/common.js";
+import { isoDateParamSchema, matchStatutSchema } from "@/api/schemas/common.js";
+import { clubRefSchema, dateTimeOut } from "@/api/schemas/shared.js";
+import { groupeCleSchema, groupeQuerySchema, groupeRefSchema } from "@/api/schemas/equipe.api.js";
 import { currentSaison } from "@/lib/saison.js";
 
 export const equipeLieeSchema = z
@@ -31,19 +33,17 @@ export const equipeLieeSchema = z
 export const clubMatchItemSchema = z
   .object({
     id_ffhb_match: z.string().openapi({ example: "M-12345", description: "Identifiant FFHB du match" }),
-    date_heure: z
-      .union([z.string(), z.date()])
-      .transform((v) => (v instanceof Date ? v.toISOString() : v))
+    date_heure: dateTimeOut
       .openapi({ example: "2026-09-03T20:00:00.000Z", description: "Date et heure du match (ISO 8601)" }),
-    statut: z
-      .string()
-      .openapi({ example: "joue", description: "Statut du match : joue, a_jouer, reporte, annule, forfait" }),
+    statut: matchStatutSchema.openapi({ example: "joue" }),
     forfait_equipe: z
       .enum(["dom", "ext"])
       .nullable()
       .openapi({ example: null, description: "Équipe ayant fait forfait (score « FO » sur ffhandball.fr), null sinon" }),
     journee: z.number().int().nullable().openapi({ example: 1, description: "Numéro de journée" }),
+    equipe_dom_id_ffhb: z.string().openapi({ description: "Identifiant FFHB de l'équipe domicile" }),
     equipe_dom_nom: z.string().openapi({ example: "BREST BRETAGNE HANDBALL", description: "Équipe domicile" }),
+    equipe_ext_id_ffhb: z.string().openapi({ description: "Identifiant FFHB de l'équipe extérieure" }),
     equipe_ext_nom: z.string().openapi({ example: "PARIS 92", description: "Équipe extérieure" }),
     score_dom: z.number().int().nullable().openapi({ example: 28, description: "Score domicile (null si non joué)" }),
     score_ext: z.number().int().nullable().openapi({ example: 25, description: "Score extérieur (null si non joué)" }),
@@ -66,6 +66,7 @@ export const clubMatchItemSchema = z
       description: "Confiance du lien équipe↔club qui rattache ce match au club",
       example: "haute",
     }),
+    groupe_cle: groupeCleSchema,
   })
   .openapi("ClubMatchItem");
 
@@ -98,8 +99,7 @@ export const clubMatchsQuerySchema = z.object({
       description: "Filtre date de fin (ISO 8601, ex: 2026-06-30)",
       example: "2026-06-30",
     }),
-  statut: z
-    .enum(["a_jouer", "joue", "reporte", "annule", "forfait"])
+  statut: matchStatutSchema
     .optional()
     .openapi({
       description: "Filtre sur le statut du match",
@@ -113,6 +113,7 @@ export const clubMatchsQuerySchema = z.object({
         "Filtre les équipes liées (et leurs matchs) par confiance minimale. Absent = toutes confiances.",
       example: "haute",
     }),
+  groupe: groupeQuerySchema,
   limit: z.coerce
     .number()
     .int()
@@ -134,16 +135,8 @@ export const clubMatchsMetaSchema = z
     limit: z.number().int().positive(),
     offset: z.number().int().nonnegative(),
     saison: z.string().openapi({ example: "2026-2027", description: "Saison utilisée pour cette réponse" }),
-    club: z
-      .object({
-        id_ffhb: z.string(),
-        code_ffhb: z.string().nullable().openapi({
-          description: "Code FFHB 7 chiffres (préfixe licences / FdM). null si inconnu.",
-          example: "5221105",
-        }),
-        nom: z.string(),
-      })
-      .openapi({ description: "Informations du club" }),
+    club: clubRefSchema.openapi({ description: "Informations du club" }),
+    groupes: z.array(groupeRefSchema).openapi({ description: "Équipes réelles du club pour la saison ; `data[].groupe_cle` y renvoie" }),
     equipes_liees: z
       .array(equipeLieeSchema)
       .openapi({

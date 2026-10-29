@@ -7,7 +7,7 @@ import {
   arbitreDetailSchema,
   arbitreListQuerySchema,
 } from "@/api/schemas/arbitre.api.js";
-import { paginationMetaSchema, paginationQuerySchema, errorResponseSchema } from "@/api/schemas/common.js";
+import { paginationMetaSchema, paginationQuerySchema, errorResponseSchema, triDateSchema } from "@/api/schemas/common.js";
 import { listArbitres, getArbitreMatchs, getArbitreDetail } from "@/api/lib/repositories/arbitre.repo.js";
 
 const arbitres = newRouter();
@@ -69,7 +69,7 @@ const matchsRoute = createRoute({
   summary: "Matchs arbitrés par un arbitre",
   request: {
     params: z.object({ id_ffhb: z.string().openapi({ example: "286170", description: "Identifiant FFHB de l'arbitre" }) }),
-    query: paginationQuerySchema,
+    query: paginationQuerySchema.extend({ tri: triDateSchema.optional().openapi({ description: "Tri par date de match (défaut : date_asc)" }) }),
   },
   responses: {
     200: {
@@ -87,7 +87,7 @@ const matchsRoute = createRoute({
 arbitres.openapi(matchsRoute, async (c) => {
   const { id_ffhb } = c.req.valid("param");
   const q = c.req.valid("query");
-  const result = await getArbitreMatchs(id_ffhb, q.limit, q.offset);
+  const result = await getArbitreMatchs(id_ffhb, q.limit, q.offset, q.tri);
   if (!result) {
     return c.json({ error: { code: "NOT_FOUND" as const, message: `Arbitre id_ffhb=${id_ffhb} introuvable` } }, 404);
   }

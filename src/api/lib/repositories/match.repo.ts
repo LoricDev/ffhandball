@@ -1,6 +1,6 @@
 // src/api/lib/repositories/match.repo.ts
 import { query } from "@/db/client.js";
-import { queryMatchList, type MatchFilters } from "@/api/lib/repositories/match-list.js";
+import { queryMatchList, type MatchFilters, type MatchStatut } from "@/api/lib/repositories/match-list.js";
 
 export type { MatchListRow as MatchListItem } from "@/api/lib/repositories/match-list.js";
 import type { MatchListRow as MatchListItem } from "@/api/lib/repositories/match-list.js";
@@ -110,7 +110,7 @@ export async function getMatchDetail(idFfhbMatch: string): Promise<MatchDetail |
   return {
     id_ffhb_match: base.id_ffhb_match as string,
     date_heure: base.date_heure as Date,
-    statut: base.statut as string,
+    statut: base.statut as MatchStatut,
     forfait_equipe: (base.forfait_equipe ?? null) as "dom" | "ext" | null,
     journee: base.journee as number | null,
     equipe_dom_nom: base.equipe_dom_nom as string,

@@ -2,7 +2,7 @@
 import { newRouter } from "@/api/lib/router.js";
 import { createRoute, z } from "@hono/zod-openapi";
 import { joueurDetailSchema, joueurMatchItemSchema } from "@/api/schemas/joueur.api.js";
-import { errorResponseSchema, paginationMetaSchema, paginationQuerySchema } from "@/api/schemas/common.js";
+import { errorResponseSchema, paginationMetaSchema, paginationQuerySchema, triDateSchema } from "@/api/schemas/common.js";
 import { getJoueurByLicence, getJoueurMatchs } from "@/api/lib/repositories/joueur.repo.js";
 
 const joueurs = newRouter();
@@ -16,11 +16,11 @@ const detailRoute = createRoute({
   responses: {
     200: {
       content: { "application/json": { schema: z.object({ data: joueurDetailSchema }) } },
-      description: "Joueur detail avec stats agrégées et historique 10 derniers matchs",
+      description: "Fiche du joueur avec stats agrégées et 10 derniers matchs",
     },
     404: {
       content: { "application/json": { schema: errorResponseSchema } },
-      description: "Joueur not found",
+      description: "Joueur introuvable",
     },
   },
 });
@@ -44,7 +44,7 @@ const matchsRoute = createRoute({
   summary: "Historique complet (paginé) des matchs d'un joueur",
   request: {
     params: z.object({ numero_licence: z.string() }),
-    query: paginationQuerySchema,
+    query: paginationQuerySchema.extend({ tri: triDateSchema.optional().openapi({ description: "Tri par date de match (défaut : date_asc)" }) }),
   },
   responses: {
     200: {
@@ -55,14 +55,14 @@ const matchsRoute = createRoute({
       },
       description: "Matchs du joueur (triés par date_heure ASC)",
     },
-    404: { content: { "application/json": { schema: errorResponseSchema } }, description: "Joueur not found" },
+    404: { content: { "application/json": { schema: errorResponseSchema } }, description: "Joueur introuvable" },
   },
 });
 
 joueurs.openapi(matchsRoute, async (c) => {
   const { numero_licence } = c.req.valid("param");
   const q = c.req.valid("query");
-  const result = await getJoueurMatchs(numero_licence, q.limit, q.offset);
+  const result = await getJoueurMatchs(numero_licence, q.limit, q.offset, q.tri);
   if (!result) {
     return c.json(
       { error: { code: "NOT_FOUND" as const, message: `Joueur numero_licence=${numero_licence} introuvable` } },

@@ -1,5 +1,6 @@
 // src/api/schemas/classement.api.ts
 import { z } from "@hono/zod-openapi";
+import { dateTimeOut } from "@/api/schemas/shared.js";
 
 export const classementItemSchema = z.object({
   position: z.number().int(),
@@ -12,7 +13,7 @@ export const classementItemSchema = z.object({
   buts_contre: z.number().int(),
   difference: z.number().int(),
   dernieres_rencontres: z.string().nullable(),
-  capture_date: z.union([z.string(), z.date()]).transform((v) => (v instanceof Date ? v.toISOString() : v)),
+  capture_date: dateTimeOut,
   equipe_id_ffhb: z.string(),
   equipe_nom: z.string(),
 }).openapi("ClassementItem");

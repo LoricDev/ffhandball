@@ -1,5 +1,6 @@
 // src/api/lib/repositories/joueur.repo.ts
 import { query } from "@/db/client.js";
+import { toDayString } from "@/api/lib/dates.js";
 
 export interface JoueurDetail {
   numero_licence: string;
@@ -78,7 +79,7 @@ export async function getJoueurByLicence(numeroLicence: string): Promise<JoueurD
     numero_licence: j.numero_licence as string,
     nom: j.nom as string,
     prenom: j.prenom as string,
-    date_naissance: j.date_naissance ? String(j.date_naissance) : null,
+    date_naissance: j.date_naissance ? toDayString(j.date_naissance as Date | string) : null,
     sexe: j.sexe as string | null,
     nationalite: j.nationalite as string | null,
     stats: {
@@ -123,6 +124,7 @@ export async function getJoueurMatchs(
   numeroLicence: string,
   limit: number,
   offset: number,
+  tri: "date_asc" | "date_desc" = "date_asc",
 ): Promise<{ data: JoueurMatchItem[]; total: number } | null> {
   const jRes = await query<{ id: bigint }>(
     `SELECT id FROM core.joueurs WHERE numero_licence = $1`,
@@ -157,7 +159,7 @@ export async function getJoueurMatchs(
        JOIN core.phases ph ON ph.id = po.phase_id
        JOIN core.competitions c ON c.id = ph.competition_id
       WHERE mc.joueur_id = $1
-      ORDER BY m.date_heure ASC
+      ORDER BY m.date_heure ${tri === "date_desc" ? "DESC" : "ASC"}, m.id
       LIMIT $2 OFFSET $3`,
     [joueurId, limit, offset],
   );

@@ -14,7 +14,9 @@ export interface ArbitreMatchItem {
   id_ffhb_match: string;
   date_heure: Date;
   role: string;
+  equipe_dom_id_ffhb: string;
   equipe_dom_nom: string;
+  equipe_ext_id_ffhb: string;
   equipe_ext_nom: string;
   poule_id_ffhb: string;
   competition_nom: string;
@@ -65,6 +67,7 @@ export async function getArbitreMatchs(
   idFfhb: string,
   limit: number,
   offset: number,
+  tri: "date_asc" | "date_desc" = "date_asc",
 ): Promise<{ data: ArbitreMatchItem[]; total: number } | null> {
   const arbRes = await query<{ id: bigint }>(
     `SELECT id FROM core.arbitres WHERE id_ffhb = $1`,
@@ -81,7 +84,8 @@ export async function getArbitreMatchs(
 
   const dataRes = await query<ArbitreMatchItem>(
     `SELECT m.id_ffhb_match, m.date_heure, mo.role,
-            ed.nom AS equipe_dom_nom, ee.nom AS equipe_ext_nom,
+            ed.id_ffhb AS equipe_dom_id_ffhb, ed.nom AS equipe_dom_nom,
+            ee.id_ffhb AS equipe_ext_id_ffhb, ee.nom AS equipe_ext_nom,
             po.id_ffhb AS poule_id_ffhb, c.nom AS competition_nom
        FROM core.match_officiels mo
        JOIN core.matchs m ON m.id = mo.match_id
@@ -91,7 +95,7 @@ export async function getArbitreMatchs(
        JOIN core.phases ph ON ph.id = po.phase_id
        JOIN core.competitions c ON c.id = ph.competition_id
       WHERE mo.arbitre_id = $1
-      ORDER BY m.date_heure ASC
+      ORDER BY m.date_heure ${tri === "date_desc" ? "DESC" : "ASC"}, m.id
       LIMIT $2 OFFSET $3`,
     [arbitreId, limit, offset],
   );

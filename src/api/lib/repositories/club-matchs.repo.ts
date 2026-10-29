@@ -1,4 +1,5 @@
 // src/api/lib/repositories/club-matchs.repo.ts
+import type { MatchStatut } from "@/api/lib/repositories/match-list.js";
 import { query } from "@/db/client.js";
 import {
   extractDistinctiveTokens,
@@ -23,10 +24,12 @@ export interface EquipeLiee {
 export interface ClubMatchItem {
   id_ffhb_match: string;
   date_heure: Date;
-  statut: string;
+  statut: MatchStatut;
   forfait_equipe: "dom" | "ext" | null;
   journee: number | null;
+  equipe_dom_id_ffhb: string;
   equipe_dom_nom: string;
+  equipe_ext_id_ffhb: string;
   equipe_ext_nom: string;
   score_dom: number | null;
   score_ext: number | null;
@@ -37,6 +40,8 @@ export interface ClubMatchItem {
   via_entente: boolean;
   via_principal: boolean;
   confidence: Confidence;
+  /** Clé du groupe (équipe réelle) de l'équipe du club dans ce match ; null si inconnu. */
+  groupe_cle: string | null;
 }
 
 export interface ClubMatchsOptions {
@@ -45,8 +50,10 @@ export interface ClubMatchsOptions {
   include_ententes: boolean;
   date_from?: string;
   date_to?: string;
-  statut?: string;
+  statut?: MatchStatut;
   min_confidence?: Confidence;
+  /** Groupes du club (voir resolveClubGroupes) : alimente `groupe_cle` et le filtre `filtre`. */
+  groupes?: { cleParEquipe: ReadonlyMap<string, string>; filtre?: string };
   limit: number;
   offset: number;
 }
@@ -71,12 +78,13 @@ export async function getClubMatchsCalendar(opts: ClubMatchsOptions): Promise<Cl
   const club = clubRes.rows[0]!;
 
   // 2. Résolution multi-signal des équipes liées (licence + structure + textuel)
-  const equipes_liees = await resolveLinkedTeams(
+  const { cleParEquipe, filtre } = opts.groupes ?? {};
+  const equipes_liees = (await resolveLinkedTeams(
     club,
     opts.saison,
     opts.include_ententes,
     opts.min_confidence,
-  );
+  )).filter((e) => !filtre || cleParEquipe?.get(e.id_ffhb) === filtre);
 
   if (equipes_liees.length === 0) {
     return { club, equipes_liees: [], matchs: [], total: 0 };
@@ -122,10 +130,12 @@ export async function getClubMatchsCalendar(opts: ClubMatchsOptions): Promise<Cl
   const dataRes = await query<{
     id_ffhb_match: string;
     date_heure: Date;
-    statut: string;
+    statut: MatchStatut;
     forfait_equipe: "dom" | "ext" | null;
     journee: number | null;
+    equipe_dom_id_ffhb: string;
     equipe_dom_nom: string;
+    equipe_ext_id_ffhb: string;
     equipe_ext_nom: string;
     equipe_dom_id: bigint;
     equipe_ext_id: bigint;
@@ -136,7 +146,8 @@ export async function getClubMatchsCalendar(opts: ClubMatchsOptions): Promise<Cl
     fdm_url: string | null;
   }>(
     `SELECT m.id_ffhb_match, m.date_heure, m.statut, m.forfait_equipe, m.journee,
-            ed.nom AS equipe_dom_nom, ee.nom AS equipe_ext_nom,
+            ed.id_ffhb AS equipe_dom_id_ffhb, ed.nom AS equipe_dom_nom,
+            ee.id_ffhb AS equipe_ext_id_ffhb, ee.nom AS equipe_ext_nom,
             m.equipe_dom_id, m.equipe_ext_id,
             m.score_dom, m.score_ext,
             po.id_ffhb AS poule_id_ffhb,
@@ -169,7 +180,9 @@ export async function getClubMatchsCalendar(opts: ClubMatchsOptions): Promise<Cl
       statut: row.statut,
       forfait_equipe: row.forfait_equipe ?? null,
       journee: row.journee,
+      equipe_dom_id_ffhb: row.equipe_dom_id_ffhb,
       equipe_dom_nom: row.equipe_dom_nom,
+      equipe_ext_id_ffhb: row.equipe_ext_id_ffhb,
       equipe_ext_nom: row.equipe_ext_nom,
       score_dom: row.score_dom,
       score_ext: row.score_ext,
@@ -180,6 +193,7 @@ export async function getClubMatchsCalendar(opts: ClubMatchsOptions): Promise<Cl
       via_entente: matchedEquipe?.is_entente ?? false,
       via_principal: matchedEquipe?.is_principal ?? false,
       confidence: matchedEquipe?.confidence ?? "basse",
+      groupe_cle: (matchedEquipe && cleParEquipe?.get(matchedEquipe.id_ffhb)) ?? null,
     };
   });
 

@@ -1,5 +1,6 @@
 // src/api/schemas/arbitre.api.ts
 import { z } from "@hono/zod-openapi";
+import { dateTimeOut } from "@/api/schemas/shared.js";
 
 export const arbitreListItemSchema = z
   .object({
@@ -15,9 +16,11 @@ export const arbitreListItemSchema = z
 export const arbitreMatchItemSchema = z
   .object({
     id_ffhb_match: z.string(),
-    date_heure: z.union([z.string(), z.date()]).transform((v) => (v instanceof Date ? v.toISOString() : v)),
+    date_heure: dateTimeOut,
     role: z.string(),
+    equipe_dom_id_ffhb: z.string(),
     equipe_dom_nom: z.string(),
+    equipe_ext_id_ffhb: z.string(),
     equipe_ext_nom: z.string(),
     poule_id_ffhb: z.string(),
     competition_nom: z.string(),

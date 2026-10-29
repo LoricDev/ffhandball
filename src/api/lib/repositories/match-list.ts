@@ -2,10 +2,12 @@
 // /salles/:id/matchs, /poules/:id/matchs). Une seule requête renvoie la page ET le total (count(*) OVER()).
 import { query } from "@/db/client.js";
 
+export type MatchStatut = "a_jouer" | "joue" | "reporte" | "annule" | "forfait";
+
 export interface MatchListRow {
   id_ffhb_match: string;
   date_heure: Date;
-  statut: string;
+  statut: MatchStatut;
   forfait_equipe: "dom" | "ext" | null;
   journee: number | null;
   equipe_dom_id_ffhb: string;
@@ -30,7 +32,7 @@ export interface MatchFilters {
   journee?: number;
   date_from?: string;
   date_to?: string;
-  statut?: string;
+  statut?: MatchStatut;
   saison?: string;
 }
 

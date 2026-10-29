@@ -1,11 +1,12 @@
 // src/api/schemas/match.api.ts
 import { z } from "@hono/zod-openapi";
+import { dateTimeOut } from "@/api/schemas/shared.js";
 import { isoDateParamSchema, matchStatutSchema, saisonCodeSchema, triDateSchema } from "@/api/schemas/common.js";
 
 export const matchListItemSchema = z.object({
   id_ffhb_match: z.string(),
-  date_heure: z.union([z.string(), z.date()]).transform((v) => (v instanceof Date ? v.toISOString() : v)),
-  statut: z.string(),
+  date_heure: dateTimeOut,
+  statut: matchStatutSchema,
   forfait_equipe: z.enum(["dom", "ext"]).nullable().openapi({
     description: "Équipe ayant fait forfait (score affiché « FO » sur ffhandball.fr), null sinon",
   }),

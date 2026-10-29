@@ -1,9 +1,10 @@
 // src/api/schemas/joueur.api.ts
 import { z } from "@hono/zod-openapi";
+import { dateOut, dateTimeOut } from "@/api/schemas/shared.js";
 
 const joueurHistoriqueItemSchema = z.object({
   id_ffhb_match: z.string(),
-  date_heure: z.union([z.string(), z.date()]).transform((v) => (v instanceof Date ? v.toISOString() : v)),
+  date_heure: dateTimeOut,
   equipe_dom_nom: z.string(),
   equipe_ext_nom: z.string(),
   score_dom: z.number().int().nullable(),
@@ -26,7 +27,7 @@ export const joueurDetailSchema = z.object({
   numero_licence: z.string(),
   nom: z.string(),
   prenom: z.string(),
-  date_naissance: z.string().nullable(),
+  date_naissance: dateOut.nullable(),
   sexe: z.string().nullable(),
   nationalite: z.string().nullable(),
   stats: joueurStatsSchema,
@@ -36,7 +37,7 @@ export const joueurDetailSchema = z.object({
 export const joueurMatchItemSchema = z
   .object({
     id_ffhb_match: z.string(),
-    date_heure: z.union([z.string(), z.date()]).transform((v) => (v instanceof Date ? v.toISOString() : v)),
+    date_heure: dateTimeOut,
     statut: z.string(),
     forfait: z
       .enum(["equipe", "adversaire"])

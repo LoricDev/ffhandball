@@ -13,7 +13,7 @@ const healthRoute = createRoute({
   responses: {
     200: {
       content: { "application/json": { schema: z.object({ status: z.literal("ok") }) } },
-      description: "Service is alive",
+      description: "Le service répond",
     },
   },
 });
@@ -28,11 +28,11 @@ const readyRoute = createRoute({
   responses: {
     200: {
       content: { "application/json": { schema: z.object({ status: z.literal("ready"), db: z.literal("connected") }) } },
-      description: "Service is ready (DB connected)",
+      description: "Service prêt (base connectée)",
     },
     503: {
       content: { "application/json": { schema: z.object({ status: z.literal("not-ready"), db: z.string() }) } },
-      description: "Service is not ready (DB issue)",
+      description: "Service non prêt (base indisponible)",
     },
   },
 });

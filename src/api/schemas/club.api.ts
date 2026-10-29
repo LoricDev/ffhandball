@@ -1,5 +1,8 @@
 // src/api/schemas/club.api.ts
 import { z } from "@hono/zod-openapi";
+import { competitionRefSchema, equipeRefSchema } from "@/api/schemas/shared.js";
+import { pouleRefSchema } from "@/api/schemas/competition.api.js";
+import { groupeCleSchema, rosterJoueurItemSchema } from "@/api/schemas/equipe.api.js";
 
 export const clubListItemSchema = z.object({
   id_ffhb: z.string().openapi({ description: "Identifiant club FFHB (id_club monclub)", example: "1720" }),
@@ -35,9 +38,9 @@ export const clubDetailSchema = clubListItemSchema.extend({
 }).openapi("ClubDetail");
 
 export const clubClassementItemSchema = z.object({
-  equipe: z.object({ id_ffhb: z.string(), nom: z.string() }),
-  poule: z.object({ id_ffhb: z.string(), nom: z.string() }),
-  competition: z.object({ id_ffhb: z.string(), nom: z.string(), niveau: z.string().nullable() }),
+  equipe: equipeRefSchema,
+  poule: pouleRefSchema,
+  competition: competitionRefSchema,
   position: z.number().int(),
   points: z.number().int(),
   joues: z.number().int(),
@@ -47,11 +50,20 @@ export const clubClassementItemSchema = z.object({
   buts_pour: z.number().int(),
   buts_contre: z.number().int(),
   difference: z.number().int(),
+  groupe_cle: groupeCleSchema,
 }).openapi("ClubClassementItem");
 
 export const clubListQuerySchema = z.object({
-  q: z.string().min(2).optional().openapi({ description: "Fuzzy search on nom (min 2 chars)" }),
+  q: z.string().min(2).optional().openapi({ description: "Recherche floue sur le nom (min 2 caractères)" }),
   departement: z.string().regex(/^(\d{2,3}|2A|2B)$/).optional().openapi({ description: "Code département (ex: 75, 2A, 974)" }),
   limit: z.coerce.number().int().positive().max(100).default(20),
   offset: z.coerce.number().int().nonnegative().default(0),
 });
+
+export const clubJoueurItemSchema = rosterJoueurItemSchema
+  .extend({
+    groupes: z.array(z.string()).openapi({
+      description: "Clés des groupes (voir `meta.groupes`) pour lesquels le joueur a joué sur la saison demandée. `matchs` et `buts` restent cumulés sur toutes les saisons.",
+    }),
+  })
+  .openapi("ClubJoueurItem");

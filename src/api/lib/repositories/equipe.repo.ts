@@ -1,5 +1,5 @@
 // src/api/lib/repositories/equipe.repo.ts
-import { queryMatchList, type MatchListRow } from "@/api/lib/repositories/match-list.js";
+import { queryMatchList, type MatchListRow, type MatchStatut } from "@/api/lib/repositories/match-list.js";
 import { query } from "@/db/client.js";
 import { resolveLinkedTeams } from "@/api/lib/repositories/club-matchs.repo.js";
 import { RANK_BY_CONFIDENCE, type Confidence, type MatchMethod } from "@/api/lib/club-matching.js";
@@ -93,7 +93,7 @@ export async function getEquipeDetail(idFfhb: string, saison: string): Promise<E
 export interface EquipeMatchsOptions {
   date_from?: string;
   date_to?: string;
-  statut?: string;
+  statut?: MatchStatut;
   journee?: number;
   tri?: "date_asc" | "date_desc";
   limit: number;

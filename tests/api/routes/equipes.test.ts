@@ -127,6 +127,44 @@ describe("GET /clubs/:id_ffhb/equipes", () => {
     expect(b2.data.map((e) => e.id_ffhb)).toContain("EQT2-EQ1");
   });
 
+  it("grouper=true : groupes dans meta (enveloppe { data, meta }), absent sinon", async () => {
+    _resetBuckets();
+    const plain = (await (await app.request(`/clubs/${CLUB_ID}/equipes?saison=2025-2026`)).json()) as Record<string, unknown> & { meta: Record<string, unknown> };
+    expect(plain.meta.groupes).toBeUndefined();
+    _resetBuckets();
+    const res = await app.request(`/clubs/${CLUB_ID}/equipes?saison=2025-2026&grouper=true`);
+    const body = (await res.json()) as Record<string, unknown> & { meta: { groupes: unknown[] } };
+    expect(Object.keys(body).sort()).toEqual(["data", "meta"]);
+    expect(Array.isArray(body.meta.groupes)).toBe(true);
+  });
+
+  it("groupes partout : groupe_cle sur matchs/classements, groupes sur joueurs, groupe sur le détail d'équipe", async () => {
+    const CLE = "Autre|mixte|1|club";
+    const get = async (path: string) => {
+      _resetBuckets();
+      const res = await app.request(path);
+      expect(res.status).toBe(200);
+      return (await res.json()) as { data: Record<string, unknown>[] | Record<string, unknown>; meta: { groupes: { cle: string }[] } };
+    };
+
+    const matchs = await get(`/clubs/${CLUB_ID}/matchs?saison=2025-2026`);
+    expect(matchs.meta.groupes.map((g) => g.cle)).toContain(CLE);
+    expect((matchs.data as { groupe_cle: string | null }[])[0]!.groupe_cle).toBe(CLE);
+    // filtre : un autre groupe n'en garde aucun
+    const autre = await get(`/clubs/${CLUB_ID}/matchs?saison=2025-2026&groupe=Seniors|M|1|club`);
+    expect(autre.data).toEqual([]);
+    expect(((await get(`/clubs/${CLUB_ID}/matchs?saison=2025-2026&groupe=${encodeURIComponent(CLE)}`)).data as unknown[]).length).toBeGreaterThan(0);
+
+    const classements = await get(`/clubs/${CLUB_ID}/classements?saison=2025-2026`);
+    expect(Array.isArray(classements.meta.groupes)).toBe(true);
+
+    const joueurs = await get(`/clubs/${CLUB_ID}/joueurs?saison=2025-2026`);
+    expect(Array.isArray(joueurs.meta.groupes)).toBe(true);
+
+    const eq = (await get("/equipes/EQT2-EQ1?saison=2025-2026")).data as { groupe: { cle: string } | null };
+    expect(eq.groupe?.cle).toBe(CLE);
+  });
+
   afterAll(async () => {
     await closePool();
   });

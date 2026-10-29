@@ -152,6 +152,22 @@ export async function listClubJoueurs(code7: string | null): Promise<RosterJoueu
   return r.rows;
 }
 
+/** Inscriptions (id FFHB d'équipe) pour lesquelles chaque licencié du club a joué sur la saison, par numéro de licence. */
+export async function listClubJoueursEquipes(code7: string | null, saison: string): Promise<Map<string, string[]>> {
+  const map = new Map<string, string[]>();
+  if (!code7) return map;
+  const r = await query<{ numero_licence: string; equipe_id_ffhb: string }>(
+    `SELECT DISTINCT j.numero_licence, e.id_ffhb AS equipe_id_ffhb
+       FROM core.joueurs j
+       JOIN core.match_compositions mc ON mc.joueur_id = j.id
+       JOIN core.equipes e ON e.id = mc.equipe_id
+      WHERE left(j.numero_licence, 7) = $1 AND e.saison_code = $2`,
+    [code7, saison],
+  );
+  for (const row of r.rows) map.set(row.numero_licence, [...(map.get(row.numero_licence) ?? []), row.equipe_id_ffhb]);
+  return map;
+}
+
 /** Classements de toutes les équipes propres d'un club (dernier snapshot par équipe). */
 export async function listClubClassements(clubIdFfhb: string, saison: string): Promise<ClubClassementItem[]> {
   const r = await query<{
