@@ -25,6 +25,7 @@ import { journeesToFetch, JOURNEES_MODES, type JourneesMode } from "@/scrapers/s
 import { parseClassement } from "@/scrapers/ffhandball/classement.scraper.js";
 import { resolveDateWindow, type DateWindow } from "@/scrapers/shared/date-window.js";
 import { parseStatsJoueurs } from "@/scrapers/ffhandball/stats-joueurs.scraper.js";
+import { resolveClubScope, type ClubScope } from "@/lib/club-scope.js";
 import { parseFdmPdf } from "@/scrapers/ffhandball/fdm-pdf.parser.js";
 
 interface CliArgs {
@@ -39,6 +40,8 @@ interface CliArgs {
   reparseCache?: boolean;
   /** matchs : ne re-scraper que les poules contenant au moins un match en forfait. */
   forfaits?: boolean;
+  /** Code FFHB (7 chiffres) ou id du club : ne scraper que ses poules/matchs, ententes comprises. */
+  club?: string;
 }
 
 function parseCliArgs(): CliArgs {
@@ -64,6 +67,8 @@ function parseCliArgs(): CliArgs {
       "reparse-cache": { type: "boolean" },
       // matchs : restreint aux poules qui contiennent un forfait (re-capture du marqueur « FO » sur l'historique).
       forfaits: { type: "boolean" },
+      // Cible un club (code FFHB 7 chiffres ou id_ffhb), ententes comprises. Nécessite clubs/matchs déjà en base.
+      club: { type: "string" },
     },
   });
   if (!values.entity) throw new Error("--entity required");
@@ -124,6 +129,7 @@ function parseCliArgs(): CliArgs {
     window,
     reparseCache: values["reparse-cache"] === true,
     forfaits: values.forfaits === true,
+    club: values.club,
   };
 }
 
@@ -575,6 +581,7 @@ async function selectScrapablePoules(
   level: string | undefined,
   window: DateWindow | null,
   onlyForfaits = false,
+  pouleIds?: string[],
 ): Promise<ScrapablePoule[]> {
   const windowFilter = window
     ? ` AND EXISTS (
@@ -588,6 +595,11 @@ async function selectScrapablePoules(
     : "";
   const params: unknown[] = [saison, level ?? null];
   if (window) params.push(window.from, window.to);
+  let clubFilter = "";
+  if (pouleIds) {
+    params.push(pouleIds);
+    clubFilter = ` AND po.id_ffhb = ANY($${params.length}::text[])`;
+  }
 
   const res = await query<ScrapablePoule>(
     `SELECT po.id_ffhb AS ext_poule_id,
@@ -599,7 +611,7 @@ async function selectScrapablePoules(
        JOIN core.competitions c  ON c.id = ph.competition_id
       WHERE po.saison_code = $1
         AND ($2::text IS NULL OR c.niveau = $2)
-        AND c.detail_url IS NOT NULL${windowFilter}${forfaitFilter}
+        AND c.detail_url IS NOT NULL${windowFilter}${forfaitFilter}${clubFilter}
       ORDER BY c.niveau, c.id_ffhb, po.id_ffhb`,
     params,
   );
@@ -639,6 +651,7 @@ async function scrapeMatchs(
     limit?: number;
     window?: DateWindow | null;
     forfaits?: boolean;
+    scope?: ClubScope;
   },
 ): Promise<void> {
   const run = await startScrapeRun({
@@ -650,7 +663,7 @@ async function scrapeMatchs(
 
   try {
     // 1. SELECT poules from core (with their competition's detail_url + niveau)
-    let poules = await selectScrapablePoules(saison, opts.level, opts.window ?? null, opts.forfaits === true);
+    let poules = await selectScrapablePoules(saison, opts.level, opts.window ?? null, opts.forfaits === true, opts.scope?.pouleIds);
     if (opts.limit !== undefined) poules = poules.slice(0, opts.limit);
     logger.info({ count: poules.length, windowed: Boolean(opts.window), forfaits: opts.forfaits === true }, "poules to process");
 
@@ -780,6 +793,7 @@ async function scrapeClassements(
     level?: "national" | "regional" | "departemental";
     limit?: number;
     window?: DateWindow | null;
+    scope?: ClubScope;
   },
 ): Promise<void> {
   const run = await startScrapeRun({
@@ -790,7 +804,7 @@ async function scrapeClassements(
   logger.info({ run_id: run.id, ...opts }, "starting classements scrape");
 
   try {
-    let poules = await selectScrapablePoules(saison, opts.level, opts.window ?? null);
+    let poules = await selectScrapablePoules(saison, opts.level, opts.window ?? null, false, opts.scope?.pouleIds);
     if (opts.limit !== undefined) poules = poules.slice(0, opts.limit);
     logger.info({ count: poules.length, windowed: Boolean(opts.window) }, "poules to process");
 
@@ -842,7 +856,7 @@ async function scrapeClassements(
 
 async function scrapeStatsJoueurs(
   saison: string,
-  opts: { limit?: number },
+  opts: { limit?: number; scope?: ClubScope },
 ): Promise<void> {
   const run = await startScrapeRun({
     source_site: "ffhandball.fr",
@@ -864,8 +878,9 @@ async function scrapeStatsJoueurs(
         WHERE po.saison_code = $1
           AND c.afficher_stats_joueurs = true
           AND c.detail_url IS NOT NULL
+          AND ($2::text[] IS NULL OR po.id_ffhb = ANY($2::text[]))
         ORDER BY c.id_ffhb, po.id_ffhb`,
-      [saison],
+      [saison, opts.scope?.pouleIds ?? null],
     );
 
     let poules = poulesRes.rows;
@@ -962,7 +977,7 @@ async function clearFdmFetchState(fdm_code: string, saison: string): Promise<voi
 
 async function scrapeFeuillesMatch(
   saison: string,
-  opts: { limit?: number; window?: DateWindow | null },
+  opts: { limit?: number; window?: DateWindow | null; scope?: ClubScope },
 ): Promise<void> {
   const run = await startScrapeRun({
     source_site: "fdm.fdme.ffhandball.fr",
@@ -983,6 +998,11 @@ async function scrapeFeuillesMatch(
       params.push(opts.window.from, opts.window.to);
       windowFilter = ` AND m.date_heure >= $2 AND m.date_heure < $3`;
     }
+    let clubFilter = "";
+    if (opts.scope) {
+      params.push(opts.scope.equipeIds);
+      clubFilter = ` AND (m.equipe_dom_id = ANY($${params.length}::bigint[]) OR m.equipe_ext_id = ANY($${params.length}::bigint[]))`;
+    }
     const ageIdx = params.length + 1;
     params.push(env.SCRAPE_FDM_MAX_AGE_DAYS);
     // Exclut, en plus des FdM déjà capturées : (a) les PDF en cache d'échec de parsing — on a déjà
@@ -995,7 +1015,7 @@ async function scrapeFeuillesMatch(
          JOIN core.poules po ON po.id = m.poule_id
         WHERE po.saison_code = $1
           AND m.fdm_code IS NOT NULL AND m.fdm_code <> ''
-          AND m.date_heure < now()${windowFilter}
+          AND m.date_heure < now()${windowFilter}${clubFilter}
           AND NOT EXISTS (
             SELECT 1 FROM raw.feuilles_match fm
             WHERE fm.natural_key = m.fdm_code AND fm.saison = $1
@@ -1146,11 +1166,24 @@ async function reparseFdmCache(saison: string, opts: { limit?: number }): Promis
 
 async function main(): Promise<void> {
   const args = parseCliArgs();
+  const CLUB_ENTITIES = ["club-details", "matchs", "classements", "stats-joueurs", "feuilles-match"];
+  if (args.club && !CLUB_ENTITIES.includes(args.entity)) {
+    throw new Error(`--club n'est pas supporté pour l'entité ${args.entity} (${CLUB_ENTITIES.join(", ")})`);
+  }
+  const scope = args.club ? await resolveClubScope(args.club, args.saison) : undefined;
+  if (scope) {
+    logger.info(
+      { club: scope.club.nom, equipes: scope.equipeIds.length, poules: scope.pouleIds.length },
+      "scrape ciblé sur le club (ententes comprises)",
+    );
+  }
   if (args.entity === "clubs") {
     const url = args.url ?? "https://monclub.ffhandball.fr";
     await scrapeClubs(args.saison, url);
   } else if (args.entity === "club-details") {
-    await scrapeClubDetails(args.saison, { limit: args.limit, slug: args.slug });
+    const slug = args.slug ?? scope?.club.slug ?? undefined;
+    if (scope && !slug) throw new Error(`pas de slug en base pour le club ${scope.club.nom} : passer --slug`);
+    await scrapeClubDetails(args.saison, { limit: args.limit, slug });
   } else if (args.entity === "competitions") {
     await scrapeCompetitions(args.saison, {
       level: args.level,
@@ -1163,20 +1196,22 @@ async function main(): Promise<void> {
       limit: args.limit,
       window: args.window,
       forfaits: args.forfaits,
+      scope,
     });
   } else if (args.entity === "classements") {
     await scrapeClassements(args.saison, {
       level: args.level as "national" | "regional" | "departemental" | undefined,
       limit: args.limit,
       window: args.window,
+      scope,
     });
   } else if (args.entity === "stats-joueurs") {
-    await scrapeStatsJoueurs(args.saison, { limit: args.limit });
+    await scrapeStatsJoueurs(args.saison, { limit: args.limit, scope });
   } else if (args.entity === "feuilles-match") {
     if (args.reparseCache) {
       await reparseFdmCache(args.saison, { limit: args.limit });
     } else {
-      await scrapeFeuillesMatch(args.saison, { limit: args.limit, window: args.window });
+      await scrapeFeuillesMatch(args.saison, { limit: args.limit, window: args.window, scope });
     }
   } else {
     throw new Error(`unknown entity: ${args.entity}`);

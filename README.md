@@ -146,6 +146,15 @@ pnpm etl --entity=stats-joueurs --saison=2025-2026
 pnpm scrape --entity=feuilles-match --saison=2025-2026
 pnpm etl --entity=feuilles-match --saison=2025-2026   # cascade joueurs+compositions+actions
 
+# Scrape ciblé sur un club (code FFHB 7 chiffres ou id_ffhb), ententes comprises.
+# Les poules viennent des engagements déjà en base : clubs + matchs (ou compétitions/poules/équipes/engagements) d'abord.
+# Supporté : club-details, matchs, classements, stats-joueurs, feuilles-match.
+pnpm scrape --entity=matchs         --saison=2025-2026 --club=5657013 --journees=all
+pnpm scrape --entity=classements    --saison=2025-2026 --club=5657013
+pnpm scrape --entity=stats-joueurs  --saison=2025-2026 --club=5657013
+pnpm scrape --entity=feuilles-match --saison=2025-2026 --club=5657013
+pnpm etl --entity=matchs --saison=2025-2026   # puis classements, stats-joueurs, feuilles-match
+
 # Phase 6 — Démarrer l'API HTTP
 pnpm api                                                  # http://localhost:3000
 open http://localhost:3000/docs                              # Swagger UI
