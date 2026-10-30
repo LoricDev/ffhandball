@@ -93,6 +93,7 @@ const FROM = `
   LEFT JOIN core.salles sl ON sl.id = m.salle_id
   LEFT JOIN core.equipements eq ON eq.equipement_id = m.equipement_id
   LEFT JOIN core.clubs cp ON cp.id_ffhb = COALESCE(ed.ext_structure_id, ed.porteur_ext_structure_id)
+  LEFT JOIN core.clubs cpe ON cpe.id_ffhb = COALESCE(ee.ext_structure_id, ee.porteur_ext_structure_id)
   LEFT JOIN core.salles cs ON cs.id = cp.salle_principale_id`;
 
 /**
@@ -116,7 +117,8 @@ export async function queryMatchList(
             ee.id_ffhb AS equipe_ext_id_ffhb, ee.nom AS equipe_ext_nom,
             m.score_dom, m.score_ext, po.id_ffhb AS poule_id_ffhb,
             c.nom AS competition_nom, m.fdm_url,
-            COALESCE(cd.logo_club, ed.logo) AS logo_dom, COALESCE(ce.logo_club, ee.logo) AS logo_ext,
+            COALESCE(cd.logo_club, ed.logo, CASE WHEN ed.nom !~* '(entente|^ent | ent )' THEN cp.logo_club END) AS logo_dom,
+            COALESCE(ce.logo_club, ee.logo, CASE WHEN ee.nom !~* '(entente|^ent | ent )' THEN cpe.logo_club END) AS logo_ext,
             ph.nom AS phase_nom, po.nom AS poule_nom, m.equipement_id,
             COALESCE(sl.id_ffhb, eq.equipement_id, cs.id_ffhb) AS salle_id_ffhb,
             COALESCE(sl.nom, eq.nom, cs.nom) AS salle_nom,
