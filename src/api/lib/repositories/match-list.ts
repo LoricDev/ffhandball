@@ -112,7 +112,7 @@ export async function queryMatchList(
             ee.id_ffhb AS equipe_ext_id_ffhb, ee.nom AS equipe_ext_nom,
             m.score_dom, m.score_ext, po.id_ffhb AS poule_id_ffhb,
             c.nom AS competition_nom, m.fdm_url,
-            cd.logo_club AS logo_dom, ce.logo_club AS logo_ext,
+            COALESCE(cd.logo_club, ed.logo) AS logo_dom, COALESCE(ce.logo_club, ee.logo) AS logo_ext,
             ph.nom AS phase_nom, po.nom AS poule_nom, m.equipement_id,
             COALESCE(sl.id_ffhb, eq.equipement_id) AS salle_id_ffhb,
             COALESCE(sl.nom, eq.nom) AS salle_nom,
