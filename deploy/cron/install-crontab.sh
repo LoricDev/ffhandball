@@ -13,6 +13,9 @@ MARKER_END="# --- ffhandball pipeline END ---"
 CRON_BLOCK="$MARKER_START
 # Mise à jour quotidienne : matchs + ETL cascade + classements + FdM récentes + stats-joueurs (02:00)
 0 2 * * *   $APP_DIR/deploy/cron/cron-daily.sh
+# Club suivi de près (CLUB_CODE, défaut Bouzonville) : week-end toutes les 15 min (9h-22h), semaine 7h30 et 19h30
+*/15 9-22 * * 0,6 $APP_DIR/deploy/cron/cron-club.sh
+30 7,19 * * 1-5   $APP_DIR/deploy/cron/cron-club.sh
 # Récap quotidien par mail : santé runs, activité 24 h, qualité, alertes (07:00)
 0 7 * * *   $APP_DIR/deploy/cron/cron-monitor.sh
 # Healthcheck API toutes les 5 min (alerte une fois par incident)
@@ -51,6 +54,7 @@ echo "$NEW_CRONTAB" | crontab -
 
 echo "[install-crontab] Cron jobs ffhandball installés :"
 echo "  0 2 * * *   cron-daily.sh"
+echo "  */15 9-22 * * 0,6 et 30 7,19 * * 1-5  cron-club.sh"
 echo "  0 7 * * *   cron-monitor.sh"
 echo "  */5 * * * * cron-healthcheck.sh"
 echo "  0 3 * * 1   cron-weekly-fdm-recent.sh"

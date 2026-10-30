@@ -298,6 +298,7 @@ crontab -l      # vérifier
 | Quotidien 07:00 | `cron-monitor.sh` | **Récap quotidien par mail** (voir « Mails et alertes ») |
 | Toutes les 5 min | `cron-healthcheck.sh` | Sonde l'API (`/ready`) et le disque (seuil 85 %), un mail par incident et au rétablissement |
 | Lundi 03:00 | `cron-weekly-fdm-recent.sh` | FdM des 30 derniers jours + ETL |
+| Week-end 9h-22h/15 min, semaine 7h30 et 19h30 | `cron-club.sh` | Matchs du club (`CLUB_CODE`) + ETL ; classements/FdM chaque heure |
 | Dimanche 05:00 | `cron-weekly-structure.sh` | Clubs, détails, salles, compétitions, poules, équipes |
 | Dimanche 06:00 | `cron-maintenance.sh` | Purge `api_logs` / `etl_warnings`, VACUUM, rotation des logs |
 | Jours 1 à 5 du mois, 22:00 | `cron-monthly-fdm-full.sh` | Rattrapage FdM complet (30-100 h au total), **budget 4 h par nuit** puis reprise (idempotent) |
