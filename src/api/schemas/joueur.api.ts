@@ -9,6 +9,8 @@ const joueurHistoriqueItemSchema = z.object({
   equipe_ext_nom: z.string(),
   score_dom: z.number().int().nullable(),
   score_ext: z.number().int().nullable(),
+  score_mt_dom: z.number().int().nullable(),
+  score_mt_ext: z.number().int().nullable(),
   equipe_joueur_nom: z.string(),
   buts: z.number().int(),
   tirs: z.number().int(),

@@ -17,6 +17,8 @@ export const matchListItemSchema = z.object({
   equipe_ext_nom: z.string(),
   score_dom: z.number().int().nullable(),
   score_ext: z.number().int().nullable(),
+  score_mt_dom: z.number().int().nullable().openapi({ description: "Score mi-temps domicile (null si inconnu)" }),
+  score_mt_ext: z.number().int().nullable().openapi({ description: "Score mi-temps extérieur (null si inconnu)" }),
   poule_id_ffhb: z.string(),
   competition_nom: z.string(),
   fdm_url: z.string().nullable(),

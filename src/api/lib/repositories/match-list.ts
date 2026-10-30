@@ -16,6 +16,8 @@ export interface MatchListRow {
   equipe_ext_nom: string;
   score_dom: number | null;
   score_ext: number | null;
+  score_mt_dom: number | null;
+  score_mt_ext: number | null;
   poule_id_ffhb: string;
   competition_nom: string;
   fdm_url: string | null;
@@ -115,7 +117,7 @@ export async function queryMatchList(
     `SELECT m.id_ffhb_match, m.date_heure, m.statut, m.forfait_equipe, m.journee,
             ed.id_ffhb AS equipe_dom_id_ffhb, ed.nom AS equipe_dom_nom,
             ee.id_ffhb AS equipe_ext_id_ffhb, ee.nom AS equipe_ext_nom,
-            m.score_dom, m.score_ext, po.id_ffhb AS poule_id_ffhb,
+            m.score_dom, m.score_ext, m.score_mt_dom, m.score_mt_ext, po.id_ffhb AS poule_id_ffhb,
             c.nom AS competition_nom, m.fdm_url,
             COALESCE(cd.logo_club, ed.logo, cp.logo_club) AS logo_dom,
             COALESCE(ce.logo_club, ee.logo, cpe.logo_club) AS logo_ext,

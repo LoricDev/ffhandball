@@ -23,6 +23,8 @@ export interface JoueurDetail {
     equipe_ext_nom: string;
     score_dom: number | null;
     score_ext: number | null;
+    score_mt_dom: number | null;
+    score_mt_ext: number | null;
     equipe_joueur_nom: string;
     buts: number;
     tirs: number;
@@ -60,7 +62,7 @@ export async function getJoueurByLicence(numeroLicence: string): Promise<JoueurD
   const histRes = await query<Record<string, unknown>>(
     `SELECT m.id_ffhb_match, m.date_heure,
             ed.nom AS equipe_dom_nom, ee.nom AS equipe_ext_nom,
-            m.score_dom, m.score_ext,
+            m.score_dom, m.score_ext, m.score_mt_dom, m.score_mt_ext,
             ej.nom AS equipe_joueur_nom,
             mc.but_count AS buts, mc.tirs_count AS tirs, mc.arrets_count AS arrets
        FROM core.match_compositions mc
@@ -96,6 +98,8 @@ export async function getJoueurByLicence(numeroLicence: string): Promise<JoueurD
       equipe_ext_nom: r.equipe_ext_nom as string,
       score_dom: r.score_dom as number | null,
       score_ext: r.score_ext as number | null,
+      score_mt_dom: r.score_mt_dom as number | null,
+      score_mt_ext: r.score_mt_ext as number | null,
       equipe_joueur_nom: r.equipe_joueur_nom as string,
       buts: r.buts as number,
       tirs: r.tirs as number,

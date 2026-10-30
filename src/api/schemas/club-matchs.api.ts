@@ -47,6 +47,8 @@ export const clubMatchItemSchema = z
     equipe_ext_nom: z.string().openapi({ example: "PARIS 92", description: "Équipe extérieure" }),
     score_dom: z.number().int().nullable().openapi({ example: 28, description: "Score domicile (null si non joué)" }),
     score_ext: z.number().int().nullable().openapi({ example: 25, description: "Score extérieur (null si non joué)" }),
+    score_mt_dom: z.number().int().nullable().openapi({ description: "Score mi-temps domicile (null si inconnu)" }),
+    score_mt_ext: z.number().int().nullable().openapi({ description: "Score mi-temps extérieur (null si inconnu)" }),
     poule_id_ffhb: z.string().openapi({ example: "PO-001", description: "Identifiant FFHB de la poule" }),
     competition_nom: z.string().openapi({ example: "Lidl Starligue", description: "Nom de la compétition" }),
     fdm_url: z

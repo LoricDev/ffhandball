@@ -33,6 +33,8 @@ export interface ClubMatchItem {
   equipe_ext_nom: string;
   score_dom: number | null;
   score_ext: number | null;
+  score_mt_dom: number | null;
+  score_mt_ext: number | null;
   poule_id_ffhb: string;
   competition_nom: string;
   fdm_url: string | null;
@@ -151,6 +153,8 @@ export async function getClubMatchsCalendar(opts: ClubMatchsOptions): Promise<Cl
     equipe_ext_id: bigint;
     score_dom: number | null;
     score_ext: number | null;
+    score_mt_dom: number | null;
+    score_mt_ext: number | null;
     poule_id_ffhb: string;
     competition_nom: string;
     fdm_url: string | null;
@@ -169,7 +173,7 @@ export async function getClubMatchsCalendar(opts: ClubMatchsOptions): Promise<Cl
             ed.id_ffhb AS equipe_dom_id_ffhb, ed.nom AS equipe_dom_nom,
             ee.id_ffhb AS equipe_ext_id_ffhb, ee.nom AS equipe_ext_nom,
             m.equipe_dom_id, m.equipe_ext_id,
-            m.score_dom, m.score_ext,
+            m.score_dom, m.score_ext, m.score_mt_dom, m.score_mt_ext,
             po.id_ffhb AS poule_id_ffhb,
             c.nom AS competition_nom,
             m.fdm_url,
@@ -221,6 +225,8 @@ export async function getClubMatchsCalendar(opts: ClubMatchsOptions): Promise<Cl
       equipe_ext_nom: row.equipe_ext_nom,
       score_dom: row.score_dom,
       score_ext: row.score_ext,
+      score_mt_dom: row.score_mt_dom,
+      score_mt_ext: row.score_mt_ext,
       poule_id_ffhb: row.poule_id_ffhb,
       competition_nom: row.competition_nom,
       fdm_url: row.fdm_url,
