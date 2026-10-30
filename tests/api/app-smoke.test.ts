@@ -15,9 +15,11 @@ describe("app smoke", () => {
     const res = await app.request("/openapi.json");
     expect(res.status).toBe(200);
     const spec = (await res.json()) as { paths: Record<string, unknown> };
-    for (const p of ["/clubs", "/matchs", "/classements", "/health"]) {
+    for (const p of ["/v1/clubs", "/v1/matchs", "/v1/classements", "/health"]) {
       expect(Object.keys(spec.paths)).toContain(p);
     }
+    // Les alias sans préfixe restent servis mais ne polluent pas la spec.
+    expect(Object.keys(spec.paths)).not.toContain("/clubs");
   });
 
   it("répond sur /health", async () => {

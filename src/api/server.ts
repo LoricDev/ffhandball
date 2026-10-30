@@ -1,6 +1,7 @@
 // src/api/server.ts
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { swaggerUI } from "@hono/swagger-ui";
+import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 import healthRoutes from "@/api/routes/health.js";
 import clubsRoutes from "@/api/routes/clubs.js";
@@ -68,18 +69,28 @@ export function buildApp(opts: BuildAppOptions = {}): OpenAPIHono {
   app.route("/", adminRoutes);
   app.route("/", healthRoutes);
   app.route("/", statusRoutes);
-  app.route("/", clubsRoutes);
-  app.route("/", matchsRoutes);
-  app.route("/", classementsRoutes);
-  app.route("/", joueursRoutes);
-  app.route("/", searchRoutes);
-  app.route("/", competitionsRoutes);
-  app.route("/", poulesRoutes);
-  app.route("/", equipesRoutes);
-  app.route("/", statsJoueursRoutes);
-  app.route("/", arbitresRoutes);
-  app.route("/", sallesRoutes);
-  app.route("/", referentielsRoutes);
+  // Routes de données : /v1/... (documenté dans l'OpenAPI) ; les chemins sans préfixe restent servis en alias
+  // (Hono simple, donc absent de la spec) pour ne pas casser les clients existants.
+  const dataRoutes = [
+    clubsRoutes,
+    matchsRoutes,
+    classementsRoutes,
+    joueursRoutes,
+    searchRoutes,
+    competitionsRoutes,
+    poulesRoutes,
+    equipesRoutes,
+    statsJoueursRoutes,
+    arbitresRoutes,
+    sallesRoutes,
+    referentielsRoutes,
+  ];
+  const legacy = new Hono();
+  for (const r of dataRoutes) {
+    app.route("/v1", r);
+    legacy.route("/", r);
+  }
+  app.route("/", legacy);
 
   // OpenAPI spec + Swagger UI
   app.openAPIRegistry.registerComponent("securitySchemes", "bearerAuth", {
