@@ -13,6 +13,12 @@ const SOURCE_URL = "https://www.ffhandball.fr/competitions/saison-2025-2026-21/n
 const EXT_POULE_ID = "168256";
 
 describe("parseRencontreList", () => {
+  it("capture le structureId interne des équipes (porteur d'une entente)", () => {
+    const html = fixture("ffhandball-poule-rencontres-journee-1.html");
+    const r = parseRencontreList(html, SOURCE_URL, EXT_POULE_ID);
+    expect(r!.equipes.some((e) => typeof e.structure_id === "string")).toBe(true);
+  });
+
   it("extracts matchs from journée 1 fixture (with scores)", () => {
     const html = fixture("ffhandball-poule-rencontres-journee-1.html");
     const r = parseRencontreList(html, SOURCE_URL, EXT_POULE_ID);

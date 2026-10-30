@@ -74,7 +74,14 @@ export function parseRencontreList(
 
   const pouleSelector = loadAttributes($, "competitions---poule-selector") as
     | {
-        equipe_options?: Array<{ id?: unknown; ext_equipeId?: unknown; libelle?: unknown }>;
+        equipe_options?: Array<{
+          id?: unknown;
+          ext_equipeId?: unknown;
+          libelle?: unknown;
+          structureId?: unknown;
+          ext_structureId?: unknown;
+          logo?: unknown;
+        }>;
         poules?: Array<{ ext_pouleId?: unknown; journees?: unknown }>;
         selected_poule?: { ext_pouleId?: unknown; journees?: unknown };
       }
@@ -97,7 +104,14 @@ export function parseRencontreList(
     const nom = typeof opt.libelle === "string" ? opt.libelle.trim() : null;
     if (nom && !seenEquipe.has(extId)) {
       seenEquipe.add(extId);
-      const pe = rawEquipePayloadSchema.safeParse({ ext_equipe_id: extId, nom, source_url: sourceUrl });
+      const pe = rawEquipePayloadSchema.safeParse({
+        ext_equipe_id: extId,
+        nom,
+        ext_structure_id: typeof opt.ext_structureId === "string" ? opt.ext_structureId : undefined,
+        logo: typeof opt.logo === "string" ? opt.logo : undefined,
+        structure_id: typeof opt.structureId === "string" ? opt.structureId : undefined,
+        source_url: sourceUrl,
+      });
       if (pe.success) equipes.push(pe.data);
     }
     const pen = rawEngagementPayloadSchema.safeParse({
