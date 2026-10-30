@@ -25,7 +25,7 @@ export interface EtlReport {
   warnings_count: number;
 }
 
-export async function runFeuillesMatchEtl(saison: string): Promise<EtlReport> {
+export async function runFeuillesMatchEtl(saison: string, opts: { naturalKeys?: string[] } = {}): Promise<EtlReport> {
   const runRes = await query<{ id: number }>(
     `INSERT INTO core.etl_runs (entity, saison) VALUES ('feuilles_match', $1) RETURNING id`,
     [saison],
@@ -41,10 +41,10 @@ export async function runFeuillesMatchEtl(saison: string): Promise<EtlReport> {
   try {
     // Préchargement de l'index fdm_code → match (1 requête) au lieu d'un SELECT par FdM.
     const matchIndex = await loadMatchByFdmIndex();
-    const prog = new Progress("etl feuilles-match", await countRawDistinct("raw.feuilles_match", saison));
+    const prog = new Progress("etl feuilles-match", await countRawDistinct("raw.feuilles_match", saison, { naturalKeys: opts.naturalKeys }));
     const checkpoint = new EtlCheckpoint(etl_run_id);
 
-    for await (const row of iterateRawBatched("raw.feuilles_match", saison)) {
+    for await (const row of iterateRawBatched("raw.feuilles_match", saison, { naturalKeys: opts.naturalKeys })) {
       report.rows_read++;
       prog.tick(report.rows_read);
       await checkpoint.maybe(report.rows_read);

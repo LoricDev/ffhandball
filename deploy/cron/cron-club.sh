@@ -4,7 +4,7 @@
 # une fois par heure. Ne scrape que les poules du club (--club) : ~1-2 min au lieu des heures du cron-daily.
 # Club : CLUB_CODE (code FFHB 7 chiffres ou id_ffhb), 5657013 (Bouzonville) par défaut.
 # Lancé en week-end toutes les 15 min et en semaine matin/soir par le crontab utilisateur.
-# Les ETL classements / feuilles-match retraitent toute la saison (pas de mode incrémental) : d'où le rythme horaire.
+# Les ETL classements / feuilles-match sont limités au club (--club) ; l'ETL matchs reste global mais incrémental (quelques secondes).
 
 set -euo pipefail
 
@@ -71,13 +71,13 @@ if [ "$HOURLY" -eq 1 ]; then
     pnpm scrape --entity=classements --saison="$SAISON" --club="$CLUB_CODE" --days=3
 
   run_step "etl classements" \
-    pnpm etl --entity=classements --saison="$SAISON"
+    pnpm etl --entity=classements --saison="$SAISON" --club="$CLUB_CODE"
 
   run_step "scrape feuilles-match club (10 derniers jours)" \
     pnpm scrape --entity=feuilles-match --saison="$SAISON" --club="$CLUB_CODE" --days=10
 
   run_step "etl feuilles-match" \
-    pnpm etl --entity=feuilles-match --saison="$SAISON"
+    pnpm etl --entity=feuilles-match --saison="$SAISON" --club="$CLUB_CODE"
 fi
 
 if [ "$ERRORS" -eq 0 ]; then

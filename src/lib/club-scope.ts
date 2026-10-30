@@ -11,6 +11,20 @@ export interface ClubScope {
   pouleIds: string[];
 }
 
+/** Codes FdM des matchs des équipes du club (clé naturelle de raw.feuilles_match). */
+export async function clubFdmCodes(scope: ClubScope, saison: string): Promise<string[]> {
+  const r = await query<{ fdm_code: string }>(
+    `SELECT DISTINCT m.fdm_code
+       FROM core.matchs m
+       JOIN core.poules po ON po.id = m.poule_id
+      WHERE po.saison_code = $2
+        AND m.fdm_code IS NOT NULL AND m.fdm_code <> ''
+        AND (m.equipe_dom_id = ANY($1::bigint[]) OR m.equipe_ext_id = ANY($1::bigint[]))`,
+    [scope.equipeIds, saison],
+  );
+  return r.rows.map((x) => x.fdm_code);
+}
+
 /** `cle` : code FFHB à 7 chiffres ou id_ffhb (id_club monclub). */
 export async function resolveClubScope(cle: string, saison: string): Promise<ClubScope> {
   const clubRes = await query<ClubScope["club"]>(

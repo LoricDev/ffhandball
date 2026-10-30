@@ -19,7 +19,7 @@ export interface EtlReport {
   warnings_count: number;
 }
 
-export async function runStatsJoueursEtl(saison: string): Promise<EtlReport> {
+export async function runStatsJoueursEtl(saison: string, opts: { pouleIds?: string[] } = {}): Promise<EtlReport> {
   const runRes = await query<{ id: number }>(
     `INSERT INTO core.etl_runs (entity, saison) VALUES ('stats_joueurs', $1) RETURNING id`,
     [saison],
@@ -43,10 +43,10 @@ export async function runStatsJoueursEtl(saison: string): Promise<EtlReport> {
     const equipesById = await loadIdIndex("equipes", saison);
     const equipesByName = await loadEquipeNameIndex(saison);
     const warnings: EtlWarning[] = [];
-    const prog = new Progress("etl stats-joueurs", await countRawDistinct("raw.stats_joueurs", saison));
+    const prog = new Progress("etl stats-joueurs", await countRawDistinct("raw.stats_joueurs", saison, { pouleIds: opts.pouleIds }));
     const checkpoint = new EtlCheckpoint(etl_run_id);
 
-    for await (const row of iterateRawBatched("raw.stats_joueurs", saison)) {
+    for await (const row of iterateRawBatched("raw.stats_joueurs", saison, { pouleIds: opts.pouleIds })) {
       report.rows_read++;
       prog.tick(report.rows_read);
       await checkpoint.maybe(report.rows_read);

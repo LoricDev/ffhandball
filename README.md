@@ -153,7 +153,7 @@ pnpm scrape --entity=matchs         --saison=2025-2026 --club=5657013 --journees
 pnpm scrape --entity=classements    --saison=2025-2026 --club=5657013
 pnpm scrape --entity=stats-joueurs  --saison=2025-2026 --club=5657013
 pnpm scrape --entity=feuilles-match --saison=2025-2026 --club=5657013
-pnpm etl --entity=matchs --saison=2025-2026   # puis classements, stats-joueurs, feuilles-match
+pnpm etl --entity=matchs --saison=2025-2026   # puis classements, stats-joueurs, feuilles-match (acceptent aussi --club, pour ne retraiter que le club)
 
 # Phase 6 — Démarrer l'API HTTP
 pnpm api                                                  # http://localhost:3000

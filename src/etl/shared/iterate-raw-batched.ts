@@ -47,21 +47,44 @@ const DEFAULT_BATCH_SIZE = 200;
 export interface IterateOptions {
   batchSize?: number;
   since?: Date;
+  /** Ne retenir que ces poules (payload.ext_poule_id) : classements, stats-joueurs, matchs. */
+  pouleIds?: string[];
+  /** Ne retenir que ces clés naturelles (ex. codes FdM d'un club pour raw.feuilles_match). */
+  naturalKeys?: string[];
+}
+
+/** Filtres communs à l'itération et au comptage ; `params` reçoit les valeurs, les index suivent `params.length`. */
+function buildFilters(opts: Pick<IterateOptions, "since" | "pouleIds" | "naturalKeys">, params: unknown[]): string {
+  let sql = "";
+  if (opts.since) {
+    params.push(opts.since);
+    sql += ` AND scraped_at >= $${params.length}`;
+  }
+  if (opts.pouleIds) {
+    params.push(opts.pouleIds);
+    sql += ` AND payload->>'ext_poule_id' = ANY($${params.length}::text[])`;
+  }
+  if (opts.naturalKeys) {
+    params.push(opts.naturalKeys);
+    sql += ` AND natural_key = ANY($${params.length}::text[])`;
+  }
+  return sql;
 }
 
 /** Nombre de clés distinctes qu'`iterateRawBatched` va produire (pour une barre de progression). */
 export async function countRawDistinct(
   table: RawTable,
   saison: string,
-  since?: Date,
+  filters?: Date | Pick<IterateOptions, "since" | "pouleIds" | "naturalKeys">,
 ): Promise<number> {
   if (!ALLOWED_TABLES.includes(table)) {
     throw new Error(`countRawDistinct: table non autorisée: ${String(table)}`);
   }
-  const sinceFilter = since ? " AND scraped_at >= $2" : "";
-  const params: unknown[] = since ? [saison, since] : [saison];
+  const opts = filters instanceof Date ? { since: filters } : (filters ?? {});
+  const params: unknown[] = [saison];
+  const where = buildFilters(opts, params);
   const r = await query<{ n: string }>(
-    `SELECT count(DISTINCT natural_key)::bigint AS n FROM ${table} WHERE saison = $1${sinceFilter}`,
+    `SELECT count(DISTINCT natural_key)::bigint AS n FROM ${table} WHERE saison = $1${where}`,
     params,
   );
   return Number(r.rows[0]?.n ?? 0);
@@ -77,16 +100,15 @@ export async function* iterateRawBatched(
   }
 
   const batchSize = opts.batchSize ?? DEFAULT_BATCH_SIZE;
-  const sinceFilter = opts.since ? " AND scraped_at >= $4" : "";
 
   let lastNaturalKey = "";
   for (;;) {
     const params: unknown[] = [saison, lastNaturalKey, batchSize];
-    if (opts.since) params.push(opts.since);
+    const where = buildFilters(opts, params);
     const res = await query<RawRow>(
       `SELECT DISTINCT ON (natural_key) id, natural_key, payload
          FROM ${table}
-        WHERE saison = $1 AND natural_key > $2${sinceFilter}
+        WHERE saison = $1 AND natural_key > $2${where}
         ORDER BY natural_key, scraped_at DESC
         LIMIT $3`,
       params,

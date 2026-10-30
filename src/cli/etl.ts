@@ -15,12 +15,15 @@ import { runMatchOfficielsEtl } from "@/etl/match_officiels.etl.js";
 import { runClassementsEtl } from "@/etl/classements.etl.js";
 import { runStatsJoueursEtl } from "@/etl/stats-joueurs.etl.js";
 import { runFeuillesMatchEtl } from "@/etl/feuilles-match.etl.js";
+import { resolveClubScope, clubFdmCodes } from "@/lib/club-scope.js";
 
 interface CliArgs {
   entity: string;
   saison: string;
   since?: string;
   incremental: boolean;
+  /** classements, stats-joueurs, feuilles-match : ne retraiter que les lignes brutes du club (ententes comprises). */
+  club?: string;
 }
 
 function parseCliArgs(): CliArgs {
@@ -31,6 +34,7 @@ function parseCliArgs(): CliArgs {
       // matchs uniquement : ne retraiter que le delta du dernier scrape.
       since: { type: "string" },           // timestamp ISO explicite
       incremental: { type: "boolean" },    // = depuis le dernier ETL matchs réussi
+      club: { type: "string" },            // code FFHB 7 chiffres ou id_ffhb
     },
   });
   if (!values.entity) throw new Error("--entity required");
@@ -40,6 +44,7 @@ function parseCliArgs(): CliArgs {
     saison: canonicalizeSaison(values.saison),
     since: values.since,
     incremental: values.incremental === true,
+    club: values.club,
   };
 }
 
@@ -74,6 +79,12 @@ async function resolveMatchsSince(args: CliArgs): Promise<Date | undefined> {
 
 async function main(): Promise<void> {
   const args = parseCliArgs();
+  // Pas pour matchs : son mode incrémental repose sur le dernier ETL réussi, un run partiel le fausserait.
+  const CLUB_ENTITIES = ["classements", "stats-joueurs", "feuilles-match"];
+  if (args.club && !CLUB_ENTITIES.includes(args.entity)) {
+    throw new Error(`--club n'est pas supporté pour l'entité ${args.entity} (${CLUB_ENTITIES.join(", ")})`);
+  }
+  const scope = args.club ? await resolveClubScope(args.club, args.saison) : undefined;
   let report;
   if (args.entity === "clubs") {
     report = await runClubsEtl(args.saison);
@@ -96,11 +107,11 @@ async function main(): Promise<void> {
   } else if (args.entity === "match_officiels") {
     report = await runMatchOfficielsEtl(args.saison);
   } else if (args.entity === "classements") {
-    await runClassementsEtl(args.saison);
+    await runClassementsEtl(args.saison, { pouleIds: scope?.pouleIds });
   } else if (args.entity === "stats-joueurs") {
-    await runStatsJoueursEtl(args.saison);
+    await runStatsJoueursEtl(args.saison, { pouleIds: scope?.pouleIds });
   } else if (args.entity === "feuilles-match") {
-    await runFeuillesMatchEtl(args.saison);
+    await runFeuillesMatchEtl(args.saison, { naturalKeys: scope ? await clubFdmCodes(scope, args.saison) : undefined });
   } else {
     throw new Error(`unknown entity: ${args.entity}`);
   }
