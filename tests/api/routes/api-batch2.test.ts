@@ -72,22 +72,22 @@ beforeAll(async () => {
 describe("référentiels", () => {
   it("/saisons liste la saison courante", async () => {
     _resetBuckets();
-    const res = await app.request("/saisons");
+    const res = await app.request("/v1/saisons");
     expect(res.status).toBe(200);
     const body = (await res.json()) as { data: { saison_code: string }[] };
     expect(body.data.map((s) => s.saison_code)).toContain("2025-2026");
   });
   it("/departements et /ligues répondent 200", async () => {
     _resetBuckets();
-    expect((await app.request("/departements")).status).toBe(200);
-    expect((await app.request("/ligues")).status).toBe(200);
+    expect((await app.request("/v1/departements")).status).toBe(200);
+    expect((await app.request("/v1/ligues")).status).toBe(200);
   });
 });
 
 describe("effectifs", () => {
   it("/equipes/:id/joueurs liste l'effectif avec buts", async () => {
     _resetBuckets();
-    const res = await app.request("/equipes/B2-EQ1/joueurs?saison=2025-2026");
+    const res = await app.request("/v1/equipes/B2-EQ1/joueurs?saison=2025-2026");
     expect(res.status).toBe(200);
     const body = (await res.json()) as { data: { numero_licence: string; buts: number }[] };
     const star = body.data.find((j) => j.numero_licence === LICENCE);
@@ -96,17 +96,17 @@ describe("effectifs", () => {
   });
   it("/clubs/:id/joueurs par id_club ET par code_ffhb", async () => {
     _resetBuckets();
-    const byId = await app.request(`/clubs/${CLUB_ID}/joueurs`);
+    const byId = await app.request(`/v1/clubs/${CLUB_ID}/joueurs`);
     expect(byId.status).toBe(200);
     const b1 = (await byId.json()) as { data: { numero_licence: string }[] };
     expect(b1.data.map((j) => j.numero_licence)).toContain(LICENCE);
-    const byCode = await app.request(`/clubs/${CLUB_CODE}/joueurs`);
+    const byCode = await app.request(`/v1/clubs/${CLUB_CODE}/joueurs`);
     const b2 = (await byCode.json()) as { data: { numero_licence: string }[] };
     expect(b2.data.map((j) => j.numero_licence)).toContain(LICENCE);
   });
   it("/clubs/:id/classements liste les positions des équipes", async () => {
     _resetBuckets();
-    const res = await app.request(`/clubs/${CLUB_ID}/classements?saison=2025-2026`);
+    const res = await app.request(`/v1/clubs/${CLUB_ID}/classements?saison=2025-2026`);
     expect(res.status).toBe(200);
     const body = (await res.json()) as { data: { equipe: { id_ffhb: string }; position: number }[] };
     const eq = body.data.find((x) => x.equipe.id_ffhb === "B2-EQ1");
@@ -118,7 +118,7 @@ describe("effectifs", () => {
 describe("joueur & arbitre approfondis", () => {
   it("/joueurs/:licence/matchs retourne l'historique", async () => {
     _resetBuckets();
-    const res = await app.request(`/joueurs/${LICENCE}/matchs`);
+    const res = await app.request(`/v1/joueurs/${LICENCE}/matchs`);
     expect(res.status).toBe(200);
     const body = (await res.json()) as { data: { id_ffhb_match: string; buts: number }[]; meta: { total: number } };
     const m = body.data.find((x) => x.id_ffhb_match === "B2-M-001");
@@ -127,11 +127,11 @@ describe("joueur & arbitre approfondis", () => {
   });
   it("/joueurs/:licence/matchs 404 si inconnu", async () => {
     _resetBuckets();
-    expect((await app.request("/joueurs/0000000000/matchs")).status).toBe(404);
+    expect((await app.request("/v1/joueurs/0000000000/matchs")).status).toBe(404);
   });
   it("/arbitres/:id_ffhb détail avec nb_matchs", async () => {
     _resetBuckets();
-    const res = await app.request("/arbitres/B2-ARB");
+    const res = await app.request("/v1/arbitres/B2-ARB");
     expect(res.status).toBe(200);
     const body = (await res.json()) as { data: { id_ffhb: string; nb_matchs: number } };
     expect(body.data.id_ffhb).toBe("B2-ARB");
@@ -139,7 +139,7 @@ describe("joueur & arbitre approfondis", () => {
   });
   it("/arbitres/:id_ffhb 404 si inconnu", async () => {
     _resetBuckets();
-    expect((await app.request("/arbitres/GHOST")).status).toBe(404);
+    expect((await app.request("/v1/arbitres/GHOST")).status).toBe(404);
   });
 
   afterAll(async () => {

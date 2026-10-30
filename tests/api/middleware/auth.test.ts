@@ -29,7 +29,7 @@ describe("apiKeyAuthMiddleware (auth activée)", () => {
 
   it("401 sans token sur un endpoint data", async () => {
     _resetBuckets();
-    const res = await app.request("/clubs");
+    const res = await app.request("/v1/clubs");
     expect(res.status).toBe(401);
     const body = (await res.json()) as { error: { code: string } };
     expect(body.error.code).toBe("UNAUTHORIZED");
@@ -38,25 +38,25 @@ describe("apiKeyAuthMiddleware (auth activée)", () => {
 
   it("401 token invalide", async () => {
     _resetBuckets();
-    const res = await app.request("/clubs", { headers: { Authorization: "Bearer ffhb_invalidtoken" } });
+    const res = await app.request("/v1/clubs", { headers: { Authorization: "Bearer ffhb_invalidtoken" } });
     expect(res.status).toBe(401);
   });
 
   it("401 token expiré", async () => {
     _resetBuckets();
-    const res = await app.request("/clubs", { headers: { Authorization: `Bearer ${expiredToken}` } });
+    const res = await app.request("/v1/clubs", { headers: { Authorization: `Bearer ${expiredToken}` } });
     expect(res.status).toBe(401);
   });
 
   it("200 avec token valide (Bearer)", async () => {
     _resetBuckets();
-    const res = await app.request("/clubs?limit=1", { headers: { Authorization: `Bearer ${validToken}` } });
+    const res = await app.request("/v1/clubs?limit=1", { headers: { Authorization: `Bearer ${validToken}` } });
     expect(res.status).toBe(200);
   });
 
   it("200 avec token valide (X-API-Key)", async () => {
     _resetBuckets();
-    const res = await app.request("/clubs?limit=1", { headers: { "X-API-Key": validToken } });
+    const res = await app.request("/v1/clubs?limit=1", { headers: { "X-API-Key": validToken } });
     expect(res.status).toBe(200);
   });
 
@@ -69,7 +69,7 @@ describe("auth désactivée (défaut)", () => {
   it("accès libre sans token", async () => {
     _resetBuckets();
     const free = buildApp(); // authEnabled défaut = env (false en test)
-    const res = await free.request("/clubs?limit=1");
+    const res = await free.request("/v1/clubs?limit=1");
     expect(res.status).toBe(200);
   });
 

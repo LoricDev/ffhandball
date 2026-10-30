@@ -21,7 +21,7 @@ function isUncached(path: string): boolean {
 
 /** Référentiels quasi statiques et spec (change au déploiement) : cache plus long que les données de matchs. */
 function maxAgeFor(path: string, dflt: number): number {
-  if (path === "/saisons" || path === "/departements" || path === "/ligues") return 3600;
+  if (path === "/v1/saisons" || path === "/v1/departements" || path === "/v1/ligues") return 3600;
   if (path === "/openapi.json") return 300;
   return dflt;
 }

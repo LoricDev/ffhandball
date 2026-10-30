@@ -88,7 +88,7 @@ beforeAll(async () => {
 describe("GET /stats-joueurs", () => {
   it("retourne les buteurs ordonnés par buts décroissants", async () => {
     _resetBuckets();
-    const res = await app.request("/stats-joueurs?poule_id_ffhb=T3-PO");
+    const res = await app.request("/v1/stats-joueurs?poule_id_ffhb=T3-PO");
     expect(res.status).toBe(200);
     const body = (await res.json()) as { data: { nom: string; total_buts: number }[]; meta: { total: number } };
     expect(body.meta.total).toBe(2);
@@ -97,25 +97,25 @@ describe("GET /stats-joueurs", () => {
   });
   it("400 si poule_id_ffhb manquant", async () => {
     _resetBuckets();
-    expect((await app.request("/stats-joueurs")).status).toBe(400);
+    expect((await app.request("/v1/stats-joueurs")).status).toBe(400);
   });
   it("404 si poule sans stats", async () => {
     _resetBuckets();
-    expect((await app.request("/stats-joueurs?poule_id_ffhb=GHOST")).status).toBe(404);
+    expect((await app.request("/v1/stats-joueurs?poule_id_ffhb=GHOST")).status).toBe(404);
   });
 });
 
 describe("GET /arbitres", () => {
   it("liste et recherche floue", async () => {
     _resetBuckets();
-    const res = await app.request("/arbitres?q=DUPONT&limit=100");
+    const res = await app.request("/v1/arbitres?q=DUPONT&limit=100");
     expect(res.status).toBe(200);
     const body = (await res.json()) as { data: { id_ffhb: string | null }[] };
     expect(body.data.find((a) => a.id_ffhb === "T3-ARB")).toBeDefined();
   });
   it("/arbitres/:id_ffhb/matchs retourne les matchs arbitrés", async () => {
     _resetBuckets();
-    const res = await app.request("/arbitres/T3-ARB/matchs");
+    const res = await app.request("/v1/arbitres/T3-ARB/matchs");
     expect(res.status).toBe(200);
     const body = (await res.json()) as { data: { id_ffhb_match: string; role: string }[] };
     const m = body.data.find((x) => x.id_ffhb_match === "T3-M-001");
@@ -124,14 +124,14 @@ describe("GET /arbitres", () => {
   });
   it("404 si arbitre inconnu", async () => {
     _resetBuckets();
-    expect((await app.request("/arbitres/GHOST/matchs")).status).toBe(404);
+    expect((await app.request("/v1/arbitres/GHOST/matchs")).status).toBe(404);
   });
 });
 
 describe("GET /salles", () => {
   it("/salles/:id_ffhb détail", async () => {
     _resetBuckets();
-    const res = await app.request("/salles/T3-SALLE");
+    const res = await app.request("/v1/salles/T3-SALLE");
     expect(res.status).toBe(200);
     const body = (await res.json()) as { data: { id_ffhb: string; nom: string } };
     expect(body.data.id_ffhb).toBe("T3-SALLE");
@@ -139,14 +139,14 @@ describe("GET /salles", () => {
   });
   it("/salles/:id_ffhb/matchs retourne les matchs accueillis", async () => {
     _resetBuckets();
-    const res = await app.request("/salles/T3-SALLE/matchs");
+    const res = await app.request("/v1/salles/T3-SALLE/matchs");
     expect(res.status).toBe(200);
     const body = (await res.json()) as { data: { id_ffhb_match: string }[] };
     expect(body.data.map((m) => m.id_ffhb_match)).toContain("T3-M-001");
   });
   it("404 si salle inconnue", async () => {
     _resetBuckets();
-    expect((await app.request("/salles/GHOST")).status).toBe(404);
+    expect((await app.request("/v1/salles/GHOST")).status).toBe(404);
   });
 
   afterAll(async () => {

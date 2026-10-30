@@ -609,7 +609,7 @@ Le pipeline est volontairement frugal — pas besoin de Kubernetes ni de cloud p
 
 ### Corriger le regroupement des équipes
 
-`/clubs/:id/equipes?grouper=true` regroupe les inscriptions FFHB par heuristique sur les noms. Quand elle se
+`/v1/clubs/:id/equipes?grouper=true` regroupe les inscriptions FFHB par heuristique sur les noms. Quand elle se
 trompe, ouvre `/admin/dashboard#teams`, saisis l'id du club, puis **Corriger** sur l'inscription concernée
 (catégorie, sexe, rang, entente, ou exclusion). La correction est stockée dans `core.equipe_overrides`
 (migration 0027), s'applique immédiatement à l'API et ne modifie aucune donnée scrapée.

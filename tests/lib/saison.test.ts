@@ -44,7 +44,7 @@ describe("saison par défaut et filtre /matchs", () => {
 
   it("/competitions sans saison renvoie la saison COURANTE et l'indique dans meta.saison", async () => {
     _resetBuckets();
-    const res = await app.request("/competitions?q=COMP SAISON&limit=50");
+    const res = await app.request("/v1/competitions?q=COMP SAISON&limit=50");
     expect(res.status).toBe(200);
     const body = (await res.json()) as { data: Array<{ id_ffhb: string; saison_code: string }>; meta: { saison: string } };
     expect(body.meta.saison).toBe(now);
@@ -55,7 +55,7 @@ describe("saison par défaut et filtre /matchs", () => {
 
   it("/competitions?saison=… reste honoré", async () => {
     _resetBuckets();
-    const res = await app.request(`/competitions?q=COMP SAISON&saison=${previous}&limit=50`);
+    const res = await app.request(`/v1/competitions?q=COMP SAISON&saison=${previous}&limit=50`);
     const body = (await res.json()) as { data: Array<{ id_ffhb: string }>; meta: { saison: string } };
     expect(body.meta.saison).toBe(previous);
     expect(body.data.map((c) => c.id_ffhb)).toContain(ids[1]);
@@ -63,16 +63,16 @@ describe("saison par défaut et filtre /matchs", () => {
 
   it("/matchs : meta.saison = null sans filtre, = la saison avec le filtre ; format invalide refusé", async () => {
     _resetBuckets();
-    const all = (await (await app.request("/matchs?limit=1")).json()) as { meta: { saison: string | null } };
+    const all = (await (await app.request("/v1/matchs?limit=1")).json()) as { meta: { saison: string | null } };
     expect(all.meta.saison).toBeNull();
-    const filtered = (await (await app.request(`/matchs?limit=1&saison=${now}`)).json()) as { meta: { saison: string | null } };
+    const filtered = (await (await app.request(`/v1/matchs?limit=1&saison=${now}`)).json()) as { meta: { saison: string | null } };
     expect(filtered.meta.saison).toBe(now);
-    expect((await app.request("/matchs?saison=2026")).status).toBe(400);
+    expect((await app.request("/v1/matchs?saison=2026")).status).toBe(400);
   });
 
   it("/search indique la saison utilisée", async () => {
     _resetBuckets();
-    const res = await app.request("/search?q=handball");
+    const res = await app.request("/v1/search?q=handball");
     expect(res.status).toBe(200);
     expect(((await res.json()) as { meta: { saison: string } }).meta.saison).toBe(now);
   });

@@ -53,7 +53,7 @@
     </div>
 
     <div role="tabpanel" id="panel-matchs" aria-labelledby="tab-matchs">
-      <pre class="req"><code>curl "<span data-base></span>/matchs?statut=joue&amp;limit=1" \
+      <pre class="req"><code>curl "<span data-base></span>/v1/matchs?statut=joue&amp;limit=1" \
   -H "Authorization: Bearer ffhb_…"</code></pre>
       <div class="board" role="img" aria-label="ASC Le Geldar de Kourou bat Cosma Hand 33 à 24, 3e journée de la Coupe de la Ligue prénationale masculine, le 3 octobre 2026">
         <div class="board-meta">Coupe de la Ligue prénationale masculine · journée 3 · 3 oct. 2026</div>
@@ -82,7 +82,7 @@
     </div>
 
     <div role="tabpanel" id="panel-clubs" aria-labelledby="tab-clubs" hidden>
-      <pre class="req"><code>curl "<span data-base></span>/clubs?departement=57&amp;limit=1" \
+      <pre class="req"><code>curl "<span data-base></span>/v1/clubs?departement=57&amp;limit=1" \
   -H "Authorization: Bearer ffhb_…"</code></pre>
       <div class="board club" role="img" aria-label="3mt, club de Metz, département 57">
         <div class="board-meta">Club · département 57</div>
@@ -131,24 +131,24 @@
     <caption class="sr">Liste des endpoints</caption>
     <thead><tr><th scope="col">Chemin</th><th scope="col">Rôle</th></tr></thead>
     <tbody>
-      <tr><td><code>/clubs</code></td><td>Rechercher des clubs (<code>q</code>, <code>departement</code>)</td></tr>
-      <tr><td><code>/clubs/{id}</code></td><td>Fiche d'un club. L'identifiant est l'id FFHB ou le code à 7 chiffres.</td></tr>
-      <tr><td><code>/clubs/{id}/matchs</code></td><td>Calendrier du club</td></tr>
-      <tr><td><code>/clubs/{id}/equipes</code></td><td>Équipes engagées</td></tr>
-      <tr><td><code>/clubs/{id}/joueurs</code></td><td>Joueurs du club</td></tr>
-      <tr><td><code>/clubs/{id}/classements</code></td><td>Classements des équipes du club</td></tr>
-      <tr><td><code>/matchs</code></td><td>Lister les matchs (<code>poule_id_ffhb</code>, <code>date_from</code>, <code>date_to</code>, <code>statut</code>)</td></tr>
-      <tr><td><code>/matchs/{id}</code></td><td>Détail d'un match</td></tr>
-      <tr><td><code>/classements</code></td><td>Classement d'une poule (<code>poule_id_ffhb</code> obligatoire)</td></tr>
-      <tr><td><code>/competitions</code>, <code>/competitions/{id}</code></td><td>Compétitions et leurs poules</td></tr>
-      <tr><td><code>/poules/{id}</code></td><td>Détail d'une poule</td></tr>
-      <tr><td><code>/equipes/{id}</code></td><td>Équipe, avec <code>/matchs</code> et <code>/joueurs</code></td></tr>
-      <tr><td><code>/joueurs/{licence}</code></td><td>Fiche d'un joueur, avec <code>/matchs</code></td></tr>
-      <tr><td><code>/stats-joueurs</code></td><td>Statistiques des joueurs</td></tr>
-      <tr><td><code>/arbitres</code>, <code>/arbitres/{id}</code></td><td>Arbitres, avec <code>/matchs</code></td></tr>
-      <tr><td><code>/salles/{id}</code></td><td>Salle, avec <code>/matchs</code></td></tr>
-      <tr><td><code>/search</code></td><td>Recherche transversale</td></tr>
-      <tr><td><code>/saisons</code>, <code>/departements</code>, <code>/ligues</code></td><td>Référentiels</td></tr>
+      <tr><td><code>/v1/clubs</code></td><td>Rechercher des clubs (<code>q</code>, <code>departement</code>)</td></tr>
+      <tr><td><code>/v1/clubs/{id}</code></td><td>Fiche d'un club. L'identifiant est l'id FFHB ou le code à 7 chiffres.</td></tr>
+      <tr><td><code>/v1/clubs/{id}/matchs</code></td><td>Calendrier du club</td></tr>
+      <tr><td><code>/v1/clubs/{id}/equipes</code></td><td>Équipes engagées</td></tr>
+      <tr><td><code>/v1/clubs/{id}/joueurs</code></td><td>Joueurs du club</td></tr>
+      <tr><td><code>/v1/clubs/{id}/classements</code></td><td>Classements des équipes du club</td></tr>
+      <tr><td><code>/v1/matchs</code></td><td>Lister les matchs (<code>poule_id_ffhb</code>, <code>date_from</code>, <code>date_to</code>, <code>statut</code>)</td></tr>
+      <tr><td><code>/v1/matchs/{id}</code></td><td>Détail d'un match</td></tr>
+      <tr><td><code>/v1/classements</code></td><td>Classement d'une poule (<code>poule_id_ffhb</code> obligatoire)</td></tr>
+      <tr><td><code>/v1/competitions</code>, <code>/v1/competitions/{id}</code></td><td>Compétitions et leurs poules</td></tr>
+      <tr><td><code>/v1/poules/{id}</code></td><td>Détail d'une poule</td></tr>
+      <tr><td><code>/v1/equipes/{id}</code></td><td>Équipe, avec <code>/matchs</code> et <code>/joueurs</code></td></tr>
+      <tr><td><code>/v1/joueurs/{licence}</code></td><td>Fiche d'un joueur, avec <code>/matchs</code></td></tr>
+      <tr><td><code>/v1/stats-joueurs</code></td><td>Statistiques des joueurs</td></tr>
+      <tr><td><code>/v1/arbitres</code>, <code>/v1/arbitres/{id}</code></td><td>Arbitres, avec <code>/matchs</code></td></tr>
+      <tr><td><code>/v1/salles/{id}</code></td><td>Salle, avec <code>/matchs</code></td></tr>
+      <tr><td><code>/v1/search</code></td><td>Recherche transversale</td></tr>
+      <tr><td><code>/v1/saisons</code>, <code>/v1/departements</code>, <code>/v1/ligues</code></td><td>Référentiels</td></tr>
       <tr><td><code>/health</code>, <code>/ready</code></td><td>État de l'API et de la base, sans clé</td></tr>
     </tbody>
   </table>
@@ -165,9 +165,9 @@
         <button role="tab" id="lang-js" aria-selected="false" aria-controls="code-js" tabindex="-1">JavaScript</button>
         <button role="tab" id="lang-py" aria-selected="false" aria-controls="code-py" tabindex="-1">Python</button>
       </div>
-      <div role="tabpanel" id="code-curl" aria-labelledby="lang-curl"><pre class="code"><code>curl "<span data-base></span>/clubs?q=metz&amp;limit=5" \
+      <div role="tabpanel" id="code-curl" aria-labelledby="lang-curl"><pre class="code"><code>curl "<span data-base></span>/v1/clubs?q=metz&amp;limit=5" \
   -H "Authorization: Bearer $FFHB_KEY"</code></pre><button class="copy" data-copy="code-curl">Copier</button></div>
-      <div role="tabpanel" id="code-js" aria-labelledby="lang-js" hidden><pre class="code"><code>const res = await fetch("<span data-base></span>/clubs?q=metz&amp;limit=5", {
+      <div role="tabpanel" id="code-js" aria-labelledby="lang-js" hidden><pre class="code"><code>const res = await fetch("<span data-base></span>/v1/clubs?q=metz&amp;limit=5", {
   headers: { Authorization: `Bearer ${process.env.FFHB_KEY}` },
 });
 const { data, meta } = await res.json();
@@ -175,7 +175,7 @@ console.log(meta.total, data[0].nom);</code></pre><button class="copy" data-copy
       <div role="tabpanel" id="code-py" aria-labelledby="lang-py" hidden><pre class="code"><code>import os, requests
 
 r = requests.get(
-    "<span data-base></span>/clubs",
+    "<span data-base></span>/v1/clubs",
     params={"q": "metz", "limit": 5},
     headers={"Authorization": f"Bearer {os.environ['FFHB_KEY']}"},
 )

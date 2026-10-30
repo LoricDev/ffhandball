@@ -88,7 +88,7 @@ describe("erreurs", () => {
   });
 
   it("validation d'un sous-routeur : enveloppe { error: BAD_REQUEST }", async () => {
-    const res = await app.request("/classements");
+    const res = await app.request("/v1/classements");
     expect(res.status).toBe(400);
     expect(((await res.json()) as ErrBody).error.code).toBe("BAD_REQUEST");
   });
@@ -101,7 +101,7 @@ describe("erreurs", () => {
 });
 
 describe("/matchs : filtres et tri", () => {
-  const q = async (qs: string) => (await (await app.request(`/matchs?${qs}`)).json()) as ListBody;
+  const q = async (qs: string) => (await (await app.request(`/v1/matchs?${qs}`)).json()) as ListBody;
 
   it("pagination déterministe malgré des heures identiques", async () => {
     const ids: string[] = [];
@@ -132,7 +132,7 @@ describe("/matchs : filtres et tri", () => {
   });
 
   it("/equipes/:id/matchs accepte journee et tri", async () => {
-    const res = await app.request(`/equipes/EQ-CONV-A/matchs?saison=${SAISON}&journee=1&tri=date_desc`);
+    const res = await app.request(`/v1/equipes/EQ-CONV-A/matchs?saison=${SAISON}&journee=1&tri=date_desc`);
     expect(res.status).toBe(200);
     expect(((await res.json()) as ListBody).meta.total).toBe(2);
   });
@@ -140,7 +140,7 @@ describe("/matchs : filtres et tri", () => {
 
 describe("/poules/:id/matchs", () => {
   it("liste les matchs de la poule avec pagination", async () => {
-    const res = await app.request(`/poules/${POULE}/matchs?limit=2`);
+    const res = await app.request(`/v1/poules/${POULE}/matchs?limit=2`);
     expect(res.status).toBe(200);
     const body = (await res.json()) as ListBody;
     expect(body.data).toHaveLength(2);
@@ -148,13 +148,13 @@ describe("/poules/:id/matchs", () => {
   });
 
   it("404 pour une poule inconnue", async () => {
-    expect((await app.request("/poules/INCONNUE/matchs")).status).toBe(404);
+    expect((await app.request("/v1/poules/INCONNUE/matchs")).status).toBe(404);
   });
 });
 
 describe("cache et spec", () => {
   it("référentiels : cache d'une heure", async () => {
-    const res = await app.request("/saisons");
+    const res = await app.request("/v1/saisons");
     expect(res.headers.get("cache-control")).toContain("max-age=3600");
   });
 

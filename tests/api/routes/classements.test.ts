@@ -75,7 +75,7 @@ describe("GET /classements", () => {
   });
 
   it("returns classement data for valid poule_id_ffhb", async () => {
-    const res = await app.request(`/classements?poule_id_ffhb=${ids.pouleIdFfhb}`);
+    const res = await app.request(`/v1/classements?poule_id_ffhb=${ids.pouleIdFfhb}`);
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       data: { position: number; points: number; equipe_nom: string; equipe_id_ffhb: string }[];
@@ -88,14 +88,14 @@ describe("GET /classements", () => {
   });
 
   it("returns 400 when poule_id_ffhb is missing", async () => {
-    const res = await app.request("/classements");
+    const res = await app.request("/v1/classements");
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: { code: string } };
     expect(body.error.code).toBe("BAD_REQUEST");
   });
 
   it("returns 404 when poule not found or no classement", async () => {
-    const res = await app.request("/classements?poule_id_ffhb=PO-GHOST-999");
+    const res = await app.request("/v1/classements?poule_id_ffhb=PO-GHOST-999");
     expect(res.status).toBe(404);
     const body = (await res.json()) as { error: { code: string } };
     expect(body.error.code).toBe("NOT_FOUND");

@@ -1022,49 +1022,49 @@ open http://localhost:3000/docs
 **Santé & référentiels**
 - `GET /health` — liveness check
 - `GET /ready` — readiness check (DB connection)
-- `GET /saisons` — saisons disponibles (la plus récente en premier)
-- `GET /departements` — référentiel départements (code, nom)
-- `GET /ligues` — référentiel ligues (code, nom)
+- `GET /v1/saisons` — saisons disponibles (la plus récente en premier)
+- `GET /v1/departements` — référentiel départements (code, nom)
+- `GET /v1/ligues` — référentiel ligues (code, nom)
 
 **Clubs** (le `:id_ffhb` accepte l'`id_club` monclub **ou** le code FFHB 7 chiffres — cf. « Deux systèmes d'ID » plus bas)
-- `GET /clubs?q=...&departement=...&limit=20&offset=0` — liste paginée (expose `code_ffhb`)
-- `GET /clubs/:id_ffhb` — détail club + salle (+ `code_ffhb`)
-- `GET /clubs/:id_ffhb/matchs?saison=&include_ententes=&date_from=&date_to=&statut=&min_confidence=&limit=&offset=` — calendrier (cf. détail plus bas)
-- `GET /clubs/:id_ffhb/equipes?saison=` — équipes propres du club (pont `ext_structure_id = id_ffhb`)
-- `GET /clubs/:id_ffhb/joueurs` — joueurs licenciés du club (préfixe licence = `code_ffhb`) + matchs/buts
-- `GET /clubs/:id_ffhb/classements?saison=` — positions de toutes les équipes du club (dernier snapshot)
+- `GET /v1/clubs?q=...&departement=...&limit=20&offset=0` — liste paginée (expose `code_ffhb`)
+- `GET /v1/clubs/:id_ffhb` — détail club + salle (+ `code_ffhb`)
+- `GET /v1/clubs/:id_ffhb/matchs?saison=&include_ententes=&date_from=&date_to=&statut=&min_confidence=&limit=&offset=` — calendrier (cf. détail plus bas)
+- `GET /v1/clubs/:id_ffhb/equipes?saison=` — équipes propres du club (pont `ext_structure_id = id_ffhb`)
+- `GET /v1/clubs/:id_ffhb/joueurs` — joueurs licenciés du club (préfixe licence = `code_ffhb`) + matchs/buts
+- `GET /v1/clubs/:id_ffhb/classements?saison=` — positions de toutes les équipes du club (dernier snapshot)
 
 **Compétitions / poules**
-- `GET /competitions?saison=&niveau=&sexe=&q=&limit=&offset=` — liste paginée
-- `GET /competitions/:id_ffhb` — détail + phases + poules imbriquées
-- `GET /poules/:id_ffhb?saison=` — poule + contexte compétition/phase + classement inline
+- `GET /v1/competitions?saison=&niveau=&sexe=&q=&limit=&offset=` — liste paginée
+- `GET /v1/competitions/:id_ffhb` — détail + phases + poules imbriquées
+- `GET /v1/poules/:id_ffhb?saison=` — poule + contexte compétition/phase + classement inline
 
 **Équipes**
-- `GET /equipes/:id_ffhb?saison=` — détail (club via pont `ext_structure_id`, + engagements)
-- `GET /equipes/:id_ffhb/matchs?saison=&date_from=&date_to=&statut=&limit=&offset=` — matchs (dom + ext)
-- `GET /equipes/:id_ffhb/joueurs?saison=` — effectif (joueurs distincts via `match_compositions`)
+- `GET /v1/equipes/:id_ffhb?saison=` — détail (club via pont `ext_structure_id`, + engagements)
+- `GET /v1/equipes/:id_ffhb/matchs?saison=&date_from=&date_to=&statut=&limit=&offset=` — matchs (dom + ext)
+- `GET /v1/equipes/:id_ffhb/joueurs?saison=` — effectif (joueurs distincts via `match_compositions`)
 
 **Matchs**
-- `GET /matchs?poule_id_ffhb=...&date_from=...&date_to=...&statut=...` — liste
-- `GET /matchs/:id_ffhb_match` — détail enrichi (compositions + actions + arbitres + fdm_url)
+- `GET /v1/matchs?poule_id_ffhb=...&date_from=...&date_to=...&statut=...` — liste
+- `GET /v1/matchs/:id_ffhb_match` — détail enrichi (compositions + actions + arbitres + fdm_url)
 
 **Classements & stats**
-- `GET /classements?poule_id_ffhb=X` — classement poule
-- `GET /stats-joueurs?poule_id_ffhb=X&limit=&offset=` — buteurs/stats de la poule (dernier snapshot)
+- `GET /v1/classements?poule_id_ffhb=X` — classement poule
+- `GET /v1/stats-joueurs?poule_id_ffhb=X&limit=&offset=` — buteurs/stats de la poule (dernier snapshot)
 
 **Joueurs & arbitres**
-- `GET /joueurs/:numero_licence` — détail + stats agrégées + historique 10 derniers matchs
-- `GET /joueurs/:numero_licence/matchs?limit=&offset=` — historique complet paginé
-- `GET /arbitres?q=...&niveau=...&limit=&offset=` — liste (recherche floue)
-- `GET /arbitres/:id_ffhb` — détail (+ `nb_matchs`)
-- `GET /arbitres/:id_ffhb/matchs?limit=&offset=` — matchs arbitrés
+- `GET /v1/joueurs/:numero_licence` — détail + stats agrégées + historique 10 derniers matchs
+- `GET /v1/joueurs/:numero_licence/matchs?limit=&offset=` — historique complet paginé
+- `GET /v1/arbitres?q=...&niveau=...&limit=&offset=` — liste (recherche floue)
+- `GET /v1/arbitres/:id_ffhb` — détail (+ `nb_matchs`)
+- `GET /v1/arbitres/:id_ffhb/matchs?limit=&offset=` — matchs arbitrés
 
 **Salles**
-- `GET /salles/:id_ffhb` — détail salle
-- `GET /salles/:id_ffhb/matchs?date_from=&date_to=&statut=&limit=&offset=` — matchs accueillis
+- `GET /v1/salles/:id_ffhb` — détail salle
+- `GET /v1/salles/:id_ffhb/matchs?date_from=&date_to=&statut=&limit=&offset=` — matchs accueillis
 
 **Recherche & méta**
-- `GET /search?q=...&type=clubs|equipes|joueurs|all` — fuzzy search
+- `GET /v1/search?q=...&type=clubs|equipes|joueurs|all` — fuzzy search
 - `GET /openapi.json` — spec OpenAPI 3.1
 - `GET /docs` — Swagger UI
 
@@ -1074,9 +1074,9 @@ Côté FFHB, deux identifiants distincts coexistent :
 - **`id_club` monclub** (ex. `1720`) = `core.clubs.id_ffhb` = `core.equipes.ext_structure_id`. C'est le `:id_ffhb` historique des routes clubs, et la clé de la couche **structure**.
 - **Code FFHB 7 chiffres** (ex. `5221105`, préfixe de `email_club`) = `core.clubs.code_ffhb` (colonne générée) = préfixe des `numero_licence` = code sur les FdM. C'est la clé de la couche **licence**.
 
-Les endpoints clubs (`/clubs/:id_ffhb`, `/clubs/:id_ffhb/matchs|equipes|joueurs|classements`) résolvent **l'un ou l'autre**.
+Les endpoints clubs (`/v1/clubs/:id_ffhb`, `/clubs/:id_ffhb/matchs|equipes|joueurs|classements`) résolvent **l'un ou l'autre**.
 
-#### Détail : GET /clubs/:id_ffhb/matchs
+#### Détail : GET /v1/clubs/:id_ffhb/matchs
 
 Endpoint le plus complexe : retourne le calendrier d'un club incluant les matchs des équipes liées,
 détectées par une **union multi-signal** (cf. spec `docs/superpowers/specs/2026-05-29-club-matchs-precision-design.md`).

@@ -99,7 +99,7 @@ describe("GET /joueurs/:numero_licence", () => {
   });
 
   it("returns joueur detail with stats and historique", async () => {
-    const res = await app.request("/joueurs/LIC-T6-007");
+    const res = await app.request("/v1/joueurs/LIC-T6-007");
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       data: {
@@ -129,14 +129,14 @@ describe("GET /joueurs/:numero_licence", () => {
   });
 
   it("returns 404 when joueur not found", async () => {
-    const res = await app.request("/joueurs/LIC-GHOST-999");
+    const res = await app.request("/v1/joueurs/LIC-GHOST-999");
     expect(res.status).toBe(404);
     const body = (await res.json()) as { error: { code: string } };
     expect(body.error.code).toBe("NOT_FOUND");
   });
 
   it("verifies historique format", async () => {
-    const res = await app.request("/joueurs/LIC-T6-007");
+    const res = await app.request("/v1/joueurs/LIC-T6-007");
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       data: {

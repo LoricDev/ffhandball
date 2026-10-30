@@ -108,7 +108,7 @@ describe("GET /matchs", () => {
   it("returns paginated list filtered by poule_id_ffhb", async () => {
     await seedMatch(ids, "M-T4-001", "joue");
     await seedMatch(ids, "M-T4-002", "a_jouer");
-    const res = await app.request(`/matchs?poule_id_ffhb=${ids.pouleIdFfhb}&limit=10`);
+    const res = await app.request(`/v1/matchs?poule_id_ffhb=${ids.pouleIdFfhb}&limit=10`);
     expect(res.status).toBe(200);
     const body = (await res.json()) as { data: unknown[]; meta: { total: number } };
     expect(body.data.length).toBeGreaterThanOrEqual(1);
@@ -117,7 +117,7 @@ describe("GET /matchs", () => {
 
   it("filters by statut", async () => {
     await seedMatch(ids, "M-T4-003", "reporte");
-    const res = await app.request(`/matchs?statut=reporte&limit=10`);
+    const res = await app.request(`/v1/matchs?statut=reporte&limit=10`);
     expect(res.status).toBe(200);
     const body = (await res.json()) as { data: { statut: string }[] };
     for (const m of body.data) {
@@ -154,7 +154,7 @@ describe("GET /matchs/:id_ffhb_match", () => {
       [matchId, joueurId, ids.equipeDomId],
     );
 
-    const res = await app.request(`/matchs/M-T4-DETAIL`);
+    const res = await app.request(`/v1/matchs/M-T4-DETAIL`);
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       data: {
@@ -176,7 +176,7 @@ describe("GET /matchs/:id_ffhb_match", () => {
   });
 
   it("returns 404 when match not found", async () => {
-    const res = await app.request("/matchs/GHOST-MATCH");
+    const res = await app.request("/v1/matchs/GHOST-MATCH");
     expect(res.status).toBe(404);
     const body = (await res.json()) as { error: { code: string } };
     expect(body.error.code).toBe("NOT_FOUND");

@@ -45,7 +45,7 @@ describe("API end-to-end (smoke)", () => {
     await seedClub(TEST_ID, "BREST BRETAGNE HANDBALL", "Brest");
 
     // List with fuzzy search
-    const listRes = await app.request("/clubs?q=brest");
+    const listRes = await app.request("/v1/clubs?q=brest");
     expect(listRes.status).toBe(200);
     const listBody = (await listRes.json()) as { data: { id_ffhb: string; nom: string }[] };
     const found = listBody.data.find((c) => c.id_ffhb === TEST_ID);
@@ -53,13 +53,13 @@ describe("API end-to-end (smoke)", () => {
     expect(found!.nom).toContain("BREST");
 
     // Detail
-    const detailRes = await app.request(`/clubs/${TEST_ID}`);
+    const detailRes = await app.request(`/v1/clubs/${TEST_ID}`);
     expect(detailRes.status).toBe(200);
     const detailBody = (await detailRes.json()) as { data: { id_ffhb: string } };
     expect(detailBody.data.id_ffhb).toBe(TEST_ID);
 
     // Search
-    const searchRes = await app.request("/search?q=brest");
+    const searchRes = await app.request("/v1/search?q=brest");
     expect(searchRes.status).toBe(200);
     const searchBody = (await searchRes.json()) as { data: unknown[] };
     expect(searchBody.data.length).toBeGreaterThanOrEqual(1);

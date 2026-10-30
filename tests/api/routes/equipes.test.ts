@@ -79,7 +79,7 @@ beforeAll(async () => {
 describe("GET /equipes/:id_ffhb", () => {
   it("retourne club (via pont ext_structure_id) + engagements", async () => {
     _resetBuckets();
-    const res = await app.request("/equipes/EQT2-EQ1?saison=2025-2026");
+    const res = await app.request("/v1/equipes/EQT2-EQ1?saison=2025-2026");
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       data: {
@@ -97,7 +97,7 @@ describe("GET /equipes/:id_ffhb", () => {
 
   it("404 si équipe inconnue", async () => {
     _resetBuckets();
-    const res = await app.request("/equipes/GHOST?saison=2025-2026");
+    const res = await app.request("/v1/equipes/GHOST?saison=2025-2026");
     expect(res.status).toBe(404);
   });
 });
@@ -105,7 +105,7 @@ describe("GET /equipes/:id_ffhb", () => {
 describe("GET /equipes/:id_ffhb/matchs", () => {
   it("retourne les matchs de l'équipe", async () => {
     _resetBuckets();
-    const res = await app.request("/equipes/EQT2-EQ1/matchs?saison=2025-2026");
+    const res = await app.request("/v1/equipes/EQT2-EQ1/matchs?saison=2025-2026");
     expect(res.status).toBe(200);
     const body = (await res.json()) as { data: { id_ffhb_match: string }[]; meta: { total: number } };
     expect(body.data.map((m) => m.id_ffhb_match)).toContain("EQT2-M-001");
@@ -115,13 +115,13 @@ describe("GET /equipes/:id_ffhb/matchs", () => {
 describe("GET /clubs/:id_ffhb/equipes", () => {
   it("liste les équipes propres du club via le pont (par id_club OU code_ffhb)", async () => {
     _resetBuckets();
-    const byId = await app.request(`/clubs/${CLUB_ID}/equipes?saison=2025-2026`);
+    const byId = await app.request(`/v1/clubs/${CLUB_ID}/equipes?saison=2025-2026`);
     expect(byId.status).toBe(200);
     const b1 = (await byId.json()) as { data: { id_ffhb: string }[]; meta: { club: { code_ffhb: string | null } } };
     expect(b1.data.map((e) => e.id_ffhb)).toContain("EQT2-EQ1");
     expect(b1.meta.club.code_ffhb).toBe(CLUB_CODE);
     // résolution par code FFHB 7 chiffres
-    const byCode = await app.request(`/clubs/${CLUB_CODE}/equipes?saison=2025-2026`);
+    const byCode = await app.request(`/v1/clubs/${CLUB_CODE}/equipes?saison=2025-2026`);
     expect(byCode.status).toBe(200);
     const b2 = (await byCode.json()) as { data: { id_ffhb: string }[] };
     expect(b2.data.map((e) => e.id_ffhb)).toContain("EQT2-EQ1");
@@ -129,10 +129,10 @@ describe("GET /clubs/:id_ffhb/equipes", () => {
 
   it("grouper=true : groupes dans meta (enveloppe { data, meta }), absent sinon", async () => {
     _resetBuckets();
-    const plain = (await (await app.request(`/clubs/${CLUB_ID}/equipes?saison=2025-2026`)).json()) as Record<string, unknown> & { meta: Record<string, unknown> };
+    const plain = (await (await app.request(`/v1/clubs/${CLUB_ID}/equipes?saison=2025-2026`)).json()) as Record<string, unknown> & { meta: Record<string, unknown> };
     expect(plain.meta.groupes).toBeUndefined();
     _resetBuckets();
-    const res = await app.request(`/clubs/${CLUB_ID}/equipes?saison=2025-2026&grouper=true`);
+    const res = await app.request(`/v1/clubs/${CLUB_ID}/equipes?saison=2025-2026&grouper=true`);
     const body = (await res.json()) as Record<string, unknown> & { meta: { groupes: unknown[] } };
     expect(Object.keys(body).sort()).toEqual(["data", "meta"]);
     expect(Array.isArray(body.meta.groupes)).toBe(true);
@@ -147,21 +147,21 @@ describe("GET /clubs/:id_ffhb/equipes", () => {
       return (await res.json()) as { data: Record<string, unknown>[] | Record<string, unknown>; meta: { groupes: { cle: string }[] } };
     };
 
-    const matchs = await get(`/clubs/${CLUB_ID}/matchs?saison=2025-2026`);
+    const matchs = await get(`/v1/clubs/${CLUB_ID}/matchs?saison=2025-2026`);
     expect(matchs.meta.groupes.map((g) => g.cle)).toContain(CLE);
     expect((matchs.data as { groupe_cle: string | null }[])[0]!.groupe_cle).toBe(CLE);
     // filtre : un autre groupe n'en garde aucun
-    const autre = await get(`/clubs/${CLUB_ID}/matchs?saison=2025-2026&groupe=Seniors|M|1|club`);
+    const autre = await get(`/v1/clubs/${CLUB_ID}/matchs?saison=2025-2026&groupe=Seniors|M|1|club`);
     expect(autre.data).toEqual([]);
-    expect(((await get(`/clubs/${CLUB_ID}/matchs?saison=2025-2026&groupe=${encodeURIComponent(CLE)}`)).data as unknown[]).length).toBeGreaterThan(0);
+    expect(((await get(`/v1/clubs/${CLUB_ID}/matchs?saison=2025-2026&groupe=${encodeURIComponent(CLE)}`)).data as unknown[]).length).toBeGreaterThan(0);
 
-    const classements = await get(`/clubs/${CLUB_ID}/classements?saison=2025-2026`);
+    const classements = await get(`/v1/clubs/${CLUB_ID}/classements?saison=2025-2026`);
     expect(Array.isArray(classements.meta.groupes)).toBe(true);
 
-    const joueurs = await get(`/clubs/${CLUB_ID}/joueurs?saison=2025-2026`);
+    const joueurs = await get(`/v1/clubs/${CLUB_ID}/joueurs?saison=2025-2026`);
     expect(Array.isArray(joueurs.meta.groupes)).toBe(true);
 
-    const eq = (await get("/equipes/EQT2-EQ1?saison=2025-2026")).data as { groupe: { cle: string } | null };
+    const eq = (await get("/v1/equipes/EQT2-EQ1?saison=2025-2026")).data as { groupe: { cle: string } | null };
     expect(eq.groupe?.cle).toBe(CLE);
   });
 
@@ -174,16 +174,16 @@ describe("GET /clubs/:id_ffhb/equipes", () => {
       return (await res.json()) as { data: Record<string, unknown>[]; meta: { groupes?: Record<string, unknown>[] } };
     };
     const attendu = { logo_dom: "logo-t2.png", logo_ext: null, phase_nom: "Phase", poule_nom: "Poule", equipement_id: null, salle_id_ffhb: null, salle_nom: null };
-    const clubMatchs = await get(`/clubs/${CLUB_ID}/matchs?saison=2025-2026`);
+    const clubMatchs = await get(`/v1/clubs/${CLUB_ID}/matchs?saison=2025-2026`);
     expect(clubMatchs.data[0]).toMatchObject({ ...attendu, equipe_dom_id_ffhb: "EQT2-EQ1", equipe_ext_id_ffhb: "EQT2-ADV" });
-    expect((await get("/equipes/EQT2-EQ1/matchs?saison=2025-2026")).data[0]).toMatchObject(attendu);
-    expect((await get("/matchs?poule_id_ffhb=EQT2-PO&saison=2025-2026")).data[0]).toMatchObject(attendu);
+    expect((await get("/v1/equipes/EQT2-EQ1/matchs?saison=2025-2026")).data[0]).toMatchObject(attendu);
+    expect((await get("/v1/matchs?poule_id_ffhb=EQT2-PO&saison=2025-2026")).data[0]).toMatchObject(attendu);
     _resetBuckets();
-    const detail = (await (await app.request("/matchs/EQT2-M-001")).json()) as { data: Record<string, unknown> };
+    const detail = (await (await app.request("/v1/matchs/EQT2-M-001")).json()) as { data: Record<string, unknown> };
     expect(detail.data).toMatchObject(attendu);
 
     await query(`UPDATE core.equipes SET logo = 'eq-t2.png' WHERE id_ffhb = 'EQT2-EQ1' AND saison_code = $1`, [SAISON]);
-    const eqs = await get(`/clubs/${CLUB_ID}/equipes?saison=2025-2026&grouper=true`);
+    const eqs = await get(`/v1/clubs/${CLUB_ID}/equipes?saison=2025-2026&grouper=true`);
     expect(eqs.data.find((e) => e.id_ffhb === "EQT2-EQ1")).toMatchObject({ logo_club: "eq-t2.png" });
     expect(eqs.meta.groupes!.some((g) => g.logo_club === "eq-t2.png")).toBe(true);
   });
@@ -202,14 +202,14 @@ describe("GET /clubs/:id_ffhb/equipes", () => {
       expect(res.status).toBe(200);
       return (await res.json()) as { data: Record<string, unknown> | Record<string, unknown>[] };
     };
-    expect(((await get(`/clubs/${CLUB_ID}/matchs?saison=2025-2026`)).data as Record<string, unknown>[])[0]).toMatchObject(attendu);
-    expect(((await get("/equipes/EQT2-EQ1/matchs?saison=2025-2026")).data as Record<string, unknown>[])[0]).toMatchObject(attendu);
-    expect((await get("/matchs/EQT2-M-001")).data).toMatchObject(attendu);
-    expect((await get("/salles/EQT2-842")).data).toMatchObject({ id_ffhb: "EQT2-842", nom: "COSEC TEST", ville: "MARLY", code_postal: "57155" });
-    const matchs = (await get("/salles/EQT2-842/matchs")).data as { id_ffhb_match: string }[];
+    expect(((await get(`/v1/clubs/${CLUB_ID}/matchs?saison=2025-2026`)).data as Record<string, unknown>[])[0]).toMatchObject(attendu);
+    expect(((await get("/v1/equipes/EQT2-EQ1/matchs?saison=2025-2026")).data as Record<string, unknown>[])[0]).toMatchObject(attendu);
+    expect((await get("/v1/matchs/EQT2-M-001")).data).toMatchObject(attendu);
+    expect((await get("/v1/salles/EQT2-842")).data).toMatchObject({ id_ffhb: "EQT2-842", nom: "COSEC TEST", ville: "MARLY", code_postal: "57155" });
+    const matchs = (await get("/v1/salles/EQT2-842/matchs")).data as { id_ffhb_match: string }[];
     expect(matchs.map((m) => m.id_ffhb_match)).toEqual(["EQT2-M-001"]);
     _resetBuckets();
-    expect((await app.request("/salles/EQT2-INCONNU")).status).toBe(404);
+    expect((await app.request("/v1/salles/EQT2-INCONNU")).status).toBe(404);
     await query(`UPDATE core.matchs SET equipement_id = NULL WHERE id_ffhb_match = 'EQT2-M-001'`);
     await query(`DELETE FROM core.equipements WHERE equipement_id = 'EQT2-842'`);
   });

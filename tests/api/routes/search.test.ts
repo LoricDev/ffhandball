@@ -45,7 +45,7 @@ describe("GET /search", () => {
   });
 
   it("returns clubs matching query", async () => {
-    const res = await app.request("/search?q=montpellier&type=clubs");
+    const res = await app.request("/v1/search?q=montpellier&type=clubs");
     expect(res.status).toBe(200);
     const body = (await res.json()) as { data: { type: string; nom: string }[] };
     expect(body.data.length).toBeGreaterThanOrEqual(1);
@@ -54,7 +54,7 @@ describe("GET /search", () => {
   });
 
   it("returns joueurs matching query", async () => {
-    const res = await app.request("/search?q=karabatic&type=joueurs");
+    const res = await app.request("/v1/search?q=karabatic&type=joueurs");
     expect(res.status).toBe(200);
     const body = (await res.json()) as { data: { type: string; nom: string }[] };
     expect(body.data.length).toBeGreaterThanOrEqual(1);
@@ -65,7 +65,7 @@ describe("GET /search", () => {
 
   it("returns multi-entity results with type=all", async () => {
     // Use karabatic which is a joueur — stable regardless of clubs TRUNCATE from other tests
-    const res = await app.request("/search?q=karabatic&type=all&limit=20");
+    const res = await app.request("/v1/search?q=karabatic&type=all&limit=20");
     expect(res.status).toBe(200);
     const body = (await res.json()) as { data: { type: string }[] };
     expect(body.data.length).toBeGreaterThanOrEqual(1);
@@ -74,7 +74,7 @@ describe("GET /search", () => {
   });
 
   it("returns 400 when q is too short", async () => {
-    const res = await app.request("/search?q=a");
+    const res = await app.request("/v1/search?q=a");
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: { code: string } };
     expect(body.error.code).toBe("BAD_REQUEST");

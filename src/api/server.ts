@@ -1,7 +1,6 @@
 // src/api/server.ts
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { swaggerUI } from "@hono/swagger-ui";
-import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 import healthRoutes from "@/api/routes/health.js";
 import clubsRoutes from "@/api/routes/clubs.js";
@@ -69,8 +68,7 @@ export function buildApp(opts: BuildAppOptions = {}): OpenAPIHono {
   app.route("/", adminRoutes);
   app.route("/", healthRoutes);
   app.route("/", statusRoutes);
-  // Routes de données : /v1/... (documenté dans l'OpenAPI) ; les chemins sans préfixe restent servis en alias
-  // (Hono simple, donc absent de la spec) pour ne pas casser les clients existants.
+  // Routes de données versionnées : /v1/...
   const dataRoutes = [
     clubsRoutes,
     matchsRoutes,
@@ -85,12 +83,7 @@ export function buildApp(opts: BuildAppOptions = {}): OpenAPIHono {
     sallesRoutes,
     referentielsRoutes,
   ];
-  const legacy = new Hono();
-  for (const r of dataRoutes) {
-    app.route("/v1", r);
-    legacy.route("/", r);
-  }
-  app.route("/", legacy);
+  for (const r of dataRoutes) app.route("/v1", r);
 
   // OpenAPI spec + Swagger UI
   app.openAPIRegistry.registerComponent("securitySchemes", "bearerAuth", {
@@ -101,7 +94,7 @@ export function buildApp(opts: BuildAppOptions = {}): OpenAPIHono {
   const openApiConfig = {
     openapi: "3.1.0" as const,
     info: {
-      version: "1.3.0",
+      version: "1.4.0",
       title: "ffhandball API",
       description:
         "API read-only sur les données handball français scrapées de FFHandball.\n\n" +

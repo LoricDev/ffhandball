@@ -59,7 +59,7 @@ beforeAll(async () => {
 describe("GET /competitions", () => {
   it("liste les compétitions filtrées par saison/niveau", async () => {
     _resetBuckets();
-    const res = await app.request("/competitions?saison=2025-2026&niveau=national&limit=100");
+    const res = await app.request("/v1/competitions?saison=2025-2026&niveau=national&limit=100");
     expect(res.status).toBe(200);
     const body = (await res.json()) as { data: { id_ffhb: string; niveau: string }[]; meta: { total: number } };
     const found = body.data.find((c) => c.id_ffhb === "CMPT1-COMP");
@@ -71,7 +71,7 @@ describe("GET /competitions", () => {
 describe("GET /competitions/:id_ffhb", () => {
   it("retourne le détail avec phases + poules", async () => {
     _resetBuckets();
-    const res = await app.request("/competitions/CMPT1-COMP");
+    const res = await app.request("/v1/competitions/CMPT1-COMP");
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       data: { id_ffhb: string; phases: { id_ffhb: string; poules: { id_ffhb: string }[] }[] };
@@ -84,7 +84,7 @@ describe("GET /competitions/:id_ffhb", () => {
 
   it("404 si compétition inconnue", async () => {
     _resetBuckets();
-    const res = await app.request("/competitions/GHOST");
+    const res = await app.request("/v1/competitions/GHOST");
     expect(res.status).toBe(404);
   });
 });
@@ -92,7 +92,7 @@ describe("GET /competitions/:id_ffhb", () => {
 describe("GET /poules/:id_ffhb", () => {
   it("retourne la poule avec contexte + classement", async () => {
     _resetBuckets();
-    const res = await app.request("/poules/CMPT1-PO?saison=2025-2026");
+    const res = await app.request("/v1/poules/CMPT1-PO?saison=2025-2026");
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       data: {
@@ -110,7 +110,7 @@ describe("GET /poules/:id_ffhb", () => {
 
   it("404 si poule inconnue", async () => {
     _resetBuckets();
-    const res = await app.request("/poules/GHOST?saison=2025-2026");
+    const res = await app.request("/v1/poules/GHOST?saison=2025-2026");
     expect(res.status).toBe(404);
   });
 

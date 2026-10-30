@@ -150,7 +150,7 @@ describe("GET /clubs", () => {
   it("returns paginated list with meta", async () => {
     await seedClub("C001", "BREST HBC", "Brest");
     await seedClub("C002", "PARIS 92", "Paris");
-    const res = await app.request("/clubs?limit=10");
+    const res = await app.request("/v1/clubs?limit=10");
     expect(res.status).toBe(200);
     const body = (await res.json()) as { data: unknown[]; meta: { total: number; limit: number; offset: number } };
     // At least C001 and C002 should be present (other tests may add clubs concurrently)
@@ -162,7 +162,7 @@ describe("GET /clubs", () => {
   it("filters by fuzzy q", async () => {
     await seedClub("C001", "BREST BRETAGNE HANDBALL", "Brest");
     await seedClub("C002", "PARIS 92", "Paris");
-    const res = await app.request("/clubs?q=brest");
+    const res = await app.request("/v1/clubs?q=brest");
     expect(res.status).toBe(200);
     const body = (await res.json()) as { data: { nom: string }[] };
     expect(body.data).toHaveLength(1);
@@ -170,7 +170,7 @@ describe("GET /clubs", () => {
   });
 
   it("returns 200 with empty data when no matches", async () => {
-    const res = await app.request("/clubs?q=xyzzz");
+    const res = await app.request("/v1/clubs?q=xyzzz");
     expect(res.status).toBe(200);
     const body = (await res.json()) as { data: unknown[] };
     expect(body.data).toHaveLength(0);
@@ -185,7 +185,7 @@ describe("GET /clubs/:id_ffhb", () => {
 
   it("returns detail with 200", async () => {
     await seedClub("C001", "BREST HBC", "Brest");
-    const res = await app.request("/clubs/C001");
+    const res = await app.request("/v1/clubs/C001");
     expect(res.status).toBe(200);
     const body = (await res.json()) as { data: { id_ffhb: string; nom: string } };
     expect(body.data.id_ffhb).toBe("C001");
@@ -200,13 +200,13 @@ describe("GET /clubs/:id_ffhb", () => {
        ON CONFLICT (id_ffhb) DO UPDATE SET nom = EXCLUDED.nom, email = EXCLUDED.email`,
     );
     // Par id_club
-    const byId = await app.request("/clubs/1720");
+    const byId = await app.request("/v1/clubs/1720");
     expect(byId.status).toBe(200);
     const b1 = (await byId.json()) as { data: { id_ffhb: string; code_ffhb: string | null } };
     expect(b1.data.id_ffhb).toBe("1720");
     expect(b1.data.code_ffhb).toBe("5221105");
     // Par code FFHB 7 chiffres → résout le même club
-    const byCode = await app.request("/clubs/5221105");
+    const byCode = await app.request("/v1/clubs/5221105");
     expect(byCode.status).toBe(200);
     const b2 = (await byCode.json()) as { data: { id_ffhb: string; code_ffhb: string | null } };
     expect(b2.data.id_ffhb).toBe("1720");
@@ -214,7 +214,7 @@ describe("GET /clubs/:id_ffhb", () => {
   });
 
   it("returns 404 when club not found", async () => {
-    const res = await app.request("/clubs/GHOST");
+    const res = await app.request("/v1/clubs/GHOST");
     expect(res.status).toBe(404);
     const body = (await res.json()) as { error: { code: string } };
     expect(body.error.code).toBe("NOT_FOUND");
@@ -278,7 +278,7 @@ describe("GET /clubs/:id_ffhb/matchs", () => {
   });
 
   it("returns matchs for principal + reserve teams by default", async () => {
-    const res = await app.request("/clubs/CAL-C001/matchs?saison=2025-2026&include_ententes=false");
+    const res = await app.request("/v1/clubs/CAL-C001/matchs?saison=2025-2026&include_ententes=false");
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       data: { id_ffhb_match: string; via_principal: boolean; via_entente: boolean }[];
@@ -299,7 +299,7 @@ describe("GET /clubs/:id_ffhb/matchs", () => {
   });
 
   it("includes entente matches when include_ententes=true (default)", async () => {
-    const res = await app.request("/clubs/CAL-C001/matchs?saison=2025-2026");
+    const res = await app.request("/v1/clubs/CAL-C001/matchs?saison=2025-2026");
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       data: { id_ffhb_match: string; via_entente: boolean }[];
@@ -319,7 +319,7 @@ describe("GET /clubs/:id_ffhb/matchs", () => {
   });
 
   it("excludes entente matches when include_ententes=false", async () => {
-    const res = await app.request("/clubs/CAL-C001/matchs?saison=2025-2026&include_ententes=false");
+    const res = await app.request("/v1/clubs/CAL-C001/matchs?saison=2025-2026&include_ententes=false");
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       data: { id_ffhb_match: string }[];
@@ -342,7 +342,7 @@ describe("GET /clubs/:id_ffhb/matchs", () => {
   });
 
   it("filters by statut", async () => {
-    const res = await app.request("/clubs/CAL-C001/matchs?saison=2025-2026&statut=a_jouer");
+    const res = await app.request("/v1/clubs/CAL-C001/matchs?saison=2025-2026&statut=a_jouer");
     expect(res.status).toBe(200);
     const body = (await res.json()) as { data: { id_ffhb_match: string; statut: string }[] };
     // Seul M3 est 'a_jouer' (entente incluse par défaut)
@@ -352,14 +352,14 @@ describe("GET /clubs/:id_ffhb/matchs", () => {
   });
 
   it("returns 404 when club not found", async () => {
-    const res = await app.request("/clubs/GHOST-CLUB/matchs?saison=2025-2026");
+    const res = await app.request("/v1/clubs/GHOST-CLUB/matchs?saison=2025-2026");
     expect(res.status).toBe(404);
     const body = (await res.json()) as { error: { code: string } };
     expect(body.error.code).toBe("NOT_FOUND");
   });
 
   it("meta.equipes_liees lists detected teams with correct flags", async () => {
-    const res = await app.request("/clubs/CAL-C001/matchs?saison=2025-2026");
+    const res = await app.request("/v1/clubs/CAL-C001/matchs?saison=2025-2026");
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       meta: {
@@ -385,7 +385,7 @@ describe("GET /clubs/:id_ffhb/matchs", () => {
   });
 
   it("expose match_method et confidence sur les équipes liées", async () => {
-    const res = await app.request("/clubs/CAL-C001/matchs?saison=2025-2026");
+    const res = await app.request("/v1/clubs/CAL-C001/matchs?saison=2025-2026");
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       meta: { equipes_liees: { nom: string; match_method: string; confidence: string }[] };
@@ -410,14 +410,14 @@ describe("GET /clubs/:id_ffhb/matchs", () => {
        VALUES ('CAL-EQ-FP', 'ENTENTE HANDBALL BETAVILLE', '2025-2026', now())
        ON CONFLICT (id_ffhb, saison_code) DO UPDATE SET nom = EXCLUDED.nom`,
     );
-    const res = await app.request("/clubs/CAL-C003/matchs?saison=2025-2026");
+    const res = await app.request("/v1/clubs/CAL-C003/matchs?saison=2025-2026");
     expect(res.status).toBe(200);
     const body = (await res.json()) as { meta: { equipes_liees: { nom: string }[] } };
     expect(body.meta.equipes_liees.find((e) => e.nom === "ENTENTE HANDBALL BETAVILLE")).toBeUndefined();
   });
 
   it("min_confidence=haute exclut les réserves (moyenne)", async () => {
-    const res = await app.request("/clubs/CAL-C001/matchs?saison=2025-2026&min_confidence=haute");
+    const res = await app.request("/v1/clubs/CAL-C001/matchs?saison=2025-2026&min_confidence=haute");
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       meta: { equipes_liees: { nom: string; confidence: string }[] };
@@ -433,7 +433,7 @@ describe("GET /clubs/:id_ffhb/matchs", () => {
        VALUES ('CAL-C002', 'CLUB INEXISTANT XYZ', 'Nulle Part', now())
        ON CONFLICT (id_ffhb) DO UPDATE SET nom = EXCLUDED.nom`,
     );
-    const res = await app.request("/clubs/CAL-C002/matchs?saison=2025-2026");
+    const res = await app.request("/v1/clubs/CAL-C002/matchs?saison=2025-2026");
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       data: unknown[];
@@ -445,7 +445,7 @@ describe("GET /clubs/:id_ffhb/matchs", () => {
   });
 
   it("club_recevant is true when linked team is home team", async () => {
-    const res = await app.request("/clubs/CAL-C001/matchs?saison=2025-2026&include_ententes=false");
+    const res = await app.request("/v1/clubs/CAL-C001/matchs?saison=2025-2026&include_ententes=false");
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       data: { id_ffhb_match: string; club_recevant: boolean }[];

@@ -50,31 +50,31 @@ describe("conventions", () => {
 
   it("/saisons : dates en YYYY-MM-DD", async () => {
     _resetBuckets();
-    const body = (await (await app.request("/saisons")).json()) as { data: { saison_code: string; date_debut: string }[] };
+    const body = (await (await app.request("/v1/saisons")).json()) as { data: { saison_code: string; date_debut: string }[] };
     const s = body.data.find((x) => x.saison_code === SAISON)!;
     expect(s.date_debut).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
   it("/classements et /stats-joueurs : poule existante sans données → 200 liste vide", async () => {
     _resetBuckets();
-    const c = await app.request("/classements?poule_id_ffhb=COH-PO");
+    const c = await app.request("/v1/classements?poule_id_ffhb=COH-PO");
     expect(c.status).toBe(200);
     expect(((await c.json()) as { data: unknown[] }).data).toEqual([]);
     _resetBuckets();
-    const s = await app.request("/stats-joueurs?poule_id_ffhb=COH-PO");
+    const s = await app.request("/v1/stats-joueurs?poule_id_ffhb=COH-PO");
     expect(s.status).toBe(200);
   });
 
   it("/classements : poule inconnue → 404", async () => {
     _resetBuckets();
-    expect((await app.request("/classements?poule_id_ffhb=COH-GHOST")).status).toBe(404);
+    expect((await app.request("/v1/classements?poule_id_ffhb=COH-GHOST")).status).toBe(404);
   });
 
   it("/joueurs/{l}/matchs et /arbitres/{id}/matchs acceptent tri", async () => {
     _resetBuckets();
-    expect((await app.request("/joueurs/GHOST/matchs?tri=date_desc")).status).toBe(404);
+    expect((await app.request("/v1/joueurs/GHOST/matchs?tri=date_desc")).status).toBe(404);
     _resetBuckets();
-    expect((await app.request("/arbitres/GHOST/matchs?tri=bad")).status).toBe(400);
+    expect((await app.request("/v1/arbitres/GHOST/matchs?tri=bad")).status).toBe(400);
   });
 
   afterAll(async () => {
