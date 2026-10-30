@@ -65,12 +65,13 @@ export async function getMatchDetail(idFfhbMatch: string): Promise<MatchDetail |
     `SELECT m.*, ed.id_ffhb AS equipe_dom_id_ffhb, ed.nom AS equipe_dom_nom,
             ee.id_ffhb AS equipe_ext_id_ffhb, ee.nom AS equipe_ext_nom,
             po.id_ffhb AS poule_id_ffhb, c.nom AS competition_nom,
-            cd.logo_club AS logo_dom, ce.logo_club AS logo_ext,
+            COALESCE(cd.logo_club, ed.logo) AS logo_dom, COALESCE(ce.logo_club, ee.logo) AS logo_ext,
             ph.nom AS phase_nom, po.nom AS poule_nom,
-            COALESCE(sl.id_ffhb, eq.equipement_id) AS salle_id_ffhb,
-            COALESCE(sl.nom, eq.nom) AS salle_nom,
-            COALESCE(sl.ville, eq.ville) AS salle_ville,
-            COALESCE(sl.adresse, eq.adresse) AS salle_adresse
+            COALESCE(sl.id_ffhb, eq.equipement_id, cs.id_ffhb) AS salle_id_ffhb,
+            COALESCE(sl.nom, eq.nom, cs.nom) AS salle_nom,
+            COALESCE(sl.ville, eq.ville, cs.ville) AS salle_ville,
+            COALESCE(sl.adresse, eq.adresse, cs.adresse) AS salle_adresse,
+            (sl.id IS NULL AND eq.equipement_id IS NULL AND cs.id IS NOT NULL) AS salle_approx
        FROM core.matchs m
        JOIN core.equipes ed ON ed.id = m.equipe_dom_id
        JOIN core.equipes ee ON ee.id = m.equipe_ext_id
@@ -81,6 +82,7 @@ export async function getMatchDetail(idFfhbMatch: string): Promise<MatchDetail |
        LEFT JOIN core.clubs ce ON ce.id_ffhb = ee.ext_structure_id
        LEFT JOIN core.salles sl ON sl.id = m.salle_id
        LEFT JOIN core.equipements eq ON eq.equipement_id = m.equipement_id
+  LEFT JOIN core.salles cs ON cs.id = cd.salle_principale_id
       WHERE m.id_ffhb_match = $1`,
     [idFfhbMatch],
   );
@@ -143,6 +145,7 @@ export async function getMatchDetail(idFfhbMatch: string): Promise<MatchDetail |
     salle_nom: (base.salle_nom ?? null) as string | null,
     salle_ville: (base.salle_ville ?? null) as string | null,
     salle_adresse: (base.salle_adresse ?? null) as string | null,
+    salle_approx: base.salle_approx === true,
     compositions: compoRes.rows.map((r) => ({
       cote: r.cote as "dom" | "ext",
       joueur: {

@@ -195,7 +195,7 @@ describe("GET /clubs/:id_ffhb/equipes", () => {
        VALUES ('EQT2-842', 'COSEC TEST', 'RUE DU TEST 57155 MARLY', '57155', 'MARLY')`,
     );
     await query(`UPDATE core.matchs SET equipement_id = 'EQT2-842' WHERE id_ffhb_match = 'EQT2-M-001'`);
-    const attendu = { equipement_id: "EQT2-842", salle_id_ffhb: "EQT2-842", salle_nom: "COSEC TEST", salle_ville: "MARLY", salle_adresse: "RUE DU TEST 57155 MARLY" };
+    const attendu = { equipement_id: "EQT2-842", salle_id_ffhb: "EQT2-842", salle_nom: "COSEC TEST", salle_ville: "MARLY", salle_adresse: "RUE DU TEST 57155 MARLY", salle_approx: false };
     const get = async (path: string) => {
       _resetBuckets();
       const res = await app.request(path);

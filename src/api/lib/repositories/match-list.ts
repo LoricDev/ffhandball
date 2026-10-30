@@ -31,6 +31,8 @@ export interface MatchListRow {
   salle_nom: string | null;
   salle_ville: string | null;
   salle_adresse: string | null;
+  /** true : salle déduite de la salle principale du club recevant (équipement inconnu), donc approximative. */
+  salle_approx: boolean;
 }
 
 export interface MatchFilters {
@@ -89,7 +91,8 @@ const FROM = `
   LEFT JOIN core.clubs cd ON cd.id_ffhb = ed.ext_structure_id
   LEFT JOIN core.clubs ce ON ce.id_ffhb = ee.ext_structure_id
   LEFT JOIN core.salles sl ON sl.id = m.salle_id
-  LEFT JOIN core.equipements eq ON eq.equipement_id = m.equipement_id`;
+  LEFT JOIN core.equipements eq ON eq.equipement_id = m.equipement_id
+  LEFT JOIN core.salles cs ON cs.id = cd.salle_principale_id`;
 
 /**
  * Page de matchs + total. Le tri est stabilisé par m.id (sinon des matchs de même heure
@@ -114,10 +117,11 @@ export async function queryMatchList(
             c.nom AS competition_nom, m.fdm_url,
             COALESCE(cd.logo_club, ed.logo) AS logo_dom, COALESCE(ce.logo_club, ee.logo) AS logo_ext,
             ph.nom AS phase_nom, po.nom AS poule_nom, m.equipement_id,
-            COALESCE(sl.id_ffhb, eq.equipement_id) AS salle_id_ffhb,
-            COALESCE(sl.nom, eq.nom) AS salle_nom,
-            COALESCE(sl.ville, eq.ville) AS salle_ville,
-            COALESCE(sl.adresse, eq.adresse) AS salle_adresse,
+            COALESCE(sl.id_ffhb, eq.equipement_id, cs.id_ffhb) AS salle_id_ffhb,
+            COALESCE(sl.nom, eq.nom, cs.nom) AS salle_nom,
+            COALESCE(sl.ville, eq.ville, cs.ville) AS salle_ville,
+            COALESCE(sl.adresse, eq.adresse, cs.adresse) AS salle_adresse,
+            (sl.id IS NULL AND eq.equipement_id IS NULL AND cs.id IS NOT NULL) AS salle_approx,
             count(*) OVER()::int AS _total
        ${FROM}
       WHERE ${whereClause}

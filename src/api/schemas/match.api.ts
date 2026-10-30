@@ -33,6 +33,7 @@ export const matchListItemSchema = z.object({
   salle_nom: z.string().nullable().openapi({ example: "COSEC LA LOUVIERE" }),
   salle_ville: z.string().nullable().openapi({ example: "MARLY" }),
   salle_adresse: z.string().nullable().openapi({ example: "RUE CROIX ST JOSEPH 57155 MARLY" }),
+  salle_approx: z.boolean().openapi({ description: "true : salle déduite de la salle principale du club recevant (équipement pas encore connu), donc approximative ; false : salle issue de la feuille de match ou d'une salle FFHB rattachée, ou aucune salle" }),
 }).openapi("MatchListItem");
 
 const compositionItemSchema = z.object({
