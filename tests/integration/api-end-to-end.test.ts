@@ -26,11 +26,11 @@ describe("API end-to-end (smoke)", () => {
     const spec = (await res.json()) as { openapi: string; paths: Record<string, unknown> };
     expect(spec.openapi).toMatch(/^3\.1/);
     expect(spec.paths["/health"]).toBeDefined();
-    expect(spec.paths["/clubs"]).toBeDefined();
-    expect(spec.paths["/matchs"]).toBeDefined();
-    expect(spec.paths["/classements"]).toBeDefined();
-    expect(spec.paths["/joueurs/{numero_licence}"]).toBeDefined();
-    expect(spec.paths["/search"]).toBeDefined();
+    expect(spec.paths["/v1/clubs"]).toBeDefined();
+    expect(spec.paths["/v1/matchs"]).toBeDefined();
+    expect(spec.paths["/v1/classements"]).toBeDefined();
+    expect(spec.paths["/v1/joueurs/{numero_licence}"]).toBeDefined();
+    expect(spec.paths["/v1/search"]).toBeDefined();
   });
 
   it("GET /docs serves Swagger UI HTML", async () => {

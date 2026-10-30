@@ -332,7 +332,7 @@ describe("GET /clubs/:id_ffhb/matchs", () => {
   it("filters by date_from", async () => {
     // M1 : 2025-10-01, M2 : 2025-10-08, M3 : 2025-11-01
     const res = await app.request(
-      "/clubs/CAL-C001/matchs?saison=2025-2026&date_from=2025-10-05T00:00:00Z",
+      "/v1/clubs/CAL-C001/matchs?saison=2025-2026&date_from=2025-10-05T00:00:00Z",
     );
     expect(res.status).toBe(200);
     const body = (await res.json()) as { data: { id_ffhb_match: string }[]; meta: { total: number } };

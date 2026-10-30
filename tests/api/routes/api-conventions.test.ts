@@ -94,7 +94,7 @@ describe("erreurs", () => {
   });
 
   it("date invalide : 400 (et non une erreur SQL en 500)", async () => {
-    for (const url of ["/matchs?date_from=pas-une-date", "/salles/x/matchs?date_to=zzz", "/equipes/x/matchs?date_from=hier"]) {
+    for (const url of ["/v1/matchs?date_from=pas-une-date", "/v1/salles/x/matchs?date_to=zzz", "/v1/equipes/x/matchs?date_from=hier"]) {
       expect((await app.request(url)).status, url).toBe(400);
     }
   });
@@ -160,12 +160,12 @@ describe("cache et spec", () => {
 
   it("la spec déclare 429/500 partout, 400 sur les routes à paramètres, et le nouvel endpoint", async () => {
     const spec = (await (await app.request("/openapi.json")).json()) as { paths: Record<string, any> }; // eslint-disable-line @typescript-eslint/no-explicit-any
-    const get = spec.paths["/matchs"].get;
+    const get = spec.paths["/v1/matchs"].get;
     expect(get.responses["429"]).toBeDefined();
     expect(get.responses["500"]).toBeDefined();
     expect(get.responses["400"]).toBeDefined();
     expect(get.responses["200"].headers["X-RateLimit-Limit"]).toBeDefined();
-    expect(spec.paths["/poules/{id_ffhb}/matchs"]).toBeDefined();
+    expect(spec.paths["/v1/poules/{id_ffhb}/matchs"]).toBeDefined();
     expect(spec.paths["/health"].get.responses["400"]).toBeUndefined();
   });
 });
