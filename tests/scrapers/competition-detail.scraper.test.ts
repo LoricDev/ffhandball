@@ -64,6 +64,13 @@ describe("parseCompetitionDetail", () => {
 });
 
 describe("parseCompetitionDetail — équipes via calendar-button", () => {
+  it("capture le structureId interne de chaque équipe (porteur d'une entente sans ext_structureId)", () => {
+    const html = fixture("ffhandball-competition-detail-mono-poule.html");
+    const r = parseCompetitionDetail(html, SOURCE_URL_MONO, "28227");
+    expect(r!.equipes.length).toBeGreaterThan(0);
+    expect(r!.equipes.some((e) => typeof e.structure_id === "string")).toBe(true);
+  });
+
   it("extracts 14 équipes + 14 engagements from mono-poule LBE", () => {
     const html = fixture("ffhandball-competition-detail-mono-poule.html");
     const r = parseCompetitionDetail(html, SOURCE_URL_MONO, "28227");

@@ -92,7 +92,8 @@ const FROM = `
   LEFT JOIN core.clubs ce ON ce.id_ffhb = ee.ext_structure_id
   LEFT JOIN core.salles sl ON sl.id = m.salle_id
   LEFT JOIN core.equipements eq ON eq.equipement_id = m.equipement_id
-  LEFT JOIN core.salles cs ON cs.id = cd.salle_principale_id`;
+  LEFT JOIN core.clubs cp ON cp.id_ffhb = COALESCE(ed.ext_structure_id, ed.porteur_ext_structure_id)
+  LEFT JOIN core.salles cs ON cs.id = cp.salle_principale_id`;
 
 /**
  * Page de matchs + total. Le tri est stabilisé par m.id (sinon des matchs de même heure

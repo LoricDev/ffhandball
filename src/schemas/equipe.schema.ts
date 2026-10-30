@@ -5,6 +5,8 @@ export const rawEquipePayloadSchema = z.object({
   nom: z.string().min(1),
   ext_structure_id: z.string().optional(),
   logo: z.string().optional(),
+  /** `structureId` interne du site (partagé par les inscriptions d'une même structure/entente). */
+  structure_id: z.string().optional(),
   source_url: z.string().url(),
 });
 export type RawEquipePayload = z.infer<typeof rawEquipePayloadSchema>;

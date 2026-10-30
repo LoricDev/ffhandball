@@ -131,6 +131,7 @@ export function parseCompetitionDetail(
         nom,
         ext_structure_id: typeof t.ext_structureId === "string" ? t.ext_structureId : undefined,
         logo: typeof t.logo === "string" ? t.logo : undefined,
+        structure_id: typeof t.structureId === "string" ? t.structureId : undefined,
         source_url: sourceUrl,
       });
       if (parsedEq.success) equipes.push(parsedEq.data);

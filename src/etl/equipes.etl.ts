@@ -84,13 +84,14 @@ export async function runEquipesEtl(saison: string): Promise<EtlReport> {
       }
 
       const upsert = await query<{ inserted: boolean; updated: boolean }>(
-        `INSERT INTO core.equipes (id_ffhb, nom, club_id, ext_structure_id, logo, saison_code, last_seen_at)
-         VALUES ($1,$2,$3,$4,$5,$6, now())
+        `INSERT INTO core.equipes (id_ffhb, nom, club_id, ext_structure_id, logo, saison_code, structure_interne_id, last_seen_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7, now())
          ON CONFLICT (id_ffhb, saison_code) DO UPDATE
          SET nom = EXCLUDED.nom,
              club_id = COALESCE(EXCLUDED.club_id, core.equipes.club_id),
              ext_structure_id = COALESCE(EXCLUDED.ext_structure_id, core.equipes.ext_structure_id),
              logo = COALESCE(EXCLUDED.logo, core.equipes.logo),
+             structure_interne_id = COALESCE(EXCLUDED.structure_interne_id, core.equipes.structure_interne_id),
              last_seen_at = now(),
              updated_at = CASE
                WHEN core.equipes.nom IS DISTINCT FROM EXCLUDED.nom
@@ -105,7 +106,7 @@ export async function runEquipesEtl(saison: string): Promise<EtlReport> {
              END
          RETURNING (xmax = 0) AS inserted,
                    (xmax <> 0 AND updated_at = now()) AS updated`,
-        [p.ext_equipe_id, p.nom, club_id, p.ext_structure_id ?? null, p.logo ?? null, saison],
+        [p.ext_equipe_id, p.nom, club_id, p.ext_structure_id ?? null, p.logo ?? null, saison, p.structure_id ?? null],
       );
 
       const result = upsert.rows[0]!;
@@ -113,6 +114,22 @@ export async function runEquipesEtl(saison: string): Promise<EtlReport> {
       else if (result.updated) report.rows_updated++;
       else report.rows_noop++;
     }
+
+    // Club porteur des équipes sans ext_structure_id : celui des autres inscriptions de la même structure interne.
+    await query(
+      `UPDATE core.equipes e
+          SET porteur_ext_structure_id = p.ext
+         FROM (
+           SELECT DISTINCT ON (structure_interne_id) structure_interne_id, ext_structure_id AS ext
+             FROM core.equipes
+            WHERE structure_interne_id IS NOT NULL AND ext_structure_id IS NOT NULL
+            GROUP BY structure_interne_id, ext_structure_id
+            ORDER BY structure_interne_id, count(*) DESC
+         ) p
+        WHERE e.structure_interne_id = p.structure_interne_id
+          AND e.ext_structure_id IS NULL
+          AND e.porteur_ext_structure_id IS DISTINCT FROM p.ext`,
+    );
 
     await query(
       `UPDATE core.etl_runs
