@@ -20,7 +20,7 @@ export const matchListItemSchema = z.object({
   poule_id_ffhb: z.string(),
   competition_nom: z.string(),
   fdm_url: z.string().nullable(),
-  logo_dom: z.string().nullable().openapi({ example: "2015-06-26-b57558ab.png", description: "Fichier logo du club de l'équipe domicile (même valeur que `logo_club` de GET /clubs/{id})  ; à défaut, logo de l'équipe côté FFHB, ou du club porteur (équipes hors ententes) ; null : aucun" }),
+  logo_dom: z.string().nullable().openapi({ example: "2015-06-26-b57558ab.png", description: "Fichier logo du club de l'équipe domicile (même valeur que `logo_club` de GET /clubs/{id})  ; à défaut, logo de l'équipe côté FFHB, ou du club porteur (ententes comprises) ; null : aucun" }),
   logo_ext: z.string().nullable().openapi({ description: "Fichier logo du club de l'équipe extérieure ; null si aucun" }),
   phase_nom: z.string().openapi({ example: "CDF REG MAS (1° TOUR)", description: "Nom de la phase (porte le tour d'une coupe)" }),
   poule_nom: z.string().openapi({ example: "1ER TOUR" }),
