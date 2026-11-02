@@ -22,6 +22,9 @@ const envSchema = z.object({
   // plusieurs nuits au lieu de saturer le site d'un coup).
   SCRAPE_MISSING_JOURNEES_MAX: z.coerce.number().int().positive().default(2500),
   SCRAPE_MATCHS_RECENT_DAYS: z.coerce.number().int().positive().default(14),
+  // --journees=manquantes : les journées futures déjà en base sont re-lues chaque nuit si elles commencent
+  // dans ce nombre de jours (reports, changements d'horaire) ; les plus lointaines ne sont lues qu'une fois.
+  SCRAPE_FUTURE_REFRESH_DAYS: z.coerce.number().int().min(0).default(14),
   // FdM : âge (jours) au-delà duquel on cesse de retenter un 404 (cache négatif borné). Une
   // feuille non publiée N jours après le match ne le sera plus → on arrête de taper l'origine
   // (cache-miss = cause des 405). En deçà on retente (publication tardive). Cf. migration 0021.

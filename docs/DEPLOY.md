@@ -294,7 +294,7 @@ crontab -l      # vérifier
 
 | Fréquence | Script | Rôle |
 |---|---|---|
-| Quotidien 02:00 | `cron-daily.sh` | **Structure des compétitions (poules, équipes, engagements)**, matchs (journée courante **+ journées passées manquantes**, `--journees=manquantes`, plafonné par `SCRAPE_MISSING_JOURNEES_MAX`), ETL, classements, FdM des 10 derniers jours, stats joueurs |
+| Quotidien 02:00 | `cron-daily.sh` | **Structure des compétitions (poules, équipes, engagements)**, matchs (journée courante **+ journées passées manquantes + calendrier futur complet**, journées à venir proches re-lues chaque nuit (`SCRAPE_FUTURE_REFRESH_DAYS`), `--journees=manquantes`, plafonné par `SCRAPE_MISSING_JOURNEES_MAX`), ETL, classements, FdM des 10 derniers jours, stats joueurs |
 | Quotidien 07:00 | `cron-monitor.sh` | **Récap quotidien par mail** (voir « Mails et alertes ») |
 | Toutes les 5 min | `cron-healthcheck.sh` | Sonde l'API (`/ready`) et le disque (seuil 85 %), un mail par incident et au rétablissement |
 | Lundi 03:00 | `cron-weekly-fdm-recent.sh` | FdM des 30 derniers jours + ETL |

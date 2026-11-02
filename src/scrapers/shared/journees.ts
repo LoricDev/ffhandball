@@ -21,8 +21,10 @@ function startOfDayMs(now: Date): number {
  *  - "all"        : toutes les journées DÉJÀ jouées (on saute les journées futures : aucun match à
  *                   récupérer, et ce sont autant de hits non-cachés qui font basculer le WAF).
  *  - "recent"     : seulement les journées jouées dans la fenêtre glissante des N derniers jours.
- *  - "manquantes" : les journées déjà commencées qui ne sont PAS dans `completes` (absentes de la base,
- *                   ou dont un match est resté « à jouer » alors que sa date est passée).
+ *  - "manquantes" : les journées qui ne sont PAS dans `completes` (absentes de la base, ou dont un match est
+ *                   resté « à jouer » alors que sa date est passée), FUTURES COMPRISES : le calendrier complet
+ *                   est ainsi en base. Les journées futures déjà en base sont re-lues tant qu'elles
+ *                   commencent dans les `refreshFutureDays` jours (reports, changements d'horaire/de salle).
  * La journée déjà couverte par la page courante est toujours exclue.
  */
 export function journeesToFetch(
@@ -30,7 +32,7 @@ export function journeesToFetch(
   journees: JourneeInfo[],
   alreadyFetched: number | undefined,
   now: Date,
-  opts: { recentDays: number; completes?: ReadonlySet<number> },
+  opts: { recentDays: number; completes?: ReadonlySet<number>; refreshFutureDays?: number },
 ): number[] {
   if (mode === "courante") return [];
   const todayMs = startOfDayMs(now);
@@ -40,12 +42,14 @@ export function journeesToFetch(
     if (j.numero === alreadyFetched) continue;
     const debutMs = j.date_debut ? Date.parse(`${j.date_debut}T00:00:00`) : NaN;
     const finMs = j.date_fin ? Date.parse(`${j.date_fin}T23:59:59`) : debutMs;
-    // Saute les journées futures (date de début > aujourd'hui) : pas encore jouées.
-    if (Number.isFinite(debutMs) && debutMs > todayMs) continue;
+    const future = Number.isFinite(debutMs) && debutMs > todayMs;
+    // Hors « manquantes », on saute les journées futures (date de début > aujourd'hui) : pas encore jouées.
+    if (future && mode !== "manquantes") continue;
     if (mode === "manquantes") {
-      // Sans date exploitable on ne peut pas affirmer que la journée est passée : on s'abstient.
+      // Sans date exploitable on ne sait pas situer la journée : on s'abstient.
       if (!Number.isFinite(debutMs)) continue;
-      if (opts.completes?.has(j.numero)) continue;
+      const imminente = future && debutMs <= todayMs + (opts.refreshFutureDays ?? 0) * 86_400_000;
+      if (opts.completes?.has(j.numero) && !imminente) continue;
     } else if (mode === "recent") {
       const refMs = Number.isFinite(finMs) ? finMs : debutMs;
       // Sans date exploitable, on ne peut pas confirmer « récent » → on n'ajoute pas (la page

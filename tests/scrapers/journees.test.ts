@@ -21,13 +21,21 @@ describe("journeesToFetch", () => {
     expect(journeesToFetch("recent", journees, 5, now, o)).toEqual([4]);
   });
 
-  it("manquantes : ce que la base n'a pas encore, jamais le futur ni la courante", () => {
-    expect(journeesToFetch("manquantes", journees, 5, now, { ...o, completes: new Set() })).toEqual([1, 2, 3, 4]);
-    expect(journeesToFetch("manquantes", journees, 5, now, { ...o, completes: new Set([1, 2, 3]) })).toEqual([4]);
+  it("manquantes : ce que la base n'a pas encore, futur compris, sauf la courante", () => {
+    expect(journeesToFetch("manquantes", journees, 5, now, { ...o, completes: new Set() })).toEqual([1, 2, 3, 4, 6]);
+    expect(journeesToFetch("manquantes", journees, 5, now, { ...o, completes: new Set([1, 2, 3]) })).toEqual([4, 6]);
   });
 
   it("manquantes : tout est complet → rien à télécharger (régime nominal)", () => {
-    expect(journeesToFetch("manquantes", journees, 5, now, { ...o, completes: new Set([1, 2, 3, 4]) })).toEqual([]);
+    expect(journeesToFetch("manquantes", journees, 5, now, { ...o, completes: new Set([1, 2, 3, 4, 6]) })).toEqual([]);
+  });
+
+  it("manquantes : une journée future déjà en base est re-lue si elle commence bientôt", () => {
+    const tous = new Set([1, 2, 3, 4, 6]);
+    // 15/10 → J6 démarre le 14/11 (30 jours) : hors fenêtre de 14 j
+    expect(journeesToFetch("manquantes", journees, 5, now, { ...o, completes: tous, refreshFutureDays: 14 })).toEqual([]);
+    // 3/11 → J6 démarre dans 11 jours : re-lue
+    expect(journeesToFetch("manquantes", journees, 5, new Date("2026-11-03T07:00:00"), { ...o, completes: tous, refreshFutureDays: 14 })).toEqual([6]);
   });
 
   it("manquantes : une journée sans date exploitable est ignorée", () => {

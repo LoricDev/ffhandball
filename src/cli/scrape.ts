@@ -734,6 +734,7 @@ async function scrapeMatchs(
       const remaining = journeesToFetch(mode, parsed.journees, journeeAlreadyFetched, now, {
         recentDays: env.SCRAPE_MATCHS_RECENT_DAYS,
         completes: completes.get(po.ext_poule_id),
+        refreshFutureDays: env.SCRAPE_FUTURE_REFRESH_DAYS,
       });
       if (remaining.length > 0) {
         if (mode === "manquantes") poulesConcernees++;
