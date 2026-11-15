@@ -103,4 +103,29 @@ describe("rawMatchPayloadSchema", () => {
     });
     expect(r.success).toBe(false);
   });
+
+  describe("date à confirmer", () => {
+    const base = {
+      ext_rencontre_id: "1",
+      ext_poule_id: "2",
+      ext_equipe_dom_id: "3",
+      ext_equipe_ext_id: "4",
+      journee: 5,
+      source_url: "https://x/",
+    };
+
+    it("accepte une date nulle si la journée a une date de début", () => {
+      const r = rawMatchPayloadSchema.safeParse({
+        ...base,
+        date_heure: null,
+        journee_date_debut: "2026-11-28",
+        journee_date_fin: "2026-11-29",
+      });
+      expect(r.success).toBe(true);
+    });
+
+    it("rejette une date nulle sans date de journée (match non datable)", () => {
+      expect(rawMatchPayloadSchema.safeParse({ ...base, date_heure: null }).success).toBe(false);
+    });
+  });
 });

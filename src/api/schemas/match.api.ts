@@ -11,6 +11,10 @@ export const matchListItemSchema = z.object({
     description: "Équipe ayant fait forfait (score affiché « FO » sur ffhandball.fr), null sinon",
   }),
   journee: z.number().int().nullable(),
+  date_a_confirmer: z.boolean().openapi({ description: "true : la date exacte n'est pas encore fixée, seule la journée est connue ; `date_heure` vaut alors le début de la journée (`journee_date_debut`)" }),
+  heure_estimee: z.boolean().openapi({ description: "true : l'heure n'est pas connue (date_heure à minuit UTC)" }),
+  journee_date_debut: z.string().nullable().openapi({ format: "date", example: "2026-11-21", description: "Premier jour de la journée (YYYY-MM-DD), null si inconnu" }),
+  journee_date_fin: z.string().nullable().openapi({ format: "date", example: "2026-11-22", description: "Dernier jour de la journée (YYYY-MM-DD), null si inconnu" }),
   equipe_dom_id_ffhb: z.string(),
   equipe_dom_nom: z.string(),
   equipe_ext_id_ffhb: z.string(),
@@ -79,7 +83,6 @@ const officielItemSchema = z.object({
 export const matchDetailSchema = matchListItemSchema.extend({
   score_mt_dom: z.number().int().nullable(),
   score_mt_ext: z.number().int().nullable(),
-  heure_estimee: z.boolean(),
   compositions: z.array(compositionItemSchema),
   actions: z.array(actionItemSchema),
   officiels: z.array(officielItemSchema),

@@ -2,6 +2,14 @@
 import { query } from "@/db/client.js";
 import { queryMatchList, type MatchFilters, type MatchStatut } from "@/api/lib/repositories/match-list.js";
 
+/** Colonne `date` (le driver pg renvoie un Date à minuit local) → « YYYY-MM-DD ». */
+const dayOf = (v: unknown): string | null =>
+  v instanceof Date
+    ? `${v.getFullYear()}-${String(v.getMonth() + 1).padStart(2, "0")}-${String(v.getDate()).padStart(2, "0")}`
+    : typeof v === "string"
+      ? v.slice(0, 10)
+      : null;
+
 export type { MatchListRow as MatchListItem } from "@/api/lib/repositories/match-list.js";
 import type { MatchListRow as MatchListItem } from "@/api/lib/repositories/match-list.js";
 
@@ -127,6 +135,9 @@ export async function getMatchDetail(idFfhbMatch: string): Promise<MatchDetail |
     statut: base.statut as MatchStatut,
     forfait_equipe: (base.forfait_equipe ?? null) as "dom" | "ext" | null,
     journee: base.journee as number | null,
+    date_a_confirmer: (base.date_a_confirmer ?? false) as boolean,
+    journee_date_debut: dayOf(base.journee_date_debut),
+    journee_date_fin: dayOf(base.journee_date_fin),
     equipe_dom_nom: base.equipe_dom_nom as string,
     equipe_ext_nom: base.equipe_ext_nom as string,
     equipe_dom_id_ffhb: base.equipe_dom_id_ffhb as string,

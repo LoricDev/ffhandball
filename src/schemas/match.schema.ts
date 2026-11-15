@@ -15,12 +15,18 @@ const nullableIntFromStringOrNumber = z.preprocess(
   z.number().int().nullable(),
 );
 
+const isoDay = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
 export const rawMatchPayloadSchema = z.object({
   ext_rencontre_id: z.string().min(1),
   ext_poule_id: z.string().min(1),
   ext_equipe_dom_id: z.string().min(1),
   ext_equipe_ext_id: z.string().min(1),
-  date_heure: z.string().datetime({ offset: true }),
+  // null : date pas encore fixée (seule la journée est connue) ; voir journee_date_debut.
+  date_heure: z.string().datetime({ offset: true }).nullable(),
+  // Fenêtre de la journée (YYYY-MM-DD), lue dans la liste des journées de la poule.
+  journee_date_debut: isoDay.nullable().optional(),
+  journee_date_fin: isoDay.nullable().optional(),
 
   score_dom: nullableIntFromStringOrNumber.optional(),
   score_ext: nullableIntFromStringOrNumber.optional(),
@@ -40,5 +46,8 @@ export const rawMatchPayloadSchema = z.object({
   arbitre2_nom: z.string().optional(),
 
   source_url: z.string().url(),
+}).refine((m) => m.date_heure !== null || !!m.journee_date_debut, {
+  message: "date_heure absente et journée sans date de début : match non datable",
+  path: ["date_heure"],
 });
 export type RawMatchPayload = z.infer<typeof rawMatchPayloadSchema>;

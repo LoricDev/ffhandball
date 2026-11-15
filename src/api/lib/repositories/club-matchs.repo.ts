@@ -27,6 +27,11 @@ export interface ClubMatchItem {
   statut: MatchStatut;
   forfait_equipe: "dom" | "ext" | null;
   journee: number | null;
+  /** true : seule la journée est connue ; date_heure est alors le début de la journée. */
+  date_a_confirmer: boolean;
+  heure_estimee: boolean;
+  journee_date_debut: string | null;
+  journee_date_fin: string | null;
   equipe_dom_id_ffhb: string;
   equipe_dom_nom: string;
   equipe_ext_id_ffhb: string;
@@ -145,6 +150,11 @@ export async function getClubMatchsCalendar(opts: ClubMatchsOptions): Promise<Cl
     statut: MatchStatut;
     forfait_equipe: "dom" | "ext" | null;
     journee: number | null;
+  /** true : seule la journée est connue ; date_heure est alors le début de la journée. */
+  date_a_confirmer: boolean;
+  heure_estimee: boolean;
+  journee_date_debut: string | null;
+  journee_date_fin: string | null;
     equipe_dom_id_ffhb: string;
     equipe_dom_nom: string;
     equipe_ext_id_ffhb: string;
@@ -170,6 +180,9 @@ export async function getClubMatchsCalendar(opts: ClubMatchsOptions): Promise<Cl
   salle_approx: boolean;
   }>(
     `SELECT m.id_ffhb_match, m.date_heure, m.statut, m.forfait_equipe, m.journee,
+            m.date_a_confirmer, m.heure_estimee,
+            to_char(m.journee_date_debut, 'YYYY-MM-DD') AS journee_date_debut,
+            to_char(m.journee_date_fin, 'YYYY-MM-DD') AS journee_date_fin,
             ed.id_ffhb AS equipe_dom_id_ffhb, ed.nom AS equipe_dom_nom,
             ee.id_ffhb AS equipe_ext_id_ffhb, ee.nom AS equipe_ext_nom,
             m.equipe_dom_id, m.equipe_ext_id,
@@ -219,6 +232,10 @@ export async function getClubMatchsCalendar(opts: ClubMatchsOptions): Promise<Cl
       statut: row.statut,
       forfait_equipe: row.forfait_equipe ?? null,
       journee: row.journee,
+      date_a_confirmer: row.date_a_confirmer,
+      heure_estimee: row.heure_estimee,
+      journee_date_debut: row.journee_date_debut,
+      journee_date_fin: row.journee_date_fin,
       equipe_dom_id_ffhb: row.equipe_dom_id_ffhb,
       equipe_dom_nom: row.equipe_dom_nom,
       equipe_ext_id_ffhb: row.equipe_ext_id_ffhb,

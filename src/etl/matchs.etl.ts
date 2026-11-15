@@ -25,7 +25,7 @@ function deduceHeureEstimee(dateHeure: string): boolean {
 }
 
 // 14 valeurs par match ; lots de 500 → 7000 paramètres (< limite Postgres 65535).
-const MATCH_COLS = 15;
+const MATCH_COLS = 18;
 const MATCH_BATCH = 500;
 
 const MATCH_UPSERT_TAIL = `
@@ -34,6 +34,9 @@ const MATCH_UPSERT_TAIL = `
       equipe_dom_id = EXCLUDED.equipe_dom_id,
       equipe_ext_id = EXCLUDED.equipe_ext_id,
       date_heure    = EXCLUDED.date_heure,
+      date_a_confirmer   = EXCLUDED.date_a_confirmer,
+      journee_date_debut = COALESCE(EXCLUDED.journee_date_debut, core.matchs.journee_date_debut),
+      journee_date_fin   = COALESCE(EXCLUDED.journee_date_fin, core.matchs.journee_date_fin),
       heure_estimee = EXCLUDED.heure_estimee,
       score_dom     = COALESCE(EXCLUDED.score_dom, core.matchs.score_dom),
       score_ext     = COALESCE(EXCLUDED.score_ext, core.matchs.score_ext),
@@ -51,6 +54,9 @@ const MATCH_UPSERT_TAIL = `
           OR core.matchs.equipe_ext_id IS DISTINCT FROM EXCLUDED.equipe_ext_id
           OR core.matchs.date_heure    IS DISTINCT FROM EXCLUDED.date_heure
           OR core.matchs.heure_estimee IS DISTINCT FROM EXCLUDED.heure_estimee
+          OR core.matchs.date_a_confirmer IS DISTINCT FROM EXCLUDED.date_a_confirmer
+          OR (EXCLUDED.journee_date_debut IS NOT NULL AND core.matchs.journee_date_debut IS DISTINCT FROM EXCLUDED.journee_date_debut)
+          OR (EXCLUDED.journee_date_fin IS NOT NULL AND core.matchs.journee_date_fin IS DISTINCT FROM EXCLUDED.journee_date_fin)
           OR (EXCLUDED.score_dom IS NOT NULL AND core.matchs.score_dom IS DISTINCT FROM EXCLUDED.score_dom)
           OR (EXCLUDED.score_ext IS NOT NULL AND core.matchs.score_ext IS DISTINCT FROM EXCLUDED.score_ext)
           OR (EXCLUDED.score_mt_dom IS NOT NULL AND core.matchs.score_mt_dom IS DISTINCT FROM EXCLUDED.score_mt_dom)
@@ -73,7 +79,7 @@ async function flushMatchs(rows: unknown[][], report: EtlReport): Promise<void> 
   const tuples = rows
     .map((_, i) => {
       const b = i * MATCH_COLS;
-      return `($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5}::timestamptz,$${b + 6},$${b + 7},$${b + 8},$${b + 9},$${b + 10},$${b + 11},$${b + 12},$${b + 13},$${b + 14},$${b + 15}, now())`;
+      return `($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5}::timestamptz,$${b + 6},$${b + 7},$${b + 8},$${b + 9},$${b + 10},$${b + 11},$${b + 12},$${b + 13},$${b + 14},$${b + 15},$${b + 16},$${b + 17},$${b + 18}, now())`;
     })
     .join(",");
   const res = await query<{ inserted: boolean; updated: boolean }>(
@@ -81,7 +87,8 @@ async function flushMatchs(rows: unknown[][], report: EtlReport): Promise<void> 
        id_ffhb_match, poule_id, equipe_dom_id, equipe_ext_id,
        date_heure, heure_estimee,
        score_dom, score_ext, score_mt_dom, score_mt_ext,
-       statut, journee, equipement_id, fdm_code, forfait_equipe, last_seen_at
+       statut, journee, equipement_id, fdm_code, forfait_equipe,
+       date_a_confirmer, journee_date_debut, journee_date_fin, last_seen_at
      ) VALUES ${tuples}${MATCH_UPSERT_TAIL}`,
     rows.flat(),
   );
@@ -178,14 +185,17 @@ export async function runMatchsEtl(saison: string, opts: MatchsEtlOptions = {}):
 
       const statut = deduceStatut(p);
       const forfait_equipe = deduceForfait(p);
-      const heure_estimee = deduceHeureEstimee(p.date_heure);
+      // Date inconnue : on se cale sur le début de la journée (minuit UTC, heure estimée) et on le signale.
+      const date_a_confirmer = p.date_heure === null;
+      const date_heure = p.date_heure ?? `${p.journee_date_debut}T00:00:00.000Z`;
+      const heure_estimee = deduceHeureEstimee(date_heure);
 
       buffer.push([
         p.ext_rencontre_id,
         poule_id,
         equipe_dom_id,
         equipe_ext_id,
-        p.date_heure,
+        date_heure,
         heure_estimee,
         p.score_dom ?? null,
         p.score_ext ?? null,
@@ -196,6 +206,9 @@ export async function runMatchsEtl(saison: string, opts: MatchsEtlOptions = {}):
         p.equipement_id ?? null,
         p.fdm_code ?? null,
         forfait_equipe,
+        date_a_confirmer,
+        p.journee_date_debut ?? null,
+        p.journee_date_fin ?? null,
       ]);
       if (buffer.length >= MATCH_BATCH) {
         await flushMatchs(buffer, report);

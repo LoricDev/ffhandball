@@ -10,6 +10,11 @@ export interface MatchListRow {
   statut: MatchStatut;
   forfait_equipe: "dom" | "ext" | null;
   journee: number | null;
+  /** true : seule la journée est connue ; date_heure est alors le début de la journée. */
+  date_a_confirmer: boolean;
+  heure_estimee: boolean;
+  journee_date_debut: string | null;
+  journee_date_fin: string | null;
   equipe_dom_id_ffhb: string;
   equipe_dom_nom: string;
   equipe_ext_id_ffhb: string;
@@ -115,6 +120,9 @@ export async function queryMatchList(
   params.push(page.limit, page.offset);
   const res = await query<MatchListRow & { _total: number }>(
     `SELECT m.id_ffhb_match, m.date_heure, m.statut, m.forfait_equipe, m.journee,
+            m.date_a_confirmer, m.heure_estimee,
+            to_char(m.journee_date_debut, 'YYYY-MM-DD') AS journee_date_debut,
+            to_char(m.journee_date_fin, 'YYYY-MM-DD') AS journee_date_fin,
             ed.id_ffhb AS equipe_dom_id_ffhb, ed.nom AS equipe_dom_nom,
             ee.id_ffhb AS equipe_ext_id_ffhb, ee.nom AS equipe_ext_nom,
             m.score_dom, m.score_ext, m.score_mt_dom, m.score_mt_ext, po.id_ffhb AS poule_id_ffhb,
