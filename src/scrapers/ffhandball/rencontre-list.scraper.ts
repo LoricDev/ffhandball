@@ -155,12 +155,17 @@ export function parseRencontreList(
 
     // « FO » = forfait de l'équipe : à conserver explicitement (le score numérique devient null).
     const isForfait = (v: unknown) => typeof v === "string" && v.trim().toUpperCase() === "FO";
+    const jInfo = journees.find((j) => j.numero === Number(r.journeeNumero));
+    const rawDate = typeof r.date === "string" && r.date.trim() ? r.date.trim() : null;
+    const hasValidDate = rawDate !== null && !Number.isNaN(Date.parse(rawDate));
     const candidate = {
       ext_rencontre_id: r.ext_rencontreId,
       ext_poule_id: extPouleId,
       ext_equipe_dom_id: extEquipeDom,
       ext_equipe_ext_id: extEquipeExt,
-      date_heure: r.date,
+      date_heure: hasValidDate ? rawDate : null,
+      journee_date_debut: jInfo?.date_debut ?? undefined,
+      journee_date_fin: jInfo?.date_fin ?? undefined,
       score_dom: r.equipe1Score,
       score_ext: r.equipe2Score,
       score_mt_dom: r.equipe1ScoreMT,

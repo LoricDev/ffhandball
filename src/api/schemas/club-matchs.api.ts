@@ -41,6 +41,10 @@ export const clubMatchItemSchema = z
       .nullable()
       .openapi({ example: null, description: "Équipe ayant fait forfait (score « FO » sur ffhandball.fr), null sinon" }),
     journee: z.number().int().nullable().openapi({ example: 1, description: "Numéro de journée" }),
+    date_a_confirmer: z.boolean().openapi({ description: "true : la date exacte n'est pas encore fixée, seule la journée est connue ; `date_heure` vaut alors le début de la journée (`journee_date_debut`)" }),
+    heure_estimee: z.boolean().openapi({ description: "true : l'heure n'est pas connue (date_heure à minuit UTC)" }),
+    journee_date_debut: z.string().nullable().openapi({ format: "date", example: "2026-11-21", description: "Premier jour de la journée (YYYY-MM-DD), null si inconnu" }),
+    journee_date_fin: z.string().nullable().openapi({ format: "date", example: "2026-11-22", description: "Dernier jour de la journée (YYYY-MM-DD), null si inconnu" }),
     equipe_dom_id_ffhb: z.string().openapi({ description: "Identifiant FFHB de l'équipe domicile" }),
     equipe_dom_nom: z.string().openapi({ example: "BREST BRETAGNE HANDBALL", description: "Équipe domicile" }),
     equipe_ext_id_ffhb: z.string().openapi({ description: "Identifiant FFHB de l'équipe extérieure" }),
